@@ -26,7 +26,7 @@ namespace PingBoost
         public static readonly bool IsBeta = true;
 
         // GitHub repository (owner/name). Change the owner once the GitHub account exists.
-        public const string Repo = "D7oom2x/2XPing";
+        public const string Repo = "lDo2x/2XPing";
         public const string RepoUrl = "https://github.com/" + Repo;
         public const string IssuesUrl = RepoUrl + "/issues";
         public const string ReleasesUrl = RepoUrl + "/releases";
