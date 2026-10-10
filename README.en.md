@@ -8,7 +8,7 @@ Made by <b>lDo2x</b>
 </p>
 
 <p align="center">
-<img src="https://img.shields.io/badge/version-0.9.1--beta-orange" alt="version">
+<img src="https://img.shields.io/badge/version-0.9.2--beta-orange" alt="version">
 <img src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-blue" alt="platform">
 <img src="https://img.shields.io/badge/license-MIT-green" alt="license">
 <a href="README.md"><img src="https://img.shields.io/badge/lang-العربية-lightgrey" alt="Arabic"></a>
@@ -32,7 +32,8 @@ Requires **Windows 10 or 11**. Nothing to install.
 
 | Feature | What it does |
 |---|---|
-| 📶 Ping test | Ping, jitter and packet loss per server region, closest first |
+| ✦ Best server in one click | Suggests the lowest ping with enough players; **Play on it** locks you to it |
+| 📶 Ping test | Ping, jitter and packet loss per server, grouped by region |
 | 🔒 Server picker | **Deadlock, CS2, Dota 2**: tick the regions you want and lock out the rest |
 | 👥 Player numbers | Estimated players per region and expected time to find a match (Deadlock) |
 | ✅ Which server am I on? | While in a match, tells you which server you are on and whether it is one you picked |

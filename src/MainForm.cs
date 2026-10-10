@@ -13,14 +13,19 @@ namespace PingBoost
 {
     class MainForm : Form
     {
-        public static readonly Color Bg = Color.FromArgb(18, 20, 26);
-        public static readonly Color Panel1 = Color.FromArgb(26, 29, 37);
-        public static readonly Color Panel2 = Color.FromArgb(38, 42, 54);
-        public static readonly Color Accent = Color.FromArgb(0, 210, 145);
-        public static readonly Color TextC = Color.FromArgb(232, 234, 240);
-        public static readonly Color Dim = Color.FromArgb(140, 146, 160);
-        public static readonly Color Bad = Color.FromArgb(245, 85, 85);
-        public static readonly Color Warn = Color.FromArgb(245, 185, 60);
+        // Celeste theme: night purple, unicorn pink, lavender, sparkle gold
+        public static readonly Color Bg = Color.FromArgb(20, 15, 30);
+        public static readonly Color Panel1 = Color.FromArgb(30, 23, 44);
+        public static readonly Color Panel2 = Color.FromArgb(46, 35, 68);
+        public static readonly Color RowAlt = Color.FromArgb(36, 28, 52);
+        public static readonly Color RowSel = Color.FromArgb(74, 40, 92);
+        public static readonly Color Accent = Color.FromArgb(255, 111, 200);   // pink
+        public static readonly Color Lavender = Color.FromArgb(182, 158, 255);
+        public static readonly Color Good = Color.FromArgb(104, 236, 204);     // aqua: good ping
+        public static readonly Color TextC = Color.FromArgb(246, 240, 252);
+        public static readonly Color Dim = Color.FromArgb(168, 154, 192);
+        public static readonly Color Bad = Color.FromArgb(255, 92, 122);
+        public static readonly Color Warn = Color.FromArgb(255, 198, 92);      // sparkle gold
 
         const double RelayMarginMs = 3; // a relay must beat direct by this much to be chosen
         const int CheckArea = 34;       // width of the "play here" tick box in the region column
@@ -28,7 +33,15 @@ namespace PingBoost
         // server list columns
         const int ColRegion = 0, ColPing = 1, ColJitter = 2, ColLoss = 3, ColPlayers = 4, ColWait = 5, ColVia = 6, ColRoute = 7;
         static readonly int[] AdvancedWidths = { 250, 84, 80, 66, 96, 110, 96, 150 };
-        static readonly int[] SimpleWidths = { 320, 110, 0, 0, 120, 150, 0, 0 };
+        static readonly int[] SimpleWidths = { 420, 140, 0, 0, 0, 0, 0, 0 };
+
+        // A region heading row in the server list (Deadlock matchmaking region + its activity).
+        class GroupHeader
+        {
+            public string Key;
+            public int Matches;
+            public bool Top;
+        }
 
         static string T(string en, string ar) { return Lang.T(en, ar); }
 
@@ -42,7 +55,9 @@ namespace PingBoost
         Label routeLabel;
         Button btnTest, btnBoost, btnStop, btnLock, btnUnlock, btnDetect;
         Label liveLabel, statusLabel, gameNote, lockLabel, infoLabel;
-        Panel pickBar, tabBar;
+        Panel pickBar, tabBar, heroCard, bottomPanel;
+        Label heroTitle, heroSub;
+        Button heroBtn;
         TextBox logBox;
         PingGraph graph;
         Panel[] pages;
@@ -150,7 +165,7 @@ namespace PingBoost
             };
             statusLabel.Controls.Add(new Label
             {
-                Dock = DockStyle.Right, AutoSize = false, Width = 260, ForeColor = Color.FromArgb(100, 106, 120),
+                Dock = DockStyle.Right, AutoSize = false, Width = 260, ForeColor = Color.FromArgb(120, 106, 146),
                 TextAlign = ContentAlignment.MiddleRight, Padding = new Padding(0, 0, 12, 0),
                 Text = "‎" + Brand.Name + " v" + Brand.DisplayVersion + "  ·  " + Brand.Copyright
             });
@@ -230,10 +245,35 @@ namespace PingBoost
             }
         }
 
+        // "Your best server" card with a one-click "Play on it".
+        Panel BuildHero()
+        {
+            heroCard = new Panel { Dock = DockStyle.Top, Height = 92, BackColor = Panel2, Padding = new Padding(18, 12, 14, 12) };
+            heroBtn = MakeButton(T("Play on it", "العب عليه"), Accent);
+            heroBtn.ForeColor = Color.Black;
+            heroBtn.Font = new Font("Segoe UI Semibold", 11f);
+            heroBtn.Dock = DockStyle.Fill;
+            heroBtn.Visible = false;
+            var btnWrap = new Panel { Dock = DockStyle.Right, Width = 170, Padding = new Padding(0, 12, 0, 12) };
+            btnWrap.Controls.Add(heroBtn);
+            heroBtn.Click += delegate { var r = heroBtn.Tag as Region; if (r != null) PlayOn(r); };
+            heroSub = new Label { Dock = DockStyle.Fill, ForeColor = Dim, TextAlign = ContentAlignment.TopLeft, AutoEllipsis = true };
+            heroTitle = new Label
+            {
+                Dock = DockStyle.Top, Height = 38, ForeColor = TextC, Font = new Font("Segoe UI Semibold", 15f),
+                TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true
+            };
+            heroCard.Controls.Add(heroSub);
+            heroCard.Controls.Add(heroTitle);
+            heroCard.Controls.Add(new Panel { Dock = DockStyle.Right, Width = 12 });
+            heroCard.Controls.Add(btnWrap);
+            return heroCard;
+        }
+
         Panel BuildServersPage()
         {
             var p = new Panel();
-            gameNote = new Label { Dock = DockStyle.Top, Height = 32, ForeColor = Dim, TextAlign = ContentAlignment.MiddleLeft };
+            gameNote = new Label { Dock = DockStyle.Top, Height = 32, ForeColor = Dim, TextAlign = ContentAlignment.MiddleLeft, Visible = !simple };
 
             // region lock bar (Valve games)
             pickBar = new Panel { Dock = DockStyle.Top, Height = 48, BackColor = Panel1, Padding = new Padding(8) };
@@ -264,7 +304,7 @@ namespace PingBoost
                 clickedCheck = false;
                 var item = serverList.GetItemAt(e.X, e.Y);
                 var g = CurrentGame;
-                if (item == null || g == null || !g.CanLock) return;
+                if (item == null || g == null || !g.CanLock || !(item.Tag is Region)) return;
                 var cell = FirstCell(serverList, item, item.Bounds);
                 bool onBox = Lang.Ar ? e.X >= cell.Right - CheckArea && e.X <= cell.Right : e.X >= cell.X && e.X <= cell.X + CheckArea;
                 if (!onBox) return;
@@ -274,12 +314,13 @@ namespace PingBoost
             serverList.KeyDown += (s, e) =>
             {
                 if (e.KeyCode != Keys.Space || CurrentGame == null || !CurrentGame.CanLock) return;
-                foreach (ListViewItem item in serverList.SelectedItems) TogglePick((Region)item.Tag);
+                foreach (ListViewItem item in serverList.SelectedItems) { var r = item.Tag as Region; if (r != null) TogglePick(r); }
                 e.Handled = true;
             };
             serverList.DoubleClick += delegate { if (!clickedCheck) Boost(); };
 
-            var bottom = new Panel { Dock = DockStyle.Bottom, Height = 200 };
+            // in the simple layout the live graph only appears while BOOST is on
+            var bottom = bottomPanel = new Panel { Dock = DockStyle.Bottom, Height = simple ? 56 : 200 };
             var controls = new Panel { Dock = DockStyle.Bottom, Height = 56 };
             btnTest = MakeButton(T("Test ping", "افحص البنق"), Panel2);
             btnTest.Bounds = new Rectangle(0, 12, 140, 40);
@@ -295,7 +336,7 @@ namespace PingBoost
             {
                 if (e.Index < 0) return;
                 bool sel = (e.State & DrawItemState.Selected) != 0;
-                using (var b = new SolidBrush(sel ? Color.FromArgb(32, 78, 64) : Panel2)) e.Graphics.FillRectangle(b, e.Bounds);
+                using (var b = new SolidBrush(sel ? RowSel : Panel2)) e.Graphics.FillRectangle(b, e.Bounds);
                 TextRenderer.DrawText(e.Graphics, routeBox.Items[e.Index].ToString(), Font,
                     Rectangle.Inflate(e.Bounds, -4, 0), TextC, TextFormatFlags.VerticalCenter | TextFormatFlags.Left | Lang.Flags);
             };
@@ -311,7 +352,7 @@ namespace PingBoost
             btnStop.Click += delegate { StopAll(); };
             controls.Controls.AddRange(new Control[] { btnTest, routeLabel, routeBox, btnBoost, btnStop });
 
-            graph = new PingGraph { Dock = DockStyle.Fill };
+            graph = new PingGraph { Dock = DockStyle.Fill, Visible = !simple };
             bottom.Controls.Add(graph);
             bottom.Controls.Add(controls);
 
@@ -319,6 +360,8 @@ namespace PingBoost
             p.Controls.Add(new Panel { Dock = DockStyle.Top, Height = 8 });
             p.Controls.Add(pickBar);
             p.Controls.Add(BuildInfoBar());
+            p.Controls.Add(new Panel { Dock = DockStyle.Top, Height = 6 });
+            p.Controls.Add(BuildHero());
             p.Controls.Add(bottom);
             p.Controls.Add(gameNote);
             return p;
@@ -395,7 +438,7 @@ namespace PingBoost
 
         static Color RowBack(ListViewItem item, int index)
         {
-            return item.Selected ? Color.FromArgb(32, 78, 64) : (index % 2 == 0 ? Panel1 : Color.FromArgb(30, 33, 42));
+            return item.Selected ? RowSel : (index % 2 == 0 ? Panel1 : RowAlt);
         }
 
         ListView MakeListView(string[] cols, int[] widths)
@@ -437,7 +480,7 @@ namespace PingBoost
             lv.DrawItem += (s, e) => { };
             lv.DrawSubItem += (s, e) =>
             {
-                if (e.ColumnIndex == 0 && lv == serverList) return; // drawn by DrawRegionCheck
+                if (lv == serverList && (e.ColumnIndex == 0 || e.Item.Tag is GroupHeader)) return; // drawn by DrawRegionCheck
                 var rc = e.ColumnIndex == 0 ? FirstCell(lv, e.Item, e.Bounds) : e.Bounds;
                 if (rc.Width <= 0) return;
                 using (var b = new SolidBrush(RowBack(e.Item, e.ItemIndex))) e.Graphics.FillRectangle(b, rc);
@@ -472,6 +515,8 @@ namespace PingBoost
         void DrawRegionCheck(object sender, DrawListViewSubItemEventArgs e)
         {
             if (e.ColumnIndex != 0) return;
+            var h = e.Item.Tag as GroupHeader;
+            if (h != null) { DrawGroupHeader(e, h); return; }
             var rc = FirstCell(serverList, e.Item, e.Bounds);
             using (var b = new SolidBrush(RowBack(e.Item, e.ItemIndex))) e.Graphics.FillRectangle(b, rc);
             var g = CurrentGame;
@@ -501,7 +546,7 @@ namespace PingBoost
             for (int i = 0; i < pages.Length; i++)
             {
                 pages[i].Visible = i == idx;
-                tabButtons[i].BackColor = i == idx ? Color.FromArgb(52, 58, 74) : Panel2;
+                tabButtons[i].BackColor = i == idx ? RowSel : Panel2;
                 tabButtons[i].ForeColor = i == idx ? Accent : TextC;
             }
         }
@@ -516,7 +561,7 @@ namespace PingBoost
             string name = g.Provider == Provider.Custom ? T("Custom servers", "سيرفرات من عندك") : g.Name;
             TextRenderer.DrawText(e.Graphics, name, Font,
                 new Rectangle(e.Bounds.X + 14, e.Bounds.Y, e.Bounds.Width - 18, e.Bounds.Height),
-                sel ? TextC : Color.FromArgb(190, 194, 204), TextFormatFlags.VerticalCenter | Align);
+                sel ? TextC : Color.FromArgb(206, 196, 226), TextFormatFlags.VerticalCenter | Align);
         }
 
         void OpenSettings()
@@ -583,7 +628,7 @@ namespace PingBoost
         static Color PingColor(double v)
         {
             if (v < 0) return Bad;
-            if (v < 60) return Accent;
+            if (v < 60) return Good;
             return v < 120 ? Warn : Bad;
         }
 
@@ -653,24 +698,140 @@ namespace PingBoost
             });
         }
 
+        // Deadlock: servers are grouped under their matchmaking region, busiest region first.
+        bool Grouped(Game g) { return g != null && g.AppId == "1422450" && activity != null && activity.Count > 0; }
+
+        string RegionKey(Region r)
+        {
+            string mm;
+            return Stats.PopToMm.TryGetValue(r.Id, out mm) && activity != null && activity.ContainsKey(mm) ? mm : "";
+        }
+
+        int MatchesOf(Region r)
+        {
+            string k = RegionKey(r);
+            return k == "" ? -1 : activity[k];
+        }
+
         void FillServers(Game g)
         {
             serverList.BeginUpdate();
             serverList.Items.Clear();
-            foreach (var r in g.Regions)
+            if (Grouped(g))
             {
-                var item = new ListViewItem(r.Name) { UseItemStyleForSubItems = false, Tag = r };
-                item.ForeColor = TextC;
-                for (int i = 0; i < 7; i++) item.SubItems.Add("");
-                serverList.Items.Add(item);
-                UpdateRow(item);
+                var groups = g.Regions.GroupBy(RegionKey)
+                    .OrderBy(gr => gr.Key == "" ? 1 : 0)
+                    .ThenByDescending(gr => gr.Key == "" ? 0 : activity[gr.Key]).ToList();
+                bool first = true;
+                foreach (var gr in groups)
+                {
+                    var h = new GroupHeader { Key = gr.Key, Matches = gr.Key == "" ? 0 : activity[gr.Key], Top = first && gr.Key != "" };
+                    first = false;
+                    var hi = new ListViewItem("") { Tag = h };
+                    for (int i = 0; i < 7; i++) hi.SubItems.Add("");
+                    serverList.Items.Add(hi);
+                    foreach (var r in gr.OrderBy(x => LockedOut(g, x) ? 1 : 0).ThenBy(BestLatency)) AddRegionRow(r);
+                }
             }
+            else
+                foreach (var r in g.Regions) AddRegionRow(r);
             serverList.EndUpdate();
+            UpdateHero();
+        }
+
+        void AddRegionRow(Region r)
+        {
+            var item = new ListViewItem(r.Name) { UseItemStyleForSubItems = false, Tag = r };
+            item.ForeColor = TextC;
+            for (int i = 0; i < 7; i++) item.SubItems.Add("");
+            serverList.Items.Add(item);
+            UpdateRow(item);
+        }
+
+        string HeaderText(GroupHeader h)
+        {
+            if (h.Key == "") return T("Other regions (no player data)", "مناطق ثانية (ما عندنا أرقامها)");
+            string name = Stats.MmRegions.ContainsKey(h.Key) ? Lang.T(Stats.MmRegions[h.Key][0], Stats.MmRegions[h.Key][1]) : h.Key;
+            return name + "   ·   " + Stats.Approx(Stats.EstimatePlayers(h.Matches)) + T(" players", " لاعب") +
+                   "   ·   " + T("wait ", "الانتظار ") + Stats.EstimateWait(h.Matches);
+        }
+
+        void DrawGroupHeader(DrawListViewSubItemEventArgs e, GroupHeader h)
+        {
+            var row = e.Item.Bounds;
+            using (var b = new SolidBrush(Color.FromArgb(40, 30, 60))) e.Graphics.FillRectangle(b, row);
+            var font = new Font("Segoe UI Semibold", 10.5f);
+            var text = Rectangle.Inflate(row, -14, 0);
+            TextRenderer.DrawText(e.Graphics, HeaderText(h), font, text, h.Key == "" ? Dim : Lavender,
+                TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | Align);
+            if (h.Top)
+            {
+                // the busiest region gets a gold sparkle badge on the opposite side
+                var flags = TextFormatFlags.VerticalCenter | (Lang.Ar ? TextFormatFlags.Left : TextFormatFlags.Right);
+                TextRenderer.DrawText(e.Graphics, T("✦ most players", "✦ الأكثر لاعبين"), font, text, Warn, flags | Lang.Flags);
+            }
+            font.Dispose();
+        }
+
+        // Best server = lowest ping; for Deadlock only among regions busy enough for quick matches.
+        Region BestServer(Game g)
+        {
+            var cands = g.Regions.Where(r => !LockedOut(g, r) && BestLatency(r) < double.MaxValue).ToList();
+            if (Grouped(g))
+            {
+                var busy = cands.Where(r => MatchesOf(r) >= 40).ToList();
+                if (busy.Count > 0) cands = busy;
+            }
+            return cands.OrderBy(BestLatency).FirstOrDefault();
+        }
+
+        void UpdateHero()
+        {
+            var g = CurrentGame;
+            if (heroCard == null || g == null) return;
+            var best = BestServer(g);
+            if (best == null)
+            {
+                heroTitle.Text = busy ? T("Looking for your best server...", "لحظة، ألقى لك أحسن سيرفر...")
+                                      : T("Press Test ping and we'll find your best server", "اضغط «افحص البنق» ونلقى لك أحسن سيرفر");
+                heroSub.Text = "";
+                heroBtn.Visible = false;
+                return;
+            }
+            heroTitle.Text = "✦ " + T("Your best server: ", "أحسن سيرفر لك: ") + ShortName(best) + "   " + Ms(BestLatency(best));
+            int m = MatchesOf(best);
+            if (m >= 0)
+            {
+                string mm = RegionKey(best);
+                string reg = Stats.MmRegions.ContainsKey(mm) ? Lang.T(Stats.MmRegions[mm][0], Stats.MmRegions[mm][1]) : mm;
+                heroSub.Text = T("Region ", "منطقة ") + reg + "  ·  " + Stats.Approx(Stats.EstimatePlayers(m)) + T(" players", " لاعب") +
+                               "  ·  " + T("wait ", "الانتظار ") + Stats.EstimateWait(m) + "  ·  " + T("lowest ping with enough players", "أقل بنق وفيه لاعبين كفاية");
+            }
+            else heroSub.Text = T("The lowest ping you have right now.", "أقل بنق عندك دحين.");
+
+            heroBtn.Tag = best;
+            heroBtn.Visible = g.CanLock;
+            bool already = lockSummary != null && best.Picked && g.Regions.Count(r => r.Picked) == 1;
+            heroBtn.Enabled = !already;
+            heroBtn.Text = already ? T("Locked ✓", "مثبّت ✓") : T("Play on it", "العب عليه");
+        }
+
+        // One click: pick only this server and lock it.
+        void PlayOn(Region region)
+        {
+            var g = CurrentGame;
+            if (g == null || !g.CanLock) return;
+            foreach (var r in g.Regions) r.Picked = r == region;
+            Storage.SavePicks(g.AppId, new[] { region.Id });
+            FillServers(g);
+            UpdateLockBar();
+            LockServers();
         }
 
         void UpdateRow(ListViewItem item)
         {
-            var r = (Region)item.Tag;
+            var r = item.Tag as Region;
+            if (r == null) return;
             var g = CurrentGame;
             item.SubItems[ColRegion].Text = (r.Here ? T("» ", "« ") : "") + r.Name + (r.Here ? T("  (you are here)", "  (إنت هنا)") : "");
             item.SubItems[ColRegion].ForeColor = r.Here || r.Picked ? Accent : (r.Detected ? Warn : TextC);
@@ -733,6 +894,7 @@ namespace PingBoost
             var regions = g.Regions.Where(r => !LockedOut(g, r)).ToList();
             var rels = relays.ToList();
             SetStatus(rels.Count > 0 ? T("Testing relays...", "أفحص سيرفرات الوسيط...") : T("Testing...", "أفحص..."));
+            UpdateHero();
 
             Task.Run(() =>
             {
@@ -851,8 +1013,7 @@ namespace PingBoost
                         text = T("Player numbers aren't available for this game.", "عدد اللاعبين مو متوفر لهادي اللعبة.");
                     infoLabel.Text = text;
                     infoLabel.ForeColor = TextC;
-                    foreach (ListViewItem item in serverList.Items) UpdateRow(item);
-                    serverList.Invalidate();
+                    FillServers(g); // regroup now that the activity numbers are in
                 });
             });
         }
@@ -1132,7 +1293,7 @@ namespace PingBoost
         {
             var g = CurrentGame;
             if (g == null || !btnBoost.Enabled) return;
-            Region region = serverList.SelectedItems.Count > 0 ? (Region)serverList.SelectedItems[0].Tag : null;
+            Region region = serverList.SelectedItems.Count > 0 ? serverList.SelectedItems[0].Tag as Region : null;
             if (region == null || LockedOut(g, region))
             {
                 region = g.Regions.Where(r => !LockedOut(g, r) && BestLatency(r) < double.MaxValue).OrderBy(BestLatency).FirstOrDefault();
@@ -1198,6 +1359,7 @@ namespace PingBoost
         {
             int gen = ++monitorGen;
             graph.Clear();
+            if (simple) { graph.Visible = true; bottomPanel.Height = 200; }
             graph.Label = label;
             SetStatus(T("BOOST is on: ", "البوست شغّال: ") + label);
             var t = new Thread(() =>
@@ -1225,6 +1387,7 @@ namespace PingBoost
             boosting = false;
             liveLabel.Text = T("OFF", "مو شغّال");
             liveLabel.ForeColor = Dim;
+            if (simple) { graph.Visible = false; bottomPanel.Height = 56; }
             btnBoost.Enabled = true;
             btnStop.Enabled = false;
             SetStatus(T("Stopped.", "وقّفناه."));
@@ -1441,7 +1604,7 @@ namespace PingBoost
             var ok = samples.Where(v => v >= 0).ToList();
             double max = ok.Count > 0 ? Math.Max(50, ok.Max() * 1.25) : 100;
 
-            using (var pen = new Pen(Color.FromArgb(44, 48, 60)))
+            using (var pen = new Pen(Color.FromArgb(56, 44, 78)))
                 for (int i = 0; i <= 4; i++)
                 {
                     int y = rc.Bottom - i * rc.Height / 4;

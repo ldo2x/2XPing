@@ -9,8 +9,22 @@ using System.IO;
 
 static class MakeLogo
 {
-    static readonly Color Green = Color.FromArgb(0, 210, 145);
-    static readonly Color GreenDark = Color.FromArgb(0, 140, 100);
+    // Celeste palette: pink to lavender, with a gold sparkle
+    static readonly Color Pink = Color.FromArgb(255, 111, 200);
+    static readonly Color Lavender = Color.FromArgb(160, 130, 255);
+    static readonly Color Gold = Color.FromArgb(255, 214, 120);
+
+    // four-point sparkle star
+    static void Sparkle(Graphics g, float cx, float cy, float r, Color c)
+    {
+        float k = r * 0.22f;
+        var pts = new[]
+        {
+            new PointF(cx, cy - r), new PointF(cx + k, cy - k), new PointF(cx + r, cy), new PointF(cx + k, cy + k),
+            new PointF(cx, cy + r), new PointF(cx - k, cy + k), new PointF(cx - r, cy), new PointF(cx - k, cy - k)
+        };
+        using (var b = new SolidBrush(c)) g.FillPolygon(b, pts);
+    }
 
     static GraphicsPath Rounded(RectangleF r, float radius)
     {
@@ -37,8 +51,8 @@ static class MakeLogo
             // tile
             var tile = new RectangleF(4 * s, 4 * s, 248 * s, 248 * s);
             using (var path = Rounded(tile, 56 * s))
-            using (var bg = new LinearGradientBrush(tile, Color.FromArgb(34, 38, 50), Color.FromArgb(14, 16, 22), 90f))
-            using (var border = new Pen(Color.FromArgb(120, Green), Math.Max(1f, 6 * s)))
+            using (var bg = new LinearGradientBrush(tile, Color.FromArgb(52, 32, 78), Color.FromArgb(20, 14, 32), 90f))
+            using (var border = new Pen(Color.FromArgb(150, Lavender), Math.Max(1f, 6 * s)))
             {
                 g.FillPath(bg, path);
                 g.DrawPath(border, path);
@@ -51,10 +65,11 @@ static class MakeLogo
             {
                 var r = new RectangleF(x, baseY - heights[i] * s, barW, heights[i] * s);
                 using (var path = Rounded(r, 8 * s))
-                using (var b = new LinearGradientBrush(r, Green, GreenDark, 90f))
+                using (var b = new LinearGradientBrush(r, Pink, Lavender, 90f))
                     g.FillPath(b, path);
                 x += barW + gap;
             }
+            if (size >= 32) Sparkle(g, 214 * s, 34 * s, 20 * s, Gold);
 
             // "2X" badge (top left)
             if (size >= 24)

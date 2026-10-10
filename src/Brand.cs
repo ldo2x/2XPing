@@ -11,9 +11,9 @@ using System.Windows.Forms;
 [assembly: AssemblyCopyright("Copyright © 2026 lDo2x. MIT License.")]
 [assembly: AssemblyTrademark("2X Ping by lDo2x")]
 // Release version: change it here (and tag the GitHub release v<version>-beta).
-[assembly: AssemblyVersion("0.9.1.0")]
-[assembly: AssemblyFileVersion("0.9.1.0")]
-[assembly: AssemblyInformationalVersion("0.9.1-beta")]
+[assembly: AssemblyVersion("0.9.2.0")]
+[assembly: AssemblyFileVersion("0.9.2.0")]
+[assembly: AssemblyInformationalVersion("0.9.2-beta")]
 
 namespace PingBoost
 {

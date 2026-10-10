@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>2X Ping - دليل البرنامج</title>
+<style>
+  @page { size: A4; margin: 16mm 15mm 16mm 15mm; }
+  :root {
+    --ink: #151821; --muted: #5d6475; --line: #e3e6ec; --soft: #f4f6f9;
+    --green: #c93f97; --green-bg: #fbe9f5; --aqua: #138a73; --amber: #b9800f; --amber-bg: #fff4dc;
+    --red: #c43b3b; --red-bg: #fdecec; --dark: #1d1430;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #fff; }
+  body { font-family: "Segoe UI", Arial, sans-serif; color: var(--ink); font-size: 11.5pt; line-height: 1.75; }
+  .ltr { direction: ltr; unicode-bidi: isolate; display: inline-block; }
+  code, .mono { font-family: Consolas, "Courier New", monospace; font-size: 9.5pt; direction: ltr; unicode-bidi: isolate; background: var(--soft); padding: 1px 5px; border-radius: 4px; }
+
+  /* cover */
+  .cover { height: 263mm; background: var(--dark); color: #e8eaf0; border-radius: 10px; padding: 34mm 22mm;
+           display: flex; flex-direction: column; justify-content: space-between; page-break-after: always; }
+  .cover img { width: 120px; height: 120px; }
+  .cover h1 { font-family: "Segoe UI Black", "Segoe UI", Arial; font-size: 46pt; margin: 18px 0 0; color: #ff6fc8; letter-spacing: 1px; direction: ltr; text-align: right; }
+  .cover .tag { font-size: 18pt; margin: 4px 0 0; color: #fff; }
+  .cover .sub { font-size: 13pt; color: #b3a6cc; margin-top: 18px; max-width: 120mm; }
+  .cover .meta { display: flex; gap: 10px; flex-wrap: wrap; }
+  .pill { display: inline-block; padding: 4px 12px; border-radius: 999px; font-size: 10pt; font-weight: 600; }
+  .pill.beta { background: #f5b93c; color: #111; }
+  .pill.dark { background: #2f2445; color: #d8cdea; }
+
+  h2 { font-size: 20pt; margin: 0 0 6px; color: var(--ink); page-break-after: avoid; }
+  h2 .num { display: inline-block; width: 34px; height: 34px; line-height: 34px; text-align: center; border-radius: 50%;
+            background: var(--green); color: #fff; font-size: 14pt; margin-left: 10px; vertical-align: middle; }
+  h3 { font-size: 13.5pt; margin: 18px 0 4px; color: var(--ink); page-break-after: avoid; }
+  .lead { color: var(--muted); font-size: 12pt; margin: 0 0 14px; }
+  section { page-break-before: always; }
+  section.cont { page-break-before: auto; margin-top: 26px; }
+  p { margin: 6px 0; }
+  ul, ol { margin: 6px 0; padding-right: 22px; }
+  li { margin: 3px 0; }
+
+  .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 12px 0; }
+  .card { background: var(--soft); border-radius: 10px; padding: 12px 14px; page-break-inside: avoid; }
+  .card b { display: block; font-size: 12pt; margin-bottom: 2px; }
+  .card .ico { display: inline-block; width: 30px; height: 30px; border-radius: 50%; background: var(--green-bg); color: var(--green);
+               text-align: center; line-height: 30px; font-weight: 800; margin-left: 8px; }
+  .card p { color: var(--muted); font-size: 10.5pt; margin: 2px 0 0; }
+
+  .note { border-radius: 10px; padding: 10px 14px; margin: 12px 0; page-break-inside: avoid; font-size: 10.5pt; }
+  .note.ok { background: var(--green-bg); }
+  .note.warn { background: var(--amber-bg); }
+  .note.bad { background: var(--red-bg); }
+  .note b { color: var(--ink); }
+
+  table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 10.5pt; page-break-inside: avoid; }
+  th { background: var(--dark); color: #fff; font-weight: 600; text-align: right; padding: 7px 10px; }
+  td { border-bottom: 1px solid var(--line); padding: 7px 10px; vertical-align: top; }
+  tr:nth-child(even) td { background: #fafbfc; }
+
+  .shot { width: 100%; border-radius: 8px; border: 1px solid var(--line); margin: 8px 0 4px; }
+  .cap { color: var(--muted); font-size: 9.5pt; text-align: center; margin: 0 0 8px; }
+
+  .stats { display: flex; gap: 10px; margin: 12px 0; }
+  .stat { flex: 1; background: var(--soft); border-radius: 10px; padding: 12px; text-align: center; }
+  .stat .v { font-size: 26pt; font-weight: 800; direction: ltr; }
+  .stat .l { color: var(--muted); font-size: 10pt; }
+  .stat.good .v { color: var(--aqua); }
+  .stat.mid .v { color: var(--amber); }
+
+  .steps { counter-reset: s; list-style: none; padding: 0; }
+  .steps li { counter-increment: s; position: relative; padding: 6px 44px 6px 0; margin: 6px 0; }
+  .steps li::before { content: counter(s); position: absolute; right: 0; top: 6px; width: 30px; height: 30px; border-radius: 50%;
+                      background: var(--green); color: #fff; text-align: center; line-height: 30px; font-weight: 700; }
+  svg { display: block; margin: 10px auto; max-width: 100%; }
+  .foot { color: var(--muted); font-size: 9pt; text-align: center; margin-top: 30px; }
+</style>
+</head>
+<body>
+
+<!-- ============================== cover -->
+<div class="cover">
+  <div>
+    <img src="../../assets/logo.png" alt="">
+    <h1>2X PING</h1>
+    <div class="tag">بنق أقل، لعب أحلى</div>
+    <div class="sub">دليل البرنامج: إيش يسوي، وكيف يشتغل من جوا، وإيش التقنيات اللي يستخدمها، عشان تقدر تشرحه لأي أحد.</div>
+  </div>
+  <div class="meta">
+    <span class="pill beta">بيتا ‎0.9.2‎</span>
+    <span class="pill dark">من تطوير lDo2x</span>
+    <span class="pill dark">ويندوز 10 و 11</span>
+    <span class="pill dark">مجاني ومفتوح المصدر</span>
+  </div>
+</div>
+
+<!-- ============================== 1 -->
+<section style="page-break-before:auto">
+  <h2><span class="num">1</span>الفكرة باختصار</h2>
+  <p class="lead">2X Ping برنامج للاعبين على ويندوز، يساعدك تلعب على السيرفر اللي يناسبك ببنق أقل.</p>
+
+  <div class="cards">
+    <div class="card"><b><span class="ico">1</span>افحص البنق</b><p>يقيس البنق والتذبذب والفقد لكل مناطق سيرفرات اللعبة، ويرتّبها من الأقرب للأبعد.</p></div>
+    <div class="card"><b><span class="ico">2</span>أحسن سيرفر بضغطة</b><p>البرنامج يقترح أقل بنق فيه لاعبين كفاية، وزر «العب عليه» يثبّتك عليه (Deadlock وCS2 وDota 2).</p></div>
+    <div class="card"><b><span class="ico">3</span>على أي سيرفر أنا؟</b><p>وإنت داخل المباراة، يقولك اسم السيرفر اللي إنت عليه، وهل هو من اختيارك.</p></div>
+    <div class="card"><b><span class="ico">4</span>البوست بالوسيط</b><p>يمرّر ترافيك اللعبة بس عن طريق سيرفر وسيط (VPS) لو كان طريقه أسرع من طريق شركة النت.</p></div>
+    <div class="card"><b><span class="ico">5</span>عدد اللاعبين</b><p>السيرفرات متجمّعة تحت منطقتها، مع عدد اللاعبين ووقت الانتظار، والأكثر لاعبين عليها ✦.</p></div>
+    <div class="card"><b><span class="ico">6</span>بسيط أو متقدم</b><p>الوضع البسيط للاعب العادي، والمتقدم فيه كل الأدوات. والعربي هو اللغة الأساسية.</p></div>
+  </div>
+
+  <h3>الألعاب المدعومة</h3>
+  <p>Deadlock، Counter-Strike 2، Dota 2، Arena Breakout: Infinite، Valorant، Fortnite، PUBG، Apex Legends، Rocket League، Dead by Daylight، وأي لعبة ثانية تضيف سيرفرها بنفسك.</p>
+
+  <div class="note warn"><b>نسخة بيتا:</b> البرنامج لسا تحت التطوير. الأرقام التقديرية (عدد اللاعبين ووقت الانتظار) تقريبية، وممكن تطلع أخطاء بسيطة.</div>
+</section>
+
+<!-- ============================== 2 -->
+<section class="cont">
+  <h2><span class="num">2</span>ليش البنق يطلع عالي أصلاً؟</h2>
+  <p>البنق هو الوقت اللي تاخذه البيانات عشان تروح من جهازك لسيرفر اللعبة وترجع. والمسافة مو هي كل شي. الأهم هو <b>الطريق</b> اللي تختاره شركة النت حقتك، لأنها أحياناً توديك لفّة طويلة لسيرفر قريب.</p>
+  <p>مثال حقيقي من فحص على جهاز المطوّر:</p>
+  <div class="stats">
+    <div class="stat good"><div class="v">78 ms</div><div class="l">فرانكفورت، ألمانيا (بعيدة)</div></div>
+    <div class="stat mid"><div class="v">102 ms</div><div class="l">دبي، الإمارات (قريبة)</div></div>
+  </div>
+  <p>دبي أقرب بكثير من فرانكفورت، لكن البنق لها أعلى. السبب إن شركة النت توجّه ترافيك الخليج عن طريق أوروبا ويرجع. هنا يجي دور البرنامج: يوريك هالفرق، ويخليك تختار، ولو عندك سيرفر وسيط يلقى لك طريق أقصر.</p>
+</section>
+
+<!-- ============================== 3 -->
+<section>
+  <h2><span class="num">3</span>كيف تستخدمه</h2>
+  <p class="lead">افتح <span class="mono">2XPing.exe</span> ووافق على صلاحية المسؤول (Admin)، وبعدها:</p>
+  <ol class="steps">
+    <li><b>اختار لعبتك</b> من القائمة اليمين. البرنامج يجيب سيرفراتها ويفحص البنق لحاله.</li>
+    <li>شوف بطاقة <b>«أحسن سيرفر لك»</b> فوق واضغط <b>«العب عليه»</b>. أو علّم (✓) على المناطق اللي تبغاها واضغط <b>«ثبّت سيرفراتي»</b>.</li>
+    <li><b>طلّع من اللعبة ورجّع ادخل</b>، وبعدين دوّر مباراة.</li>
+    <li><b>تأكد:</b> وإنت داخل المباراة اضغط <b>«على أي سيرفر أنا؟»</b>. لازم يطلع لك ✓.</li>
+    <li>لما تخلص، قفّل البرنامج، أو اضغط <b>«رجّع جهازي زي ما كان»</b> من الإعدادات.</li>
+  </ol>
+  <img class="shot" src="../screenshot-ar.png" alt="">
+  <p class="cap">الوضع البسيط: بطاقة أحسن سيرفر، والسيرفرات متجمّعة تحت مناطقها</p>
+
+  <h3>الوضع البسيط والمتقدم</h3>
+  <table>
+    <tr><th>البسيط (الافتراضي)</th><th>المتقدم</th></tr>
+    <tr><td>عمودين: السيرفر والبنق، والمناطق بعناوينها</td><td>كل الأعمدة: التذبذب، الفقد، البنق بالوسيط، أحسن طريق</td></tr>
+    <tr><td>بدون تبويبات</td><td>تبويبات: السيرفرات، سيرفرات الوسيط، أدوات وسجل</td></tr>
+    <tr><td>البوست يختار الطريق تلقائي</td><td>تختار الطريق بنفسك (تلقائي، مباشر، أو وسيط معيّن)</td></tr>
+  </table>
+  <p>تبدّل بينهم من <b>الإعدادات</b>، ومن نفس المكان تغيّر اللغة بين العربي والإنجليزي.</p>
+</section>
+
+<!-- ============================== 4 -->
+<section>
+  <h2><span class="num">4</span>كيف يشتغل من جوا</h2>
+  <p class="lead">هنا الشرح التقني لكل ميزة، بكلام بسيط.</p>
+
+  <h3>4.1 فحص البنق</h3>
+  <p>البرنامج يحتاج يعرف <b>وين</b> سيرفرات كل لعبة، وبعدين يقيس الوقت لها:</p>
+  <table>
+    <tr><th>الألعاب</th><th>من وين يجيب السيرفرات</th><th>كيف يقيس</th></tr>
+    <tr><td>Deadlock، CS2، Dota 2</td><td>قائمة Valve الرسمية الحية من Steam (<span class="mono">GetSDRConfig</span>): كل مركز بيانات وعناوينه</td><td>Ping عادي (ICMP) لسيرفرات Valve</td></tr>
+    <tr><td>Valorant، Fortnite، PUBG وغيرها</td><td>مراكز بيانات Amazon (AWS) في كل منطقة</td><td>وقت فتح اتصال (TCP) على المنفذ 443</td></tr>
+    <tr><td>Arena Breakout</td><td>مراكز بيانات Tencent Cloud (فيها السعودية)</td><td>وقت فتح اتصال (TCP)</td></tr>
+  </table>
+  <p>يرسل 4 قياسات لكل سيرفر ويحسب منها:</p>
+  <ul>
+    <li><b>البنق:</b> متوسط الوقت. الأخضر أقل من 60ms، والأصفر لين 120ms، والأحمر فوقها.</li>
+    <li><b>التذبذب (Jitter):</b> كم يتغيّر البنق من قياس للثاني. كل ما قل كان اللعب أنعم.</li>
+    <li><b>الفقد (Loss):</b> نسبة القياسات اللي ما رجعت.</li>
+  </ul>
+
+  <h3>4.2 ثبّت سيرفراتي</h3>
+  <p>ألعاب Valve تختار لك السيرفر حسب بنقك لكل منطقة. البرنامج يحط قواعد في <b>جدار حماية ويندوز</b> تحجب عناوين المناطق اللي ما اخترتها، فاللعبة تشوفها كأنها "ما ترد"، وما يبقى قدامها إلا اختيارك.</p>
+  <svg width="640" height="190" viewBox="0 0 640 190" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, Arial" direction="rtl">
+    <rect x="470" y="65" width="150" height="60" rx="10" fill="#1d1430"/>
+    <text x="545" y="92" fill="#fff" font-size="15" text-anchor="middle" font-weight="700">جهازك</text>
+    <text x="545" y="112" fill="#b3a6cc" font-size="11" text-anchor="middle">+ جدار الحماية</text>
+    <rect x="40" y="10" width="190" height="44" rx="10" fill="#fbe9f5" stroke="#c93f97"/>
+    <text x="135" y="38" fill="#c93f97" font-size="14" text-anchor="middle" font-weight="700">أمستردام ✓ (اختيارك)</text>
+    <rect x="40" y="73" width="190" height="44" rx="10" fill="#fdecec" stroke="#c43b3b"/>
+    <text x="135" y="101" fill="#c43b3b" font-size="14" text-anchor="middle">أمريكا ✕ محجوب</text>
+    <rect x="40" y="136" width="190" height="44" rx="10" fill="#fdecec" stroke="#c43b3b"/>
+    <text x="135" y="164" fill="#c43b3b" font-size="14" text-anchor="middle">آسيا ✕ محجوب</text>
+    <line x1="470" y1="82" x2="232" y2="32" stroke="#c93f97" stroke-width="3"/>
+    <line x1="470" y1="95" x2="300" y2="95" stroke="#c43b3b" stroke-width="3" stroke-dasharray="6 5"/>
+    <line x1="470" y1="108" x2="300" y2="150" stroke="#c43b3b" stroke-width="3" stroke-dasharray="6 5"/>
+    <text x="285" y="100" fill="#c43b3b" font-size="20" font-weight="700">✕</text>
+    <text x="285" y="157" fill="#c43b3b" font-size="20" font-weight="700">✕</text>
+  </svg>
+  <ul>
+    <li>القواعد اسمها <span class="mono">2XPing-RegionLock</span> وتحجب الاتجاهين (داخل وطالع).</li>
+    <li>تنشال لما تضغط «فك التثبيت»، أو تقفل البرنامج، أو تفتحه مرة ثانية بعد ما انقفل فجأة.</li>
+    <li>البرنامج <b>ما يلمس ملفات اللعبة ولا ذاكرتها</b>، كل الشغل على مستوى الشبكة في ويندوز.</li>
+  </ul>
+</section>
+
+<section class="cont">
+  <h3>4.3 على أي سيرفر أنا؟</h3>
+  <p>عشان تتأكد بعينك إن التثبيت شغّال:</p>
+  <ol>
+    <li>البرنامج يشيّك إن اللعبة مفتوحة. لو مقفلة، يقولك تفتحها بدل ما يخمّن.</li>
+    <li>يعرف المنافذ اللي فاتحتها اللعبة نفسها في ويندوز (أداة <span class="mono">netstat</span>).</li>
+    <li>يراقب الترافيك 15 ثانية بأداة <span class="mono">pktmon</span> اللي جاية مع ويندوز، ويحسب بس ترافيك اللعبة. ديسكورد والمتصفح وسبوتيفاي يتجاهلها.</li>
+    <li>ياخذ عنوان السيرفر اللي اللعبة تكلّمه أكثر شي، ويطابقه مع قائمة Valve عشان يعرف أي منطقة.</li>
+    <li>يقولك: <b>«إنت على أمستردام ✓ من اختيارك»</b>، أو ينبّهك لو مو من اختيارك.</li>
+  </ol>
+  <div class="note ok"><b>ملاحظة:</b> لازم تكون داخل مباراة حقيقية. القائمة والتدريب ما فيهم ترافيك سيرفر. وفي Arena Breakout والألعاب الثانية، يطلّع عنوان السيرفر وموقعه ويحفظه في القائمة.</div>
+
+  <h3>4.4 عدد اللاعبين ووقت الانتظار</h3>
+  <ul>
+    <li><b>Deadlock:</b> من موقع <span class="mono">deadlock-api.com</span>، ياخذ عدد المباريات اللي بدت في آخر ساعة في كل منطقة.</li>
+    <li>عدد اللاعبين التقريبي = المباريات في الساعة × 12 لاعب × (متوسط المباراة 30 دقيقة ÷ 60).</li>
+    <li>وقت الانتظار حسب نشاط المنطقة: 100 مباراة أو أكثر بالساعة يعني 1-3 دقايق، وبين 40 و100 يعني 3-6 دقايق، وأقل من كدا يطوّل.</li>
+    <li><b>باقي ألعاب Steam:</b> العدد الكلي للاعبين أونلاين من Steam، لأن الشركات ما تنشر عدد كل منطقة.</li>
+  </ul>
+</section>
+
+<section>
+  <h3>4.5 البوست بالوسيط (Relay)</h3>
+  <p>هنا الطريقة اللي <b>تنزّل البنق فعلاً</b>: بدل ما يمشي ترافيك اللعبة في طريق شركة النت الطويل، يمشي عن طريق سيرفر وسيط (VPS) استأجرته، وطريقه لسيرفر اللعبة أقصر.</p>
+  <svg width="660" height="200" viewBox="0 0 660 200" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, Arial">
+    <rect x="510" y="70" width="130" height="56" rx="10" fill="#1d1430"/>
+    <text x="575" y="104" fill="#fff" font-size="15" text-anchor="middle" font-weight="700">جهازك</text>
+    <rect x="265" y="10" width="140" height="56" rx="10" fill="#fbe9f5" stroke="#c93f97"/>
+    <text x="335" y="36" fill="#c93f97" font-size="14" text-anchor="middle" font-weight="700">الوسيط (VPS)</text>
+    <text x="335" y="54" fill="#c93f97" font-size="11" text-anchor="middle">WireGuard</text>
+    <rect x="20" y="70" width="150" height="56" rx="10" fill="#f4f6f9" stroke="#5d6475"/>
+    <text x="95" y="104" fill="#151821" font-size="14" text-anchor="middle" font-weight="700">سيرفر اللعبة</text>
+    <path d="M510 85 L405 45" stroke="#c93f97" stroke-width="3" fill="none"/>
+    <path d="M265 45 L170 85" stroke="#c93f97" stroke-width="3" fill="none"/>
+    <text x="335" y="90" fill="#c93f97" font-size="12" text-anchor="middle">ترافيك اللعبة بس: طريق أقصر</text>
+    <path d="M510 112 C 400 190, 280 190, 170 112" stroke="#c43b3b" stroke-width="3" fill="none" stroke-dasharray="6 5"/>
+    <text x="340" y="185" fill="#c43b3b" font-size="12" text-anchor="middle">طريق شركة النت: لفّة طويلة</text>
+  </svg>
+  <ul>
+    <li>تجهّز الوسيط بأمر واحد على VPS بنظام Ubuntu: <span class="mono">sudo bash setup-relay.sh</span>. يثبّت WireGuard وأداة قياس صغيرة.</li>
+    <li>البرنامج يقيس: بنقك للوسيط + بنق الوسيط لسيرفر اللعبة، ويقارنه بالطريق المباشر.</li>
+    <li>لو الوسيط أسرع بـ 3ms أو أكثر، يختاره تلقائي.</li>
+    <li>يستخدم <b>نفق جزئي (Split Tunnel)</b>: عناوين سيرفرات اللعبة بس تمشي من الوسيط، والباقي (المتصفح، التحميل، ديسكورد) يمشي على نتك العادي.</li>
+  </ul>
+  <div class="note warn"><b>بصراحة:</b> بدون سيرفر وسيط، البرنامج ما يقدر ينزّل البنق، لأن طريق شركة النت هو اللي يحدد. اللي يقدر يسويه هو إنه يوريك الوضع الحقيقي، ويحطك على أحسن سيرفر متاح لك.</div>
+</section>
+
+<!-- ============================== 5 -->
+<section class="cont">
+  <h2><span class="num">5</span>إيش يستخدم (التقنيات)</h2>
+  <table>
+    <tr><th>الجزء</th><th>التقنية</th><th>ليش</th></tr>
+    <tr><td>البرنامج</td><td>C# و Windows Forms على ‎.NET Framework 4.8‎</td><td>موجود في كل ويندوز 10 و11، فما يحتاج تثبيت أي شي</td></tr>
+    <tr><td>البناء</td><td>مترجم C# المدمج في ويندوز (<span class="mono">csc.exe</span>)</td><td>ملف واحد صغير (حوالي 160KB)</td></tr>
+    <tr><td>قياس البنق</td><td>ICMP Ping و TCP Connect</td><td>طريقتين حسب نوع السيرفر</td></tr>
+    <tr><td>تثبيت السيرفرات</td><td>جدار حماية ويندوز (<span class="mono">netsh advfirewall</span>)</td><td>آمن ويتشال بسهولة</td></tr>
+    <tr><td>معرفة السيرفر</td><td><span class="mono">pktmon</span> و <span class="mono">netstat</span> من ويندوز</td><td>مراقبة الترافيك بدون برامج إضافية</td></tr>
+    <tr><td>الوسيط</td><td>WireGuard (نفق جزئي) + سكربت Bash على Ubuntu</td><td>سريع ومشفّر ومجاني</td></tr>
+    <tr><td>بيانات السيرفرات</td><td>Steam API، قوائم AWS، Tencent Cloud</td><td>عناوين رسمية ومحدّثة</td></tr>
+    <tr><td>عدد اللاعبين</td><td>deadlock-api.com و Steam</td><td>بيانات عامة ومجانية</td></tr>
+    <tr><td>النشر</td><td>GitHub + GitHub Actions</td><td>بناء ونشر تلقائي لكل إصدار</td></tr>
+  </table>
+</section>
+
+<!-- ============================== 6 -->
+<section>
+  <h2><span class="num">6</span>الأمان والخصوصية</h2>
+  <p class="lead">البرنامج يحتاج صلاحية المسؤول (Admin) عشان جدار الحماية والوسيط. هذا كل شي يغيّره، وكيف ينشال:</p>
+  <table>
+    <tr><th>الميزة</th><th>إيش يغيّر</th><th>متى ينشال</th></tr>
+    <tr><td>تثبيت السيرفرات</td><td>قواعد في جدار حماية ويندوز</td><td>فك التثبيت، أو قفل البرنامج، أو أول ما يفتح</td></tr>
+    <tr><td>البوست بالوسيط</td><td>خدمة نفق WireGuard اسمها <span class="mono">2xping</span></td><td>وقّف، أو قفل البرنامج</td></tr>
+    <tr><td>على أي سيرفر أنا؟</td><td>مراقبة ترافيك 15 ثانية</td><td>تنحذف على طول بعد الفحص</td></tr>
+    <tr><td>أولوية اللعبة</td><td>يرفعها لعالية</td><td>لما تقفل اللعبة</td></tr>
+  </table>
+  <div class="note ok"><b>زر «رجّع جهازي زي ما كان»</b> في الإعدادات: يشيل كل شي فوق، ويمسح اختياراتك، وبعدين يتأكد بنفسه إن ما بقى أي تغيير على جهازك.</div>
+
+  <h3>إيش يرسل للإنترنت</h3>
+  <table>
+    <tr><th>الجهة</th><th>إيش يرسل</th></tr>
+    <tr><td>Steam</td><td>رقم اللعبة بس (عشان السيرفرات وعدد اللاعبين)</td></tr>
+    <tr><td>deadlock-api.com</td><td>استعلام إحصائي ثابت</td></tr>
+    <tr><td>ip-api.com</td><td>عنوان <b>سيرفر اللعبة</b> (عشان يعرف موقعه)، مو عنوانك</td></tr>
+    <tr><td>GitHub</td><td>ولا شي، بس يشيّك على التحديثات</td></tr>
+  </table>
+  <p>البرنامج <b>ما يجمع أي بيانات شخصية</b>، ولا عنده حسابات، ولا يتتبّع استخدامك.</p>
+</section>
+
+<!-- ============================== 7 -->
+<section class="cont">
+  <h2><span class="num">7</span>التواصل والبيتا</h2>
+  <p>البرنامج في مرحلة بيتا، ورأي اللاعبين هو اللي يحدد إيش نصلّح ونضيف بعدين. من زر <b>«تواصل معنا»</b> داخل البرنامج تقدر:</p>
+  <ul>
+    <li>تبلّغ عن مشكلة (مع زر «انسخ معلومات التشخيص»).</li>
+    <li>تقترح فكرة أو تطلب لعبة جديدة.</li>
+    <li>تكلّم المطوّر في ديسكورد.</li>
+  </ul>
+  <table>
+    <tr><th>الصفحة الرسمية والتحميل</th><td><span class="mono">github.com/lDo2x/2XPing</span></td></tr>
+    <tr><th>ديسكورد المطوّر</th><td><span class="mono">2x.x</span></td></tr>
+    <tr><th>الرخصة</th><td>MIT: مجاني ومفتوح المصدر</td></tr>
+  </table>
+  <p class="foot">‎2X Ping‎ مشروع مستقل وغير تابع لـ Valve أو Tencent أو أي شركة ألعاب. أسماء الألعاب علامات تجارية لأصحابها.<br>‎© 2026 lDo2x‎</p>
+</section>
+
+</body>
+</html>

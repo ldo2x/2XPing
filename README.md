@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-<img src="https://img.shields.io/badge/version-0.9.1--beta-orange" alt="version">
+<img src="https://img.shields.io/badge/version-0.9.2--beta-orange" alt="version">
 <img src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-blue" alt="platform">
 <img src="https://img.shields.io/badge/license-MIT-green" alt="license">
 <a href="README.en.md"><img src="https://img.shields.io/badge/lang-English-lightgrey" alt="English"></a>
@@ -34,7 +34,8 @@
 
 | الميزة | الوصف |
 |---|---|
-| 📶 افحص البنق | بنق كل منطقة، مرتّبة من الأقرب للأبعد |
+| ✦ أحسن سيرفر بضغطة | يقترح لك أقل بنق فيه لاعبين كفاية، وزر «العب عليه» يثبّتك عليه |
+| 📶 افحص البنق | بنق كل منطقة، والسيرفرات متجمّعة تحت مناطقها |
 | 🔒 ثبّت سيرفراتي | في **Deadlock وCS2 وDota 2**: تختار السيرفرات اللي تبغاها، والباقي ينحجب |
 | ✅ على أي سيرفر أنا؟ | وإنت داخل المباراة، يقولك على أي سيرفر إنت، وهل هو من اختيارك |
 | 👥 عدد اللاعبين | كم لاعب في كل منطقة تقريباً، وكم بتستنى عشان تلقى مباراة (Deadlock) |

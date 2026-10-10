@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.9.2-beta (2026-10-10)
+
+- **New Celeste theme:** night purple, unicorn pink, lavender and sparkle gold, with a matching logo
+- **"Your best server" card:** the lowest-ping server that also has enough players, with a one-click **Play on it** that locks you to it
+- **Servers grouped by region** (Deadlock): each region shows its players and wait time, and the busiest one gets a "✦ most players" badge
+- **Even simpler Simple layout:** just server and ping; the live graph only appears while BOOST is on
+
 ## v0.9.1-beta (2026-10-10)
 
 - **Arabic first:** all Arabic text rewritten naturally (not translated), with a light Hijazi touch
