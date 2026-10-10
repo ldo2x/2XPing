@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ar">
+<head>
+<meta charset="utf-8">
+<title>2X Ping - social preview</title>
+<!-- GitHub social preview (1280x640). Render: msedge --headless --window-size=1280,640 --screenshot=social-preview.png -->
+<style>
+  @font-face { font-family: "Readex Pro"; font-weight: 400; src: url("../../assets/fonts/ReadexPro-Regular.ttf"); }
+  @font-face { font-family: "Readex Pro"; font-weight: 600; src: url("../../assets/fonts/ReadexPro-SemiBold.ttf"); }
+  @font-face { font-family: "Readex Pro"; font-weight: 700; src: url("../../assets/fonts/ReadexPro-Bold.ttf"); }
+  :root { --bg: #140f1e; --panel: #1e1730; --pink: #ff6fc8; --lav: #b69eff; --gold: #ffc65c; --text: #f6f0fc; --dim: #a89ac0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1280px; height: 640px; overflow: hidden; background: var(--bg); }
+  body {
+    font-family: "Readex Pro", "Segoe UI", sans-serif; color: var(--text); position: relative;
+    background:
+      radial-gradient(520px 420px at 78% 30%, rgba(255,111,200,.22), transparent 70%),
+      radial-gradient(420px 360px at 12% 92%, rgba(182,158,255,.16), transparent 70%),
+      linear-gradient(160deg, #1b1430 0%, #140f1e 55%, #110c1a 100%);
+  }
+  /* sparkles */
+  .s { position: absolute; color: var(--gold); opacity: .8; font-size: 18px; }
+  .dot { position: absolute; width: 3px; height: 3px; border-radius: 50%; background: #fff; opacity: .35; }
+
+  .left { position: absolute; left: 72px; top: 112px; width: 560px; }
+  .brand { display: flex; align-items: center; gap: 22px; }
+  .brand img { width: 104px; height: 104px; filter: drop-shadow(0 8px 24px rgba(255,111,200,.35)); }
+  .name { font-weight: 700; font-size: 74px; letter-spacing: 2px; color: var(--pink); line-height: 1; }
+  .beta { display: inline-block; margin-top: 10px; background: var(--gold); color: #140f1e; font-weight: 700; font-size: 15px;
+          padding: 3px 12px; border-radius: 6px; letter-spacing: 1px; }
+  .ar { direction: rtl; text-align: left; font-weight: 700; font-size: 50px; margin-top: 44px; line-height: 1.2; }
+  .en { font-size: 25px; color: var(--dim); margin-top: 8px; }
+  .games { display: flex; gap: 12px; margin-top: 40px; }
+  .games img { width: 44px; height: 44px; border-radius: 10px; background: #2a2140; padding: 4px; }
+  .foot { margin-top: 34px; font-size: 19px; color: var(--dim); }
+  .foot b { color: var(--text); font-weight: 600; }
+
+  .shot { position: absolute; right: -150px; top: 92px; width: 760px; border-radius: 18px; overflow: hidden;
+          border: 1px solid rgba(255,255,255,.08);
+          box-shadow: 0 30px 80px rgba(0,0,0,.6), 0 0 0 6px rgba(255,111,200,.08);
+          transform: perspective(1400px) rotateY(-14deg) rotateX(4deg); transform-origin: left center; }
+  .shot img { display: block; width: 100%; }
+  .chip { position: absolute; right: 336px; top: 470px; background: rgba(20,15,30,.92); border: 1px solid rgba(104,236,204,.45);
+          color: #68eccc; font-weight: 600; font-size: 20px; padding: 10px 18px; border-radius: 12px; direction: rtl;
+          box-shadow: 0 12px 30px rgba(0,0,0,.5); }
+</style>
+</head>
+<body>
+  <span class="s" style="left:640px;top:52px;">✦</span>
+  <span class="s" style="left:1190px;top:560px;font-size:24px;">✦</span>
+  <span class="s" style="left:40px;top:590px;font-size:14px;opacity:.6">✦</span>
+  <span class="dot" style="left:700px;top:120px"></span><span class="dot" style="left:560px;top:40px"></span>
+  <span class="dot" style="left:610px;top:600px"></span><span class="dot" style="left:1240px;top:60px"></span>
+  <span class="dot" style="left:30px;top:300px"></span><span class="dot" style="left:1010px;top:610px"></span>
+
+  <div class="shot"><img src="../screenshot-ar.png" alt=""></div>
+  <div class="chip">مثبّت على فرانكفورت · <span dir="ltr">78 ms</span></div>
+
+  <div class="left">
+    <div class="brand">
+      <img src="../../assets/logo.png" alt="">
+      <div><div class="name">2X PING</div><span class="beta">BETA</span></div>
+    </div>
+    <div class="ar" dir="rtl">بنق أقل، لعب أحلى</div>
+    <div class="en">Lower ping, better games.</div>
+    <div class="games">
+      <img src="../../assets/games/deadlock.png" alt=""><img src="../../assets/games/cs2.png" alt="">
+      <img src="../../assets/games/dota2.png" alt=""><img src="../../assets/games/overwatch.png" alt="">
+      <img src="../../assets/games/valorant.png" alt=""><img src="../../assets/games/abi.png" alt="">
+      <img src="../../assets/games/fortnite.png" alt=""><img src="../../assets/games/apex.png" alt="">
+    </div>
+    <div class="foot"><b>Free</b> · Windows 10/11 · Arabic &amp; English · by <b>lDo2x</b></div>
+  </div>
+</body>
+</html>
