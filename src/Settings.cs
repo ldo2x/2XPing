@@ -11,7 +11,6 @@ namespace PingBoost
     {
         public static bool Simple { get { return Storage.GetSetting("mode") != "advanced"; } }
         public static bool AutoTest { get { return Storage.GetSetting("autotest") != "0"; } }
-        public static bool CheckUpdates { get { return Storage.GetSetting("updates") != "0"; } }
 
         // games the player unticked in Settings (by icon key)
         public static HashSet<string> HiddenGames
@@ -42,7 +41,7 @@ namespace PingBoost
                 f.ShowInTaskbar = false;
                 f.BackColor = MainForm.Bg;
                 f.ForeColor = MainForm.TextC;
-                f.Font = new Font("Segoe UI", 10f);
+                f.Font = Fonts.Ui(10f);
                 // RTL text, no mirrored layout: every control spans the full width
                 f.RightToLeft = Lang.Ar ? RightToLeft.Yes : RightToLeft.No;
 
@@ -54,7 +53,7 @@ namespace PingBoost
                 {
                     var l = new Label
                     {
-                        Text = text, Font = new Font("Segoe UI Semibold", 10.5f), ForeColor = MainForm.Accent,
+                        Text = text, Font = Fonts.Semi(10.5f), ForeColor = MainForm.Accent,
                         Bounds = new Rectangle(x, y, W, 26)
                     };
                     f.Controls.Add(l);
@@ -70,7 +69,7 @@ namespace PingBoost
                     {
                         f.Controls.Add(new Label
                         {
-                            Text = sub, ForeColor = MainForm.Dim, Font = new Font("Segoe UI", 8.5f),
+                            Text = sub, ForeColor = MainForm.Dim, Font = Fonts.Ui(8.5f),
                             Bounds = new Rectangle(x, y, W, 20)
                         });
                         y += 24;
@@ -119,8 +118,7 @@ namespace PingBoost
                 y += 8;
 
                 heading(Lang.T("Options", "خيارات"));
-                var auto = check(Lang.T("Test ping automatically when I pick a game", "افحص البنق تلقائي لما أختار لعبة"), Prefs.AutoTest);
-                var upd = check(Lang.T("Check for updates when the app starts", "شيّك على التحديثات لما يفتح البرنامج"), Prefs.CheckUpdates);
+                var auto = check(Lang.T("Test the ping when I pick a game", "افحص البنق لما أختار لعبة"), Prefs.AutoTest);
                 int bottomA = y;
 
                 // ---- second column
@@ -169,7 +167,7 @@ namespace PingBoost
                 {
                     Text = Lang.T("\"Back to normal\" unlocks your servers. Closing the app does it too.",
                                   "«رجّع كل شي طبيعي» يفك تثبيت السيرفرات، ونفس الشي يصير لما تقفل البرنامج."),
-                    ForeColor = MainForm.Dim, Font = new Font("Segoe UI", 8.5f), Bounds = new Rectangle(x, y, W, 20)
+                    ForeColor = MainForm.Dim, Font = Fonts.Ui(8.5f), Bounds = new Rectangle(x, y, W, 20)
                 });
                 y = Math.Max(y + 36, bottomA + 20);
 
@@ -177,7 +175,7 @@ namespace PingBoost
                 {
                     Text = Lang.T("Save", "حفظ"), DialogResult = DialogResult.OK, Bounds = new Rectangle(Lang.Ar ? 730 : 610, y, 110, 36),
                     FlatStyle = FlatStyle.Flat, BackColor = MainForm.Accent, ForeColor = Color.Black,
-                    Font = new Font("Segoe UI Semibold", 10f)
+                    Font = Fonts.Semi(10f)
                 };
                 var cancel = new Button
                 {
@@ -201,7 +199,6 @@ namespace PingBoost
                 Storage.SaveArabic(ar.Checked);
                 Storage.SetSetting("mode", simple.Checked ? "simple" : "advanced");
                 Storage.SetSetting("autotest", auto.Checked ? "1" : "0");
-                Storage.SetSetting("updates", upd.Checked ? "1" : "0");
                 Lang.Ar = ar.Checked;
 
                 // nothing ticked = show every game, so the list is never empty

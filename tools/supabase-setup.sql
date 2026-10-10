@@ -33,6 +33,13 @@ create table if not exists public.events (
   app_version text
 );
 
+-- 0.10: more details for development (safe to run again on an existing project)
+alter table public.installs add column if not exists isp  text;
+alter table public.installs add column if not exists asn  text;
+alter table public.installs add column if not exists info jsonb;  -- hardware/system/setup, sent once per launch
+alter table public.events   add column if not exists data jsonb;  -- structured event details (e.g. every ping result)
+alter table public.events   add column if not exists session text; -- random id per launch
+
 create index if not exists events_at_idx on public.events (at desc);
 create index if not exists events_install_idx on public.events (install_id);
 create index if not exists installs_last_seen_idx on public.installs (last_seen desc);
@@ -51,13 +58,17 @@ security definer
 set search_path = public
 as $$
 declare
-  iid uuid := (p->>'install_id')::uuid;
-  k   text := coalesce(left(p->>'kind', 20), 'heartbeat');
+  iid  uuid  := (p->>'install_id')::uuid;
+  k    text  := coalesce(left(p->>'kind', 20), 'heartbeat');
+  -- size caps, so a broken client can't fill the database
+  inf  jsonb := case when pg_column_size(p->'info') < 8000 then p->'info' end;
+  dat  jsonb := case when pg_column_size(p->'data') < 16000 then p->'data' end;
 begin
-  insert into installs (install_id, nickname, device_name, app_version, os, lang, mode, country, city,
+  insert into installs (install_id, nickname, device_name, app_version, os, lang, mode, country, city, isp, asn, info,
                         current_game, current_server, current_ping, last_seen)
   values (iid, left(p->>'nickname', 40), left(p->>'device_name', 80), left(p->>'app_version', 20),
           left(p->>'os', 60), left(p->>'lang', 5), left(p->>'mode', 10), left(p->>'country', 60), left(p->>'city', 80),
+          left(p->>'isp', 100), left(p->>'asn', 100), inf,
           left(p->>'game', 60), left(p->>'server', 80), nullif(p->>'ping', '')::int, now())
   on conflict (install_id) do update set
     nickname       = excluded.nickname,
@@ -68,15 +79,18 @@ begin
     mode           = excluded.mode,
     country        = coalesce(excluded.country, installs.country),
     city           = coalesce(excluded.city, installs.city),
+    isp            = coalesce(excluded.isp, installs.isp),
+    asn            = coalesce(excluded.asn, installs.asn),
+    info           = coalesce(excluded.info, installs.info),
     current_game   = excluded.current_game,
     current_server = excluded.current_server,
     current_ping   = excluded.current_ping,
     last_seen      = now();
 
   if k <> 'heartbeat' then
-    insert into events (install_id, kind, game, server, ping, detail, app_version)
+    insert into events (install_id, kind, game, server, ping, detail, app_version, data, session)
     values (iid, k, left(p->>'game', 60), left(p->>'server', 80), nullif(p->>'ping', '')::int,
-            left(p->>'detail', 4000), left(p->>'app_version', 20));
+            left(p->>'detail', 4000), left(p->>'app_version', 20), dat, left(p->>'session', 20));
   end if;
 end;
 $$;

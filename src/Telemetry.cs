@@ -24,7 +24,10 @@ namespace PingBoost
         public static int Ping = -1;
 
         static System.Threading.Timer heartbeat;
-        static string country, city;
+        static string country, city, isp, asn;
+        static readonly DateTime sessionStart = DateTime.UtcNow;
+        // one random id per launch, so the events of a session can be grouped
+        static readonly string session = Guid.NewGuid().ToString("N").Substring(0, 12);
 
         public static string InstallId
         {
@@ -44,10 +47,30 @@ namespace PingBoost
 
         public static bool HasConsent { get { return Storage.GetSetting("consent") == "1" && Nickname.Length >= 2; } }
 
-        public static void Start()
+        // startupMs: time from launch until the window was ready
+        public static void Start(List<Game> games, long startupMs)
         {
-            Send("start", null, -1, Environment.OSVersion.ToString());
+            if (!Configured || !HasConsent) return;
+            ThreadPool.QueueUserWorkItem(delegate
+            {
+                var info = SystemInfo.Collect(games);
+                info["startup_ms"] = startupMs;
+                info["updated"] = Updater.JustUpdated;
+                Post("start", null, -1, Environment.OSVersion.ToString(), null, info);
+            });
             if (heartbeat == null) heartbeat = new System.Threading.Timer(delegate { Send("heartbeat", null, -1, null); }, null, 60000, 60000);
+        }
+
+        // Sent while the app closes, so it waits (briefly) instead of firing and forgetting.
+        public static void Exit()
+        {
+            if (!Configured || !HasConsent) return;
+            try
+            {
+                Post("exit", null, -1, null,
+                     new Dictionary<string, object> { { "minutes", Math.Round((DateTime.UtcNow - sessionStart).TotalMinutes, 1) } }, null, 3000);
+            }
+            catch { }
         }
 
         // City and country from the user's internet address, looked up once a day (the address itself is not stored).
@@ -58,17 +81,23 @@ namespace PingBoost
             {
                 country = Storage.GetSetting("geo_country");
                 city = Storage.GetSetting("geo_city");
+                isp = Storage.GetSetting("geo_isp");
+                asn = Storage.GetSetting("geo_as");
                 return;
             }
             try
             {
                 var d = (Dictionary<string, object>)new JavaScriptSerializer().DeserializeObject(
-                    Http.Get("http://ip-api.com/json/?fields=status,country,city", 6000));
+                    Http.Get("http://ip-api.com/json/?fields=status,country,city,isp,as", 6000));
                 if ((string)d["status"] != "success") return;
                 country = (string)d["country"];
                 city = (string)d["city"];
+                isp = d.ContainsKey("isp") ? (string)d["isp"] : null;
+                asn = d.ContainsKey("as") ? (string)d["as"] : null;
                 Storage.SetSetting("geo_country", country);
                 Storage.SetSetting("geo_city", city);
+                Storage.SetSetting("geo_isp", isp);
+                Storage.SetSetting("geo_as", asn);
                 Storage.SetSetting("geo_at", today);
             }
             catch { }
@@ -84,27 +113,38 @@ namespace PingBoost
         // Fire and forget: never blocks the UI, never throws.
         public static void Send(string kind, string server, int ping, string detail)
         {
+            Send(kind, server, ping, detail, null);
+        }
+
+        // data: structured details of the event (stored as JSON), e.g. every result of a ping test.
+        public static void Send(string kind, string server, int ping, string detail, Dictionary<string, object> data)
+        {
             if (!Configured || !HasConsent) return;
             string game = Game, srv = server ?? Server;
             int pg = ping >= 0 ? ping : Ping;
             ThreadPool.QueueUserWorkItem(delegate
             {
-                try
-                {
-                    EnsureLocation();
-                    var p = new Dictionary<string, object>
-                    {
-                        { "install_id", InstallId }, { "kind", kind }, { "nickname", Nickname },
-                        { "device_name", Environment.MachineName }, { "app_version", Brand.DisplayVersion },
-                        { "os", Environment.OSVersion.Version.ToString() }, { "lang", Lang.Ar ? "ar" : "en" },
-                        { "mode", Prefs.Simple ? "simple" : "advanced" }, { "country", country }, { "city", city },
-                        { "game", game }, { "server", srv }, { "ping", pg >= 0 ? (object)pg : null }, { "detail", detail }
-                    };
-                    string body = "{\"p\":" + new JavaScriptSerializer().Serialize(p) + "}";
-                    Http.Send("POST", SupabaseUrl.TrimEnd('/') + "/rest/v1/rpc/checkin", body, Headers(SupabaseKey), 8000);
-                }
-                catch { }
+                try { Post(kind, srv, pg, detail, data, null, 8000, game); } catch { }
             });
+        }
+
+        static void Post(string kind, string server, int ping, string detail, Dictionary<string, object> data, Dictionary<string, object> info,
+                         int timeout = 8000, string game = null)
+        {
+            EnsureLocation();
+            var p = new Dictionary<string, object>
+            {
+                { "install_id", InstallId }, { "kind", kind }, { "nickname", Nickname },
+                { "device_name", Environment.MachineName }, { "app_version", Brand.DisplayVersion },
+                { "os", Environment.OSVersion.Version.ToString() }, { "lang", Lang.Ar ? "ar" : "en" },
+                { "mode", Prefs.Simple ? "simple" : "advanced" }, { "country", country }, { "city", city },
+                { "isp", isp }, { "asn", asn }, { "session", session },
+                { "game", game ?? Game }, { "server", server ?? Server }, { "ping", ping >= 0 ? (object)ping : null }, { "detail", detail }
+            };
+            if (data != null) p["data"] = data;
+            if (info != null) p["info"] = info;
+            string body = "{\"p\":" + new JavaScriptSerializer().Serialize(p) + "}";
+            Http.Send("POST", SupabaseUrl.TrimEnd('/') + "/rest/v1/rpc/checkin", body, Headers(SupabaseKey), timeout);
         }
 
         // ---------------------------------------------------------------- developer side (reading)
@@ -138,19 +178,19 @@ namespace PingBoost
                 f.MinimizeBox = f.MaximizeBox = false;
                 f.BackColor = MainForm.Bg;
                 f.ForeColor = MainForm.TextC;
-                f.Font = new Font("Segoe UI", 10f);
+                f.Font = Fonts.Ui(10f);
                 f.RightToLeft = Lang.Ar ? RightToLeft.Yes : RightToLeft.No;
                 const int W = 480;
 
                 f.Controls.Add(new PictureBox { Image = Brand.Logo, SizeMode = PictureBoxSizeMode.Zoom, Bounds = new Rectangle(228, 14, 64, 64) });
                 f.Controls.Add(new Label
                 {
-                    Text = Lang.T("Welcome to 2X Ping ✦", "يا هلا فيك في 2X Ping ✦"), Font = new Font("Segoe UI Semibold", 15f),
+                    Text = Lang.T("Welcome to 2X Ping", "هلا فيك في 2X Ping"), Font = Fonts.Semi(15f),
                     ForeColor = MainForm.Accent, TextAlign = ContentAlignment.MiddleCenter, Bounds = new Rectangle(20, 82, W, 36)
                 });
                 f.Controls.Add(new Label
                 {
-                    Text = Lang.T("What should we call you?", "إيش اسمك؟ (عشان نناديك)"),
+                    Text = Lang.T("What's your name?", "إيش اسمك؟"),
                     Bounds = new Rectangle(20, 126, W, 24), ForeColor = MainForm.TextC
                 });
                 var name = new TextBox
@@ -168,9 +208,9 @@ namespace PingBoost
                 });
                 f.Controls.Add(new Label
                 {
-                    Text = Lang.T("Only these show up in your list. You can change them any time in Settings.",
-                                  "بس هادي اللي تطلع لك في القائمة، وتقدر تغيّرها أي وقت من الإعدادات."),
-                    Bounds = new Rectangle(20, 220, W, 20), ForeColor = MainForm.Dim, Font = new Font("Segoe UI", 8.5f)
+                    Text = Lang.T("Only these show up in your list. You can change them later in Settings.",
+                                  "اللي تختاره بس يطلع لك، وتقدر تغيّره بعدين من الإعدادات."),
+                    Bounds = new Rectangle(20, 220, W, 20), ForeColor = MainForm.Dim, Font = Fonts.Ui(8.5f)
                 });
                 var picks = new List<KeyValuePair<string, CheckBox>>();
                 var all = GameDb.All();
@@ -194,16 +234,18 @@ namespace PingBoost
 
                 var notice = new Label
                 {
-                    Bounds = new Rectangle(20, y, W, 70), BackColor = MainForm.Panel1, ForeColor = MainForm.Dim,
-                    Padding = new Padding(12), Font = new Font("Segoe UI", 9.5f),
+                    Bounds = new Rectangle(20, y, W, 88), BackColor = MainForm.Panel1, ForeColor = MainForm.Dim,
+                    Padding = new Padding(12), Font = Fonts.Ui(9.5f),
                     Text = Lang.T(
-                        "This is a beta. To improve it, 2X Ping sends usage statistics while it is open.\nAccepting is required to use the beta.",
-                        "هادي نسخة تجريبية، وعشان نطوّرها البرنامج يرسل إحصائيات استخدام وهو مفتوح.\nالموافقة شرط لاستخدام النسخة التجريبية.")
+                        "This is a beta: while it's open, 2X Ping sends usage statistics so we can improve it.\n" +
+                        "New versions are required: you get a few days to update.\nYou need to agree to use the beta.",
+                        "هادي نسخة تجريبية، والبرنامج يرسل إحصائيات استخدام وهو مفتوح عشان نطوّره.\n" +
+                        "ولما تنزل نسخة جديدة لازم تحدّث، وعندك كم يوم.\nلازم توافق عشان تستخدمه.")
                 };
                 f.Controls.Add(notice);
                 var details = new LinkLabel
                 {
-                    Text = Lang.T("Statistics details", "تفاصيل الإحصائيات"), Bounds = new Rectangle(20, y + 74, W, 24),
+                    Text = Lang.T("Statistics details", "تفاصيل الإحصائيات"), Bounds = new Rectangle(20, y + 92, W, 24),
                     LinkColor = MainForm.Lavender, ActiveLinkColor = Color.White, LinkBehavior = LinkBehavior.HoverUnderline
                 };
                 details.LinkClicked += delegate { Brand.Open(Brand.RepoUrl + "/blob/main/SECURITY.md#usage-statistics-beta"); };
@@ -212,13 +254,13 @@ namespace PingBoost
                 var ok = new Button
                 {
                     Text = Lang.T("Agree and start", "موافق وأبدأ"), DialogResult = DialogResult.OK,
-                    Bounds = new Rectangle(Lang.Ar ? 280 : 20, y + 112, 220, 40), FlatStyle = FlatStyle.Flat,
-                    BackColor = MainForm.Accent, ForeColor = Color.Black, Font = new Font("Segoe UI Semibold", 10.5f), Enabled = false
+                    Bounds = new Rectangle(Lang.Ar ? 280 : 20, y + 130, 220, 40), FlatStyle = FlatStyle.Flat,
+                    BackColor = MainForm.Accent, ForeColor = Color.Black, Font = Fonts.Semi(10.5f), Enabled = false
                 };
                 var exit = new Button
                 {
                     Text = Lang.T("Exit", "خروج"), DialogResult = DialogResult.Cancel,
-                    Bounds = new Rectangle(Lang.Ar ? 20 : 280, y + 112, 220, 40), FlatStyle = FlatStyle.Flat,
+                    Bounds = new Rectangle(Lang.Ar ? 20 : 280, y + 130, 220, 40), FlatStyle = FlatStyle.Flat,
                     BackColor = MainForm.Panel2, ForeColor = MainForm.TextC
                 };
                 ok.FlatAppearance.BorderSize = exit.FlatAppearance.BorderSize = 0;
@@ -235,7 +277,7 @@ namespace PingBoost
                 f.Controls.Add(exit);
                 f.AcceptButton = ok;
                 f.CancelButton = exit;
-                f.ClientSize = new Size(W + 40, y + 168);
+                f.ClientSize = new Size(W + 40, y + 186);
 
                 if (f.ShowDialog(owner) != DialogResult.OK) return false;
                 Telemetry.Nickname = name.Text;
@@ -250,7 +292,7 @@ namespace PingBoost
     // Opened by clicking the logo 5 times; asks for the secret key once and keeps it in dev.key.
     class DevDashboard : Form
     {
-        ListView online, stats, log;
+        ListView online, stats, log, versions, devices;
         Label summary;
         CheckBox errorsOnly;
         System.Windows.Forms.Timer refresh;
@@ -279,10 +321,10 @@ namespace PingBoost
             StartPosition = FormStartPosition.CenterScreen;
             BackColor = MainForm.Bg;
             ForeColor = MainForm.TextC;
-            Font = new Font("Segoe UI", 9.5f);
+            Font = Fonts.Ui(9.5f);
 
             var top = new Panel { Dock = DockStyle.Top, Height = 46, Padding = new Padding(10, 8, 10, 8) };
-            summary = new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Font = new Font("Segoe UI Semibold", 11f), ForeColor = MainForm.Accent };
+            summary = new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Font = Fonts.Semi(11f), ForeColor = MainForm.Accent };
             var btn = new Button { Text = "Refresh", Dock = DockStyle.Right, Width = 100, FlatStyle = FlatStyle.Flat, BackColor = MainForm.Panel2 };
             btn.FlatAppearance.BorderSize = 0;
             btn.Click += delegate { Reload(); };
@@ -295,9 +337,13 @@ namespace PingBoost
             top.Controls.Add(btn);
 
             var tabs = new TabControl { Dock = DockStyle.Fill };
-            online = List("Name", 130, "Device", 130, "City", 110, "Country", 110, "Game", 130, "Server", 170, "Ping", 60, "Version", 90, "Last seen", 120);
-            stats = List("What", 200, "Value", 360, "Count", 90);
-            log = List("Time", 140, "Name", 120, "Kind", 80, "Game", 120, "Server", 160, "Ping", 60, "Detail", 460);
+            online = List("Name", 120, "Device", 120, "City", 100, "Country", 100, "Game", 120, "Server", 160, "Ping", 55, "Version", 90,
+                          "Net", 70, "ISP", 150, "Last seen", 90);
+            stats = List("What", 200, "Value", 420, "Count", 90);
+            versions = List("Version", 160, "Users (7 days)", 120, "Share", 90, "", 300);
+            devices = List("Name", 120, "Windows", 200, "CPU", 220, "GPU", 200, "RAM", 55, "Screen", 110, "Net", 80, "ISP", 150,
+                           "Games installed", 300, "Last seen", 110);
+            log = List("Time", 120, "Name", 110, "Kind", 70, "Game", 110, "Server", 150, "Ping", 50, "Detail", 300, "Data", 400);
             errorsOnly = new CheckBox { Text = "Errors only", Dock = DockStyle.Top, Height = 28, ForeColor = MainForm.TextC };
             errorsOnly.CheckedChanged += delegate { FillLog(); };
             var logPage = new TabPage("Log") { BackColor = MainForm.Bg };
@@ -305,6 +351,8 @@ namespace PingBoost
             logPage.Controls.Add(errorsOnly);
             tabs.TabPages.Add(Page("Online now", online));
             tabs.TabPages.Add(Page("Statistics", stats));
+            tabs.TabPages.Add(Page("Versions", versions));
+            tabs.TabPages.Add(Page("Devices", devices));
             tabs.TabPages.Add(logPage);
 
             Controls.Add(tabs);
@@ -340,6 +388,35 @@ namespace PingBoost
             var d = row as Dictionary<string, object>;
             object v;
             return d != null && d.TryGetValue(key, out v) && v != null ? Convert.ToString(v) : "";
+        }
+
+        // A field of the "info" JSON column (hardware/system details sent at launch).
+        static string I(object row, string key) { return Field(row, "info", key); }
+
+        static string Field(object row, string column, string key)
+        {
+            var d = row as Dictionary<string, object>;
+            object info, v;
+            if (d == null || !d.TryGetValue(column, out info)) return "";
+            var id = info as Dictionary<string, object>;
+            if (id == null || !id.TryGetValue(key, out v) || v == null) return "";
+            var arr = v as object[];
+            return arr != null ? string.Join(", ", arr) : Convert.ToString(v, System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        static string Json(object row, string key)
+        {
+            var d = row as Dictionary<string, object>;
+            object v;
+            if (d == null || !d.TryGetValue(key, out v) || v == null) return "";
+            string s = new JavaScriptSerializer().Serialize(v);
+            return s.Length > 600 ? s.Substring(0, 600) + "..." : s;
+        }
+
+        static Version Ver(string s)
+        {
+            var m = System.Text.RegularExpressions.Regex.Match(s ?? "", @"(\d+)\.(\d+)\.(\d+)");
+            return m.Success ? new Version(int.Parse(m.Groups[1].Value), int.Parse(m.Groups[2].Value), int.Parse(m.Groups[3].Value)) : new Version(0, 0);
         }
 
         static DateTime T(object row, string key)
@@ -379,8 +456,32 @@ namespace PingBoost
             online.Items.Clear();
             foreach (var r in on)
                 online.Items.Add(new ListViewItem(new[] { S(r, "nickname"), S(r, "device_name"), S(r, "city"), S(r, "country"),
-                    S(r, "current_game"), S(r, "current_server"), S(r, "current_ping"), S(r, "app_version"), T(r, "last_seen").ToString("HH:mm:ss") }));
+                    S(r, "current_game"), S(r, "current_server"), S(r, "current_ping"), S(r, "app_version"), I(r, "net"), S(r, "isp"),
+                    T(r, "last_seen").ToString("HH:mm:ss") }));
             online.EndUpdate();
+
+            // who has updated: users active in the last 7 days, by version (newest first)
+            var active = installs.Where(r => now - T(r, "last_seen") < TimeSpan.FromDays(7)).ToList();
+            versions.BeginUpdate();
+            versions.Items.Clear();
+            var byVer = active.GroupBy(r => S(r, "app_version")).OrderByDescending(g => Ver(g.Key)).ToList();
+            for (int k = 0; k < byVer.Count; k++)
+            {
+                var g = byVer[k];
+                var item = new ListViewItem(new[] { g.Key, g.Count().ToString(), (100.0 * g.Count() / Math.Max(1, active.Count)).ToString("0") + "%",
+                                                    k == 0 ? "latest" : "needs to update" });
+                item.ForeColor = k == 0 ? MainForm.Good : MainForm.Warn;
+                versions.Items.Add(item);
+            }
+            versions.EndUpdate();
+
+            devices.BeginUpdate();
+            devices.Items.Clear();
+            foreach (var r in installs.Where(r => I(r, "cpu") != "" || I(r, "gpu") != ""))
+                devices.Items.Add(new ListViewItem(new[] { S(r, "nickname"), I(r, "windows"), I(r, "cpu"), I(r, "gpu"), I(r, "ram_gb"),
+                    I(r, "screen") + (I(r, "scale") != "" ? " @" + I(r, "scale") + "%" : ""), I(r, "net"), S(r, "isp"),
+                    I(r, "games_installed"), T(r, "last_seen").ToString("MM-dd HH:mm") }));
+            devices.EndUpdate();
 
             stats.BeginUpdate();
             stats.Items.Clear();
@@ -398,6 +499,21 @@ namespace PingBoost
             top("Language", installs.Select(r => S(r, "lang")));
             top("Layout", installs.Select(r => S(r, "mode")));
             top("Event", events.Select(r => S(r, "kind")));
+            top("ISP", installs.Select(r => S(r, "isp")));
+            top("Connection", installs.Select(r => I(r, "net")));
+            top("GPU", installs.Select(r => I(r, "gpu")));
+            top("CPU", installs.Select(r => I(r, "cpu")));
+            top("RAM (GB)", installs.Select(r => I(r, "ram_gb")));
+            top("Screen", installs.Select(r => I(r, "screen")));
+            top("Windows", installs.Select(r => I(r, "windows")));
+            top("Game installed", installs.SelectMany(r => I(r, "games_installed").Split(new[] { ", " }, StringSplitOptions.RemoveEmptyEntries)));
+            double m;
+            var mins = events.Where(r => S(r, "kind") == "exit")
+                .Select(r => double.TryParse(Field(r, "data", "minutes"), System.Globalization.NumberStyles.Float,
+                                             System.Globalization.CultureInfo.InvariantCulture, out m) ? m : -1)
+                .Where(x => x >= 0).ToList();
+            if (mins.Count > 0)
+                stats.Items.Add(new ListViewItem(new[] { "Average session", mins.Average().ToString("0.0") + " min", mins.Count + " sessions" }));
             stats.EndUpdate();
 
             FillLog();
@@ -413,7 +529,7 @@ namespace PingBoost
                 string n;
                 names.TryGetValue(S(r, "install_id"), out n);
                 var item = new ListViewItem(new[] { T(r, "at").ToString("MM-dd HH:mm:ss"), n ?? "?", S(r, "kind"), S(r, "game"),
-                    S(r, "server"), S(r, "ping"), S(r, "detail").Replace("\r", " ").Replace("\n", " ") });
+                    S(r, "server"), S(r, "ping"), S(r, "detail").Replace("\r", " ").Replace("\n", " "), Json(r, "data") });
                 if (S(r, "kind") == "error") item.ForeColor = MainForm.Bad;
                 log.Items.Add(item);
             }

@@ -67,6 +67,7 @@ namespace PingBoost
         int currentPage;
 
         bool busy, boosting, clickedCheck;
+        readonly HashSet<Game> tested = new HashSet<Game>(); // games tested since the app opened
         volatile bool tunnelActive;
         int monitorGen;
         string lockSummary; // null = no region lock
@@ -90,7 +91,7 @@ namespace PingBoost
             StartPosition = FormStartPosition.CenterScreen;
             BackColor = Bg;
             ForeColor = TextC;
-            Font = new Font("Segoe UI", 10f);
+            Font = Fonts.Ui(10f);
             try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
             ApplyDirection();
             BuildUi();
@@ -101,25 +102,116 @@ namespace PingBoost
             if (!Tunnel.Installed)
                 Log(T("WireGuard is not installed, so relay routing is off until you install it (Tools).",
                       "برنامج WireGuard مو مثبّت، فالوسيط مقفّل لين تثبّته (من «أدوات وسجل»)."));
+            BuildTray();
             Shown += delegate
             {
-                // first launch: name + statistics notice; using the beta requires accepting it
+                // first launch: name + games + statistics notice; using the beta requires accepting it
                 if (!Telemetry.HasConsent)
                 {
                     if (!WelcomeDialog.Show(this)) { Close(); return; }
                     FillGames(); // the games picked on the welcome screen
                 }
-                Telemetry.Start();
-                gameList.SelectedIndex = 0;
-                BetaNotice.ShowOnce(this);
-                if (Prefs.CheckUpdates) CheckForUpdate();
+                long startupMs = 0;
+                try { startupMs = (long)(DateTime.Now - Process.GetCurrentProcess().StartTime).TotalMilliseconds; } catch { }
+                Telemetry.Start(games, startupMs);
+                SelectStartGame();
+                // first launch only: two short lines about the beta
+                if (string.IsNullOrEmpty(Storage.GetSetting("beta_ack")))
+                {
+                    Storage.SetSetting("beta_ack", Brand.Version);
+                    Msg(T("This is a beta, so you may run into small bugs. Found one, or have an idea? Press Feedback at the top.",
+                          "هادي نسخة بيتا، فممكن تطلع لك أخطاء بسيطة. لقيت شي أو عندك فكرة؟ اضغط «تواصل معنا» فوق."));
+                    Msg(T("Player numbers and wait times are estimates, and 2X Ping never touches game files.",
+                          "عدد اللاعبين ووقت الانتظار تقريبية، والبرنامج ما يلمس ملفات اللعبة."));
+                }
+                if (Updater.JustUpdated) ShowUpdatedNote();
+                CheckForUpdate(true);
+                // keep checking while the app stays open (it can run for days next to the clock)
+                var updates = new System.Windows.Forms.Timer { Interval = 3 * 60 * 60 * 1000 };
+                updates.Tick += delegate { CheckForUpdate(false); };
+                updates.Start();
             };
             FormClosing += delegate
             {
                 monitorGen++;
                 if (tunnelActive) Tunnel.Stop();
                 if (lockSummary != null) ServerLock.Remove();
+                tray.Visible = false;
+                Telemetry.Exit();
             };
+        }
+
+        // The game that is running right now, otherwise the one used last time, otherwise the first.
+        void SelectStartGame()
+        {
+            if (gameList.Items.Count == 0) return;
+            var list = gameList.Items.Cast<Game>().ToList();
+            var pick = list.FirstOrDefault(g => g.Processes.Length > 0 && Detector.IsRunning(g.Processes));
+            if (pick != null) Log(T(pick.Name + " is running, so it's selected.", pick.Name + " مفتوحة، فاخترتها لك."));
+            else pick = list.FirstOrDefault(g => g.Icon == Storage.GetSetting("last_game"));
+            gameList.SelectedItem = pick ?? list[0];
+        }
+
+        // ---------------------------------------------------------------- system tray
+
+        NotifyIcon tray;
+
+        void BuildTray()
+        {
+            tray = new NotifyIcon { Icon = Icon, Text = Brand.Name, Visible = false };
+            tray.DoubleClick += delegate { RestoreFromTray(); };
+            tray.BalloonTipClicked += delegate { RestoreFromTray(); };
+            BuildTrayMenu();
+            Resize += delegate
+            {
+                if (WindowState != FormWindowState.Minimized || tray.Visible) return;
+                // minimized: live next to the clock, so the lock keeps working without the window in the way
+                Hide();
+                tray.Visible = true;
+                Telemetry.Send("use", null, -1, "tray");
+                if (Storage.GetSetting("tray_tip") != "1")
+                {
+                    Storage.SetSetting("tray_tip", "1");
+                    tray.ShowBalloonTip(5000, Brand.Name, T("Still running here. Double-click to open it.",
+                                                             "البرنامج شغّال هنا. دبل كليك عشان يفتح."), ToolTipIcon.Info);
+                }
+            };
+            Disposed += delegate { tray.Dispose(); };
+        }
+
+        void BuildTrayMenu()
+        {
+            var menu = new ContextMenuStrip { RightToLeft = Lang.Ar ? RightToLeft.Yes : RightToLeft.No, Font = Fonts.Ui(10f) };
+            menu.Items.Add(T("Open 2X Ping", "افتح البرنامج"), null, delegate { RestoreFromTray(); });
+            menu.Items.Add(T("Close 2X Ping", "اقفل البرنامج"), null, delegate { Close(); });
+            var old = tray.ContextMenuStrip;
+            tray.ContextMenuStrip = menu;
+            if (old != null) old.Dispose();
+        }
+
+        // Someone opened 2X Ping again while it runs: show this window on top (also from the tray).
+        public void BringUp()
+        {
+            if (IsDisposed) return;
+            RestoreFromTray();
+            TopMost = true; // a short TopMost flip gets it past the foreground lock
+            TopMost = false;
+            Activate();
+        }
+
+        void RestoreFromTray()
+        {
+            Show();
+            WindowState = FormWindowState.Normal;
+            tray.Visible = false;
+            Activate();
+        }
+
+        // Tooltip of the tray icon (at most 63 characters).
+        void SetTrayText(string text)
+        {
+            text = Brand.Name + " · " + text;
+            tray.Text = text.Length > 63 ? text.Substring(0, 63) : text;
         }
 
         void ApplyDirection()
@@ -137,11 +229,15 @@ namespace PingBoost
             var header = new Panel { Dock = DockStyle.Top, Height = 64, BackColor = Panel1 };
             header.Controls.Add(liveLabel = new Label
             {
-                Text = StatusOff, Font = new Font("Segoe UI Semibold", 13f), ForeColor = Dim, Width = 420, AutoEllipsis = true,
+                Text = StatusOff, Font = Fonts.Semi(13f), ForeColor = Dim, Width = 420, AutoEllipsis = true,
                 Dock = DockStyle.Right, TextAlign = ContentAlignment.MiddleRight, Padding = new Padding(0, 0, 14, 0)
             });
             header.Controls.Add(HeaderButton(T("Settings", "الإعدادات"), 120, TextC, OpenSettings));
-            header.Controls.Add(HeaderButton(T("Feedback", "تواصل معنا"), 120, Warn, () => ContactDialog.Show(this, logBox.Text)));
+            header.Controls.Add(HeaderButton(T("Feedback", "تواصل معنا"), 120, Warn, () =>
+            {
+                Telemetry.Send("use", null, -1, "feedback");
+                ContactDialog.Show(this, logBox.Text);
+            }));
 
             var logo = new PictureBox
             {
@@ -160,19 +256,19 @@ namespace PingBoost
             header.Controls.Add(logo);
             header.Controls.Add(new Label
             {
-                Text = "2X PING", Font = new Font("Segoe UI Black", 17f), ForeColor = Accent,
+                Text = "2X PING", Font = Fonts.Bold(17f), ForeColor = Accent,
                 AutoSize = true, Location = new Point(64, 4)
             });
             if (Brand.IsBeta)
                 header.Controls.Add(new Label
                 {
-                    Text = "BETA", Font = new Font("Segoe UI Black", 7.5f), ForeColor = Color.Black, BackColor = Warn,
+                    Text = "BETA", Font = Fonts.Bold(7.5f), ForeColor = Color.Black, BackColor = Warn,
                     AutoSize = false, Bounds = new Rectangle(178, 11, 42, 18), TextAlign = ContentAlignment.MiddleCenter
                 });
             header.Controls.Add(new Label
             {
                 Text = T("by " + Brand.Developer + "  ·  lower ping, better games", "بنق أقل، لعب أحلى  ·  من " + Brand.Developer),
-                ForeColor = Dim, AutoSize = true, Location = new Point(67, 38), Font = new Font("Segoe UI", 9f)
+                ForeColor = Dim, AutoSize = true, Location = new Point(67, 38), Font = Fonts.Ui(9f)
             });
 
             statusLabel = new Label
@@ -187,7 +283,7 @@ namespace PingBoost
                 Text = "‎" + Brand.Name + " v" + Brand.DisplayVersion + "  ·  " + Brand.Copyright
             });
 
-            var left = new Panel { Dock = DockStyle.Left, Width = 230, BackColor = Panel1, Padding = new Padding(10, 6, 10, 10) };
+            var left = new Panel { Dock = DockStyle.Left, Width = 252, BackColor = Panel1, Padding = new Padding(10, 6, 10, 10) };
             gameList = new ListBox
             {
                 Dock = DockStyle.Fill, BorderStyle = BorderStyle.None, BackColor = Panel1, ForeColor = TextC,
@@ -200,10 +296,10 @@ namespace PingBoost
             left.Controls.Add(new Label
             {
                 Text = T("GAMES", "الألعاب"), ForeColor = Dim, Dock = DockStyle.Top, Height = 30,
-                Font = new Font("Segoe UI Semibold", 9.5f), TextAlign = ContentAlignment.MiddleLeft
+                Font = Fonts.Semi(9.5f), TextAlign = ContentAlignment.MiddleLeft
             });
 
-            var center = new Panel { Dock = DockStyle.Fill, Padding = new Padding(16, 12, 16, 12) };
+            var center = centerPanel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(16, 12, 16, 12) };
             var content = new Panel { Dock = DockStyle.Fill };
             tabBar = new Panel { Dock = DockStyle.Top, Height = 46, Visible = !simple };
             center.Controls.Add(content);
@@ -224,8 +320,21 @@ namespace PingBoost
             pages = new[] { BuildServersPage(), BuildRelaysPage(), BuildToolsPage() };
             foreach (var p in pages) { p.Dock = DockStyle.Fill; content.Controls.Add(p); }
 
+            // "a new version is out" strip under the header (hidden until there is one)
+            updateBar = new Panel { Dock = DockStyle.Top, Height = 44, BackColor = Color.FromArgb(58, 44, 30), Padding = new Padding(14, 7, 14, 7), Visible = false };
+            updateBtn = MakeButton(T("Update now", "حدّث دحين"), Warn);
+            updateBtn.ForeColor = Color.Black;
+            updateBtn.Font = Fonts.Semi(10f);
+            updateBtn.Dock = DockStyle.Right;
+            updateBtn.Width = 130;
+            updateBtn.Click += delegate { if (pendingUpdate != null && UpdateDialog.Show(this, pendingUpdate, false)) CloseForUpdate(); };
+            updateLabel = new Label { Dock = DockStyle.Fill, ForeColor = Warn, TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true };
+            updateBar.Controls.Add(updateLabel);
+            updateBar.Controls.Add(updateBtn);
+
             Controls.Add(center);
             Controls.Add(left);
+            Controls.Add(updateBar);
             Controls.Add(header);
             Controls.Add(statusLabel);
             if (Lang.Ar) foreach (Control c in Controls) MirrorChildren(c);
@@ -268,7 +377,7 @@ namespace PingBoost
             heroCard = new Panel { Dock = DockStyle.Top, Height = 92, BackColor = Panel2, Padding = new Padding(18, 12, 14, 12) };
             heroBtn = MakeButton(T("Play on it", "العب عليه"), Accent);
             heroBtn.ForeColor = Color.Black;
-            heroBtn.Font = new Font("Segoe UI Semibold", 11f);
+            heroBtn.Font = Fonts.Semi(11f);
             heroBtn.Dock = DockStyle.Fill;
             heroBtn.Visible = false;
             var btnWrap = new Panel { Dock = DockStyle.Right, Width = 170, Padding = new Padding(0, 12, 0, 12) };
@@ -277,7 +386,7 @@ namespace PingBoost
             heroSub = new Label { Dock = DockStyle.Fill, ForeColor = Dim, TextAlign = ContentAlignment.TopLeft, AutoEllipsis = true };
             heroTitle = new Label
             {
-                Dock = DockStyle.Top, Height = 38, ForeColor = TextC, Font = new Font("Segoe UI Semibold", 15f),
+                Dock = DockStyle.Top, Height = 38, ForeColor = TextC, Font = Fonts.Semi(15f),
                 TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true
             };
             heroCard.Controls.Add(heroSub);
@@ -307,7 +416,7 @@ namespace PingBoost
             pickBar = new Panel { Dock = DockStyle.Top, Height = 48, BackColor = Panel1, Padding = new Padding(8) };
             btnLock = MakeButton(T("Lock my servers", "ثبّت سيرفراتي"), Accent);
             btnLock.ForeColor = Color.Black;
-            btnLock.Font = new Font("Segoe UI Semibold", 10f);
+            btnLock.Font = Fonts.Semi(10f);
             btnLock.Dock = DockStyle.Right;
             btnLock.Width = 150;
             btnLock.Click += delegate { LockServers(); };
@@ -353,7 +462,7 @@ namespace PingBoost
             var controls = new Panel { Dock = DockStyle.Bottom, Height = 56 };
             btnTest = MakeButton(T("Test ping", "افحص البنق"), Panel2);
             btnTest.Bounds = new Rectangle(0, 12, 140, 40);
-            btnTest.Click += delegate { RunTest(); };
+            btnTest.Click += delegate { Telemetry.Send("use", null, -1, "test button"); RunTest(); };
             routeLabel = new Label { Text = T("Route:", "الطريق:"), ForeColor = Dim, AutoSize = true, Location = new Point(154, 22), Visible = !simple };
             routeBox = new ComboBox
             {
@@ -372,7 +481,7 @@ namespace PingBoost
             int bx = simple ? 154 : 438;
             btnBoost = MakeButton(T("BOOST", "شغّل البوست"), Accent);
             btnBoost.ForeColor = Color.Black;
-            btnBoost.Font = new Font("Segoe UI Semibold", 11f);
+            btnBoost.Font = Fonts.Semi(11f);
             btnBoost.Bounds = new Rectangle(bx, 12, 160, 40);
             btnBoost.Click += delegate { Boost(); };
             btnStop = MakeButton(T("Stop", "وقّف"), Panel2);
@@ -429,15 +538,13 @@ namespace PingBoost
             bar.Controls.Add(ToolButton(T("Raise game priority", "ارفع أولوية اللعبة"), delegate { RaisePriority(CurrentGame); }));
             bar.Controls.Add(ToolButton(T("Get WireGuard", "نزّل WireGuard"), delegate { Brand.Open("https://www.wireguard.com/install/"); }));
             bar.Controls.Add(ToolButton(T("Data folder", "مجلد البيانات"), delegate { Brand.Open(Storage.Dir); }));
-            var reset = ToolButton(T("Put everything back", "رجّع كل شي زي ما كان"), ResetEverything);
-            reset.ForeColor = Bad;
-            bar.Controls.Add(reset);
+            bar.Controls.Add(ToolButton(T("Back to normal", "رجّع كل شي طبيعي"), ResetEverything));
 
             string oldLog = logBox != null ? logBox.Text : "";
             logBox = new TextBox
             {
                 Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical,
-                BackColor = Panel1, ForeColor = TextC, BorderStyle = BorderStyle.None, Font = new Font("Segoe UI", 9.5f),
+                BackColor = Panel1, ForeColor = TextC, BorderStyle = BorderStyle.None, Font = Fonts.Ui(9.5f),
                 Text = oldLog
             };
             p.Controls.Add(logBox);
@@ -476,6 +583,9 @@ namespace PingBoost
                 Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true, MultiSelect = false,
                 HideSelection = false, BorderStyle = BorderStyle.None, BackColor = Panel1, ForeColor = TextC,
                 OwnerDraw = true, HeaderStyle = ColumnHeaderStyle.Nonclickable,
+                // with an embedded (private) font WinForms stops owner-drawing the header, so the control keeps a
+                // system font; all text is still drawn with the form's font (Readex Pro) in the Draw* handlers below
+                Font = new Font("Segoe UI", 10f),
                 // Kept left-to-right internally; for Arabic the column order is reversed and text is right-aligned.
                 RightToLeft = RightToLeft.No, RightToLeftLayout = false,
                 SmallImageList = new ImageList { ImageSize = new Size(1, 30) }
@@ -626,9 +736,13 @@ namespace PingBoost
 
         void OpenSettings()
         {
+            Telemetry.Send("use", null, -1, "settings");
             bool resetAsked;
             if (SettingsDialog.Show(this, out resetAsked))
             {
+                Telemetry.Send("settings", null, -1, (Prefs.Simple ? "simple" : "advanced") + ", " + (Lang.Ar ? "ar" : "en"),
+                    new Dictionary<string, object> { { "mode", Prefs.Simple ? "simple" : "advanced" }, { "lang", Lang.Ar ? "ar" : "en" },
+                                                     { "hidden_games", string.Join(",", Prefs.HiddenGames) }, { "autotest", Prefs.AutoTest } });
                 if (busy) pendingRebuild = true;
                 else RebuildUi();
             }
@@ -647,6 +761,8 @@ namespace PingBoost
             BuildUi();
             foreach (var c in old) c.Dispose();
             ResumeLayout(true);
+            ShowUpdateBar();
+            BuildTrayMenu();
             RefreshRelays();
             btnBoost.Enabled = !boosting;
             btnStop.Enabled = boosting;
@@ -670,16 +786,25 @@ namespace PingBoost
 
         void SetStatus(string msg) { Ui(() => statusLabel.Text = msg); }
 
-        void Msg(string text)
-        {
-            MessageBox.Show(this, text, Brand.Caption, MessageBoxButtons.OK, MessageBoxIcon.Information, MessageBoxDefaultButton.Button1,
-                Lang.Ar ? MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign : 0);
-        }
+        ChatToasts chat;
+        Panel centerPanel;
 
-        bool Ask(string text)
+        // Notices appear as chat lines at the bottom of the window and fade out (no popups, no OK button).
+        // While the window is next to the clock, the important ones become a tray balloon instead.
+        void Msg(string text, ToastKind kind = ToastKind.Info)
         {
-            return MessageBox.Show(this, text, Brand.Caption, MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button1,
-                Lang.Ar ? MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign : 0) == DialogResult.Yes;
+            Ui(() =>
+            {
+                if (!Visible || WindowState == FormWindowState.Minimized)
+                {
+                    if (kind != ToastKind.Info && tray.Visible)
+                        tray.ShowBalloonTip(5000, Brand.Name, text,
+                            kind == ToastKind.Bad ? ToolTipIcon.Error : kind == ToastKind.Warn ? ToolTipIcon.Warning : ToolTipIcon.Info);
+                    return;
+                }
+                if (chat == null) chat = new ChatToasts(this, () => centerPanel.RectangleToScreen(centerPanel.ClientRectangle));
+                chat.Show(text, kind);
+            });
         }
 
         // LRM marks keep "74 ms" in order inside right-to-left text.
@@ -732,30 +857,44 @@ namespace PingBoost
             gameNote.Text = g.Note;
             Telemetry.Game = g.Name;
             Telemetry.Server = null;
+            Storage.SetSetting("last_game", g.Icon);
             pickBar.Visible = g.CanLock;
             UpdateLockBar();
             serverList.Items.Clear();
-            SetStatus(T("Getting the servers of ", "لحظة، أجيب سيرفرات ") + g.Name + "...");
+            SetStatus(T("Getting the servers of ", "أجيب سيرفرات ") + g.Name + "...");
             Task.Run(() =>
             {
                 string err = null;
-                try { GameDb.Load(g); } catch (Exception ex) { err = ex.Message; }
+                // one quiet retry: a slow answer from Steam now and then shouldn't show up as an error
+                for (int attempt = 0; attempt < 2; attempt++)
+                {
+                    try { GameDb.Load(g); err = null; break; }
+                    catch (Exception ex) { err = ex.Message; Thread.Sleep(1500); }
+                }
                 Ui(() =>
                 {
                     if (CurrentGame != g) return;
                     if (err != null)
                     {
-                        SetStatus(T("Couldn't get the servers: ", "ما قدرت أجيب السيرفرات: ") + err);
+                        SetStatus(T("Couldn't get the servers. Check your internet, then pick the game again.",
+                                    "ما قدرت أجيب السيرفرات. شيّك على النت، وبعدين اختار اللعبة مرة ثانية."));
                         Log(g.Name + ": " + err);
                         Telemetry.Send("error", null, -1, "load servers " + g.Name + ": " + err);
                         return;
+                    }
+                    // last time's results show up straight away; the new test then refreshes them
+                    if (g.Regions.All(r => r.Direct == null))
+                    {
+                        Storage.LoadLast(g);
+                        if (g.Regions.Any(r => r.Direct != null))
+                            g.Regions = g.Regions.OrderBy(r => LockedOut(g, r) ? 1 : 0).ThenBy(BestLatency).ToList();
                     }
                     FillServers(g);
                     UpdateLockBar();
                     LoadStats(g);
                     if (g.Regions.Count == 0)
                         SetStatus(T("No servers for this game right now. Try again in a bit.", "ما لقيت سيرفرات لهادي اللعبة دحين، جرّب بعد شوي."));
-                    else if (Prefs.AutoTest && g.Regions.All(r => r.Direct == null))
+                    else if (Prefs.AutoTest && !tested.Contains(g))
                         RunTest();
                     else
                         SetStatus(g.Regions.Count + T(" regions ready. Press Test ping.", " منطقة جاهزة، اضغط «افحص البنق»."));
@@ -825,7 +964,7 @@ namespace PingBoost
         {
             var row = e.Item.Bounds;
             using (var b = new SolidBrush(Color.FromArgb(40, 30, 60))) e.Graphics.FillRectangle(b, row);
-            var font = new Font("Segoe UI Semibold", 10.5f);
+            var font = Fonts.Semi(10.5f);
             var text = Rectangle.Inflate(row, -14, 0);
             TextRenderer.DrawText(e.Graphics, HeaderText(h), font, text, h.Key == "" ? Dim : Lavender,
                 TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | Align);
@@ -857,7 +996,7 @@ namespace PingBoost
             var best = BestServer(g);
             if (best == null)
             {
-                heroTitle.Text = busy ? T("Looking for your best server...", "لحظة، ألقى لك أحسن سيرفر...")
+                heroTitle.Text = busy ? T("Looking for your best server...", "أدوّر لك أحسن سيرفر...")
                                       : T("Press Test ping and we'll find your best server", "اضغط «افحص البنق» ونلقى لك أحسن سيرفر");
                 heroSub.Text = "";
                 heroBtn.Visible = false;
@@ -886,6 +1025,7 @@ namespace PingBoost
         {
             var g = CurrentGame;
             if (g == null || !g.CanLock) return;
+            Telemetry.Send("use", region.NameEn, -1, "play on it");
             foreach (var r in g.Regions) r.Picked = r == region;
             Storage.SavePicks(g.AppId, new[] { region.Id });
             FillServers(g);
@@ -960,6 +1100,7 @@ namespace PingBoost
             var rels = relays.ToList();
             SetStatus(rels.Count > 0 ? T("Testing relays...", "أفحص سيرفرات الوسيط...") : T("Testing...", "أفحص..."));
             UpdateHero();
+            var watch = Stopwatch.StartNew();
 
             Task.Run(() =>
             {
@@ -995,22 +1136,31 @@ namespace PingBoost
                     Ui(() => { UpdateRegion(r); SetStatus(T("Testing... ", "أفحص... ") + n + "/" + regions.Count); });
                 });
 
+                long ms = watch.ElapsedMilliseconds;
                 Ui(() =>
                 {
                     busy = false;
                     btnTest.Enabled = true;
+                    tested.Add(g);
+                    Storage.SaveLast(g);
                     if (pendingRebuild) { pendingRebuild = false; RebuildUi(); return; }
                     // the user switched games while this test ran: test the game they are looking at now
                     var cur = CurrentGame;
-                    if (cur != g && cur != null && Prefs.AutoTest && cur.Regions.Count > 0 && cur.Regions.All(r => r.Direct == null))
+                    if (cur != g && cur != null && Prefs.AutoTest && cur.Regions.Count > 0 && !tested.Contains(cur))
                     {
                         RunTest();
                         return;
                     }
                     var top = regions.Where(r => BestLatency(r) < double.MaxValue).OrderBy(BestLatency).FirstOrDefault();
+                    // every result, so ping can be compared by city, ISP and connection type
+                    var results = new Dictionary<string, object>();
+                    foreach (var r in regions.Where(r => r.Direct != null))
+                        results[r.Id] = new object[] { r.Direct.Ok ? (object)Math.Round(r.Direct.Avg) : null, Math.Round(r.Direct.Loss), Math.Round(r.Direct.Jitter, 1) };
+                    var data = new Dictionary<string, object> { { "ms", ms }, { "regions", results }, { "best", top != null ? top.Id : null } };
                     if (top == null)
                     {
-                        SetStatus(T("No server replied. Check your internet or firewall.", "ولا سيرفر رد. شيّك على النت أو الجدار الناري."));
+                        SetStatus(T("No server replied. Check your internet or firewall.", "ولا سيرفر رد، شيّك على النت أو جدار الحماية."));
+                        Telemetry.Send("test", null, -1, "no reply, " + regions.Count + " regions", data);
                         return;
                     }
                     if (CurrentGame == g)
@@ -1019,27 +1169,90 @@ namespace PingBoost
                         g.Regions = g.Regions.OrderBy(r => LockedOut(g, r) ? 1 : 0).ThenBy(BestLatency).ToList();
                         FillServers(g);
                     }
-                    SetStatus(T("Done! Your best region: ", "خلصنا! أحسن منطقة لك: ") + ShortName(top) + "  " + Ms(BestLatency(top)));
-                    Telemetry.Send("test", top.NameEn, (int)Math.Round(BestLatency(top)), regions.Count + " regions");
+                    SetStatus(T("Done. Your best region: ", "خلص الفحص. أحسن منطقة لك: ") + ShortName(top) + "  " + Ms(BestLatency(top)));
+                    Telemetry.Send("test", top.NameEn, (int)Math.Round(BestLatency(top)), regions.Count + " regions, " + ms + " ms", data);
                     Log(g.Name + ": " + T("best region ", "أحسن منطقة ") + top.Name + " " + Ms(BestLatency(top)));
                 });
             });
         }
 
-        void CheckForUpdate()
+        // ---------------------------------------------------------------- updates (required)
+
+        Panel updateBar;
+        Label updateLabel;
+        Button updateBtn;
+        Release pendingUpdate;
+        bool updatePrompted, closingForUpdate;
+
+        void CheckForUpdate(bool atStart)
         {
             Task.Run(() =>
             {
-                string tag = Updater.NewerVersion();
-                if (tag == null) return;
+                var r = Updater.Latest();
                 Ui(() =>
                 {
-                    Log(T("New version available: ", "في إصدار جديد: ") + tag);
-                    if (Ask(T("A new version of 2X Ping is out (" + tag + "). Open the download page?",
-                              "نزل إصدار جديد من البرنامج (" + tag + ")! تبغى أفتح لك صفحة التحميل؟")))
-                        Brand.Open(Brand.ReleasesUrl);
+                    pendingUpdate = r;
+                    ShowUpdateBar();
+                    if (r == null || closingForUpdate) return;
+                    Log(T("New version available: ", "في نسخة جديدة: ") + r.Ver.ToString(3));
+                    if (Updater.Forced(r))
+                    {
+                        // don't pull the rug in the middle of a match: force it on the next launch instead
+                        if (!atStart && games.Any(g => g.Processes.Length > 0 && Detector.IsRunning(g.Processes))) return;
+                        ForceUpdate(r);
+                    }
+                    else if (!updatePrompted)
+                    {
+                        // a chat line, not a popup: the bar at the top has the button
+                        updatePrompted = true;
+                        Msg(T("A new version is out (" + r.Ver.ToString(3) + "). Press Update now at the top, it takes a few seconds.",
+                              "في نسخة جديدة (‎" + r.Ver.ToString(3) + "‎). اضغط «حدّث دحين» فوق، ياخذ كم ثانية."), ToastKind.Warn);
+                    }
                 });
             });
+        }
+
+        void ShowUpdateBar()
+        {
+            if (updateBar == null) return;
+            var r = pendingUpdate;
+            updateBar.Visible = r != null;
+            updateBtn.Visible = r != null;
+            if (r == null) return;
+            string v = "‎" + r.Ver.ToString(3) + "‎";
+            updateLabel.ForeColor = Warn;
+            updateLabel.Text = r.Optional
+                ? T("A new version is out (" + v + ").", "في نسخة جديدة (" + v + ").")
+                : Updater.Forced(r)
+                    ? T("This version is too old. Update to keep using 2X Ping.", "هالنسخة قديمة، حدّث عشان تكمل تستخدم البرنامج.")
+                    : T("A new version is out (" + v + "). Update within " + Updater.LeftText(r) + " to keep using 2X Ping.",
+                        "في نسخة جديدة (" + v + "). حدّث خلال " + Updater.LeftText(r) + " عشان يكمل البرنامج يشتغل.");
+        }
+
+        // Right after a self-update: a short green note in the update strip.
+        void ShowUpdatedNote()
+        {
+            updateBar.Visible = true;
+            updateBtn.Visible = false;
+            updateLabel.ForeColor = Good;
+            updateLabel.Text = T("Updated to " + Brand.Version + " ✓", "تحدّث البرنامج لـ ‎" + Brand.Version + "‎ ✓");
+            var t = new System.Windows.Forms.Timer { Interval = 10000 };
+            t.Tick += delegate { t.Stop(); t.Dispose(); if (pendingUpdate == null) updateBar.Visible = false; };
+            t.Start();
+        }
+
+        // The grace period is over: update or close (closing removes the lock and the relay route, as always).
+        void ForceUpdate(Release r)
+        {
+            if (!Visible) RestoreFromTray();
+            if (UpdateDialog.Show(this, r, true)) CloseForUpdate();
+            else Close();
+        }
+
+        void CloseForUpdate()
+        {
+            closingForUpdate = true;
+            Close();
         }
 
         // ---------------------------------------------------------------- players & "which server am I on?"
@@ -1107,12 +1320,11 @@ namespace PingBoost
             if (g.Processes.Length > 0 && !Detector.IsRunning(g.Processes))
             {
                 Msg(T(g.Name + " isn't running. Open it, join a match, then press this again.",
-                      "اللعبة مو مفتوحة. افتح " + g.Name + " وادخل مباراة، وبعدين اضغط الزر مرة ثانية."));
+                      g.Name + " مو مفتوحة. افتحها وادخل مباراة، وبعدين اضغط الزر مرة ثانية."), ToastKind.Warn);
                 return;
             }
-            if (!Ask(T("Join a real match first (not the menu or practice).\n\n2X Ping will watch the game's traffic for 15 seconds and tell you which server you are on. Start?",
-                       "ادخل مباراة حقيقية أول (مو القائمة ولا التدريب).\n\nبراقب ترافيك اللعبة 15 ثانية وأقولك على أي سيرفر إنت. نبدأ؟")))
-                return;
+            Msg(T("Watching the game's traffic for 15 seconds. Stay in a real match (not the menu or practice).",
+                  "أراقب ترافيك اللعبة 15 ثانية. خلّك داخل مباراة حقيقية (مو القائمة ولا التدريب)."));
             busy = true;
             btnDetect.Enabled = false;
             SetStatus(T("Watching the game's traffic... (15 s)", "أراقب ترافيك اللعبة... (15 ثانية)"));
@@ -1129,7 +1341,7 @@ namespace PingBoost
                 {
                     Log(T("Server check failed: ", "ما زبط الفحص: ") + ex.Message);
                     Telemetry.Send("error", null, -1, "detect: " + ex);
-                    Ui(() => { busy = false; btnDetect.Enabled = true; Msg(T("Server check failed: ", "ما زبط الفحص: ") + ex.Message); });
+                    Ui(() => { busy = false; btnDetect.Enabled = true; Msg(T("Server check failed: ", "ما زبط الفحص: ") + ex.Message, ToastKind.Bad); });
                 }
             });
         }
@@ -1137,8 +1349,8 @@ namespace PingBoost
         void NothingFound()
         {
             SetStatus(T("No game traffic found.", "ما لقيت ترافيك لعبة."));
-            Msg(T("I didn't see any game server traffic.\n\nMake sure you are inside a real match (not the menu or practice) and try again.",
-                  "ما شفت أي ترافيك من سيرفر لعبة.\n\nتأكد إنك داخل مباراة حقيقية (مو القائمة ولا التدريب) وجرّب مرة ثانية."));
+            Msg(T("I didn't see any game server traffic. Make sure you're inside a real match (not the menu or practice) and try again.",
+                  "ما شفت ترافيك من سيرفر لعبة. تأكد إنك داخل مباراة حقيقية (مو القائمة ولا التدريب) وجرّب مرة ثانية."), ToastKind.Warn);
         }
 
         // Valve: the address is one of Valve's relays/servers, so we can name the region and check it against the lock.
@@ -1168,13 +1380,14 @@ namespace PingBoost
             Telemetry.Send("detect", Telemetry.Server, -1,
                 lockSummary == null ? "no lock" : found.All(r => r.Picked) ? "lock OK" : "NOT on picked servers");
 
-            string verdict = "";
+            bool onPicked = lockSummary == null || found.All(r => r.Picked);
+            Msg(T("You're playing on: ", "إنت تلعب دحين على: ") + names, onPicked ? ToastKind.Good : ToastKind.Warn);
             if (lockSummary != null)
-                verdict = found.All(r => r.Picked)
-                    ? T("\n\n✓ That's one of your picked servers. The lock is working.", "\n\n✓ هادا من السيرفرات اللي اخترتها، يعني التثبيت شغّال صح.")
-                    : T("\n\n⚠ That's NOT one of your picked servers. Restart the game and queue again.",
-                        "\n\n⚠ هادا مو من السيرفرات اللي اخترتها! طلّع من اللعبة ورجّع ادخل، وبعدين دوّر مباراة.");
-            Msg(T("You are playing on:\n", "إنت تلعب دحين على:\n") + names + verdict);
+                Msg(onPicked
+                    ? T("✓ That's one of your picked servers, so the lock is working.", "هادا من السيرفرات اللي اخترتها، يعني التثبيت شغّال صح ✓")
+                    : T("That's not one of your picked servers. Restart the game and queue again.",
+                        "هادا مو من السيرفرات اللي اخترتها. اقفل اللعبة وافتحها من جديد، وبعدين دوّر مباراة."),
+                    onPicked ? ToastKind.Good : ToastKind.Warn);
         }
 
         // Other games: save the found server so it can be pinged and boosted later.
@@ -1206,10 +1419,10 @@ namespace PingBoost
                 SetStatus(T("You are on: ", "إنت دحين على: ") + top.Name);
                 Telemetry.Server = top.NameEn;
                 Telemetry.Send("detect", top.NameEn, top.Direct.Ok ? (int)Math.Round(top.Direct.Avg) : -1, null);
-                Msg(T("You are playing on:\n", "إنت تلعب دحين على:\n") + top.Name + "\n" +
-                    (top.Direct.Ok ? T("Ping: ", "البنق: ") + Ms(top.Direct.Avg)
-                                   : T("This server doesn't answer ping (normal for some games).", "السيرفر ما يرد على البنق (عادي في بعض الألعاب).")) +
-                    T("\n\nIt's saved at the top of the list.", "\n\nحفظته فوق في القائمة."));
+                Msg(T("You're playing on: ", "إنت تلعب دحين على: ") + top.Name, ToastKind.Good);
+                Msg((top.Direct.Ok ? T("Ping: ", "البنق: ") + Ms(top.Direct.Avg) + T(". ", "، ")
+                                   : T("It doesn't answer ping (normal for some games). ", "ما يرد على البنق (عادي في بعض الألعاب)، ")) +
+                    T("It's saved at the top of the list.", "وحفظته فوق في القائمة."));
             });
         }
 
@@ -1253,14 +1466,14 @@ namespace PingBoost
             if (picked.Count == 0)
             {
                 Msg(T("Pick at least one server first (click the box next to its name).",
-                      "اختار سيرفر واحد على الأقل (اضغط المربع اللي جنب اسمه)."));
+                      "اختار سيرفر واحد على الأقل (اضغط المربع اللي جنب اسمه)."), ToastKind.Warn);
                 return;
             }
             var keep = new HashSet<string>(picked.SelectMany(r => r.Cidrs));
             var block = g.Regions.Where(r => !r.Picked && !r.Detected).SelectMany(r => r.Cidrs).Where(c => !keep.Contains(c)).ToList();
             string names = string.Join("، ", picked.Select(ShortName));
             btnLock.Enabled = false;
-            SetStatus(T("Locking your servers...", "لحظة، أثبّت سيرفراتك..."));
+            SetStatus(T("Locking your servers...", "أثبّت سيرفراتك..."));
             Task.Run(() =>
             {
                 try
@@ -1277,14 +1490,11 @@ namespace PingBoost
                         Log(T("Lock ON (", "التثبيت شغّال (") + g.Name + "): " + names + "  (" + n + ")");
                         SetStatus(T("Locked: ", "مثبّت على: ") + names);
                         StartLockMonitor();
-                        Msg(T("Done! You will only be matched on: " + names +
-                              "\n\nIf the game is open, quit and reopen it (or wait a minute) before you queue." +
-                              "\nTo double-check, join a match and press Which server am I on?" +
-                              "\n\nThe lock is removed when you press Unlock or close 2X Ping.",
-                              "تمام! دحين ما راح تلعب إلا على: " + names +
-                              "\n\nلو اللعبة مفتوحة، طلّع منها ورجّع افتحها (أو استنى دقيقة) قبل ما تدوّر مباراة." +
-                              "\nوعشان تتأكد بنفسك: ادخل مباراة واضغط «على أي سيرفر أنا؟»." +
-                              "\n\nالتثبيت ينشال لحاله لما تضغط «فك التثبيت» أو تقفل البرنامج."));
+                        Msg(T("Locked. You'll only be matched on: ", "تم التثبيت. ما بتلعب إلا على: ") + names, ToastKind.Good);
+                        Msg(T("If the game is open, restart it (or wait a minute) before you queue.",
+                              "لو اللعبة مفتوحة، اقفلها وافتحها من جديد (أو استنى دقيقة) قبل ما تدوّر مباراة."));
+                        Msg(T("Minimize 2X Ping and it waits next to the clock; the lock stays on until you unlock or close it.",
+                              "لو صغّرت البرنامج يروح جنب الساعة، والتثبيت يبقى شغّال لين تفكّه أو تقفل البرنامج."));
                     });
                 }
                 catch (Exception ex)
@@ -1294,7 +1504,7 @@ namespace PingBoost
                         btnLock.Enabled = true;
                         Log(T("Lock failed: ", "ما زبط التثبيت: ") + ex.Message);
                         Telemetry.Send("error", null, -1, "lock: " + ex);
-                        Msg(T("Lock failed: ", "ما زبط التثبيت: ") + ex.Message);
+                        Msg(T("Lock failed: ", "ما زبط التثبيت: ") + ex.Message, ToastKind.Bad);
                     });
                 }
             });
@@ -1323,12 +1533,9 @@ namespace PingBoost
         {
             if (busy)
             {
-                Msg(T("Wait for the current test to finish first.", "استنى الفحص الحالي يخلص أول."));
+                Msg(T("Wait for the current test to finish first.", "استنى الفحص الحالي يخلص أول."), ToastKind.Warn);
                 return;
             }
-            if (!Ask(T("This unlocks your servers and puts everything back to normal.\n(Closing 2X Ping does this too.)\n\nContinue?",
-                       "بنفك تثبيت السيرفرات ونرجّع كل شي طبيعي.\n(نفس اللي يصير لما تقفل البرنامج)\n\nنكمّل؟")))
-                return;
 
             lockSummary = null;
             StopAll();
@@ -1337,7 +1544,7 @@ namespace PingBoost
             Telemetry.Server = null;
             Telemetry.Send("reset", null, -1, null);
             busy = true;
-            SetStatus(T("Putting everything back...", "لحظة، أرجّع كل شي زي ما كان..."));
+            SetStatus(T("Putting everything back...", "أرجّع كل شي زي ما كان..."));
             Task.Run(() =>
             {
                 ServerLock.Remove();
@@ -1357,14 +1564,14 @@ namespace PingBoost
                     {
                         Log(T("Some firewall rules could not be removed.", "في قواعد بجدار الحماية ما قدرت أشيلها."));
                         Msg(T("Almost done, but some firewall rules are still there. Close 2X Ping and open it again, it cleans them on start.",
-                              "تقريباً خلصنا، بس في قواعد بجدار الحماية لسا موجودة. قفّل البرنامج وافتحه مرة ثانية، وهو ينظفها لحاله أول ما يفتح."));
+                              "تقريباً خلصنا، بس في قواعد بجدار الحماية لسا موجودة. اقفل البرنامج وافتحه مرة ثانية، وهو ينظفها أول ما يفتح."), ToastKind.Warn);
                     }
                     else
                     {
                         Log(T("Everything is back to normal.", "رجّعنا كل شي زي ما كان."));
                         SetStatus(T("Everything is back to normal.", "رجّعنا كل شي زي ما كان ✓"));
-                        Msg(T("Done! Everything is back to how it was.\nNothing from 2X Ping is left on your PC.",
-                              "تمام! رجّعنا كل شي زي ما كان ✓\nما في أي تغيير من البرنامج باقي على جهازك."));
+                        Msg(T("Everything is back to normal ✓ Nothing from 2X Ping is left on your PC.",
+                              "رجّعنا كل شي طبيعي ✓ ما بقى أي تغيير من البرنامج على جهازك."), ToastKind.Good);
                     }
                 });
             });
@@ -1380,7 +1587,7 @@ namespace PingBoost
             if (region == null || LockedOut(g, region))
             {
                 region = g.Regions.Where(r => !LockedOut(g, r) && BestLatency(r) < double.MaxValue).OrderBy(BestLatency).FirstOrDefault();
-                if (region == null) { Msg(T("Press Test ping first, or pick a server from the list.", "اضغط «افحص البنق» أول، أو اختار سيرفر من القائمة.")); return; }
+                if (region == null) { Msg(T("Press Test ping first, or pick a server from the list.", "اضغط «افحص البنق» أول، أو اختار سيرفر من القائمة."), ToastKind.Warn); return; }
             }
             var target = region.Target;
             if (target == null) return;
@@ -1405,9 +1612,8 @@ namespace PingBoost
 
             if (!Tunnel.Installed)
             {
-                if (Ask(T("Relays need WireGuard for Windows (free). Open the download page?",
-                          "عشان تستخدم الوسيط لازم برنامج WireGuard (مجاني). أفتح لك صفحة التحميل؟")))
-                    Brand.Open("https://www.wireguard.com/install/");
+                Msg(T("Relays need WireGuard for Windows (free). Get it from Tools & Log > Get WireGuard.",
+                      "الوسيط يحتاج برنامج WireGuard (مجاني). تلقاه في «أدوات وسجل» ← «نزّل WireGuard»."), ToastKind.Warn);
                 StopAll();
                 return;
             }
@@ -1436,7 +1642,7 @@ namespace PingBoost
                 {
                     Log(T("Boost failed: ", "ما زبط البوست: ") + ex.Message);
                     Telemetry.Send("error", region.NameEn, -1, "boost via " + relay.Name + ": " + ex);
-                    Ui(() => { StopAll(); Msg(ex.Message); });
+                    Ui(() => { StopAll(); Msg(T("Boost failed: ", "ما زبط البوست: ") + ex.Message, ToastKind.Bad); });
                 }
             });
         }
@@ -1459,6 +1665,7 @@ namespace PingBoost
                         if (gen != monitorGen) return;
                         liveLabel.Text = T("Status: ", "الحالة: ") + label + "  ·  " + Ms(v);
                         liveLabel.ForeColor = PingColor(v);
+                        SetTrayText(label + " · " + Ms(v));
                         Telemetry.Ping = v < 0 ? -1 : (int)Math.Round(v);
                         graph.Add(v);
                     });
@@ -1474,6 +1681,7 @@ namespace PingBoost
             Telemetry.Ping = -1;
             liveLabel.Text = StatusOff;
             liveLabel.ForeColor = Dim;
+            SetTrayText(T("ready", "جاهز"));
         }
 
         // While servers are locked, the status bar follows the ping of the locked server.
@@ -1554,7 +1762,7 @@ namespace PingBoost
             }
             var probe = new Relay { ConfPath = path };
             string host = probe.EndpointHost;
-            if (host == null) { Msg(T("This file has no 'Endpoint =' line.", "الملف هادا ما فيه سطر 'Endpoint ='.")); return; }
+            if (host == null) { Msg(T("This file has no 'Endpoint =' line.", "الملف هادا ما فيه سطر 'Endpoint ='."), ToastKind.Warn); return; }
 
             var vals = InputDialog.Show(this, T("Add a relay", "ضيف وسيط"),
                 new[] { T("Name", "الاسم"), T("Agent link (from setup-relay.sh, optional)", "رابط أداة القياس (من setup-relay.sh، مو ضروري)"), T("Agent token", "رمز أداة القياس (Token)") },
@@ -1562,7 +1770,7 @@ namespace PingBoost
             if (vals == null || vals[0] == "") return;
             if (relays.Any(r => r.Name.Equals(vals[0], StringComparison.OrdinalIgnoreCase)))
             {
-                Msg(T("There's already a relay with that name.", "في وسيط بنفس الاسم."));
+                Msg(T("There's already a relay with that name.", "في وسيط بنفس الاسم."), ToastKind.Warn);
                 return;
             }
 
@@ -1631,7 +1839,7 @@ namespace PingBoost
                 f.MinimizeBox = f.MaximizeBox = false;
                 f.BackColor = MainForm.Bg;
                 f.ForeColor = MainForm.TextC;
-                f.Font = new Font("Segoe UI", 10f);
+                f.Font = Fonts.Ui(10f);
                 f.RightToLeft = Lang.Ar ? RightToLeft.Yes : RightToLeft.No;
                 f.ClientSize = new Size(520, 24 + labels.Length * 62 + 56);
 

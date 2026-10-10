@@ -27,11 +27,13 @@ This is shown on first launch, and accepting it is required to use the beta.
 |---|---|
 | The name you type on first launch, and your computer's name | Tell users apart |
 | A random install ID | Count devices |
-| City and country (looked up from your internet address; the address itself is not stored) | See where the app is used |
+| City, country and internet provider (looked up from your internet address; the address itself is not stored) | See where the app is used, and compare ping by provider |
 | Game, server and ping in use, app and Windows version, language and layout | Usage statistics |
-| Events (ping test, lock, unlock, server check, boost, reset) and error logs | Find and fix problems |
+| Once per launch: processor, graphics card, memory, screen size and scaling, Windows edition and build, system language and time zone, laptop or desktop, Wi-Fi or cable and its link speed, which of the supported games are installed, how long the app took to open | Know what PCs it runs on and why ping differs |
+| Every result of a ping test (each region's ping, loss and jitter, and how long the test took) | Improve the server lists and the best-server choice |
+| Events (ping test, lock, unlock, server check, boost, reset, update, settings changed, buttons used, session length) and error logs | Find and fix problems, see which features are used |
 
-Nothing else is collected: no passwords, no files, no browsing data. The app can only **write** these statistics; it cannot read anyone's data.
+Nothing else is collected: no passwords, no files, no IP address, no list of your other programs, no browsing data. The app can only **write** these statistics; it cannot read anyone's data.
 To have your data removed, contact the developer (Discord `2x.x`) with the name you used.
 
 ## Data sent to other services
@@ -43,10 +45,16 @@ To have your data removed, contact the developer (Discord `2x.x`) with the name 
 | ip-ranges.amazonaws.com | Nothing (download only) | AWS game server IP ranges |
 | ip-api.com | The **game server** IP you detected, and a once-a-day lookup of your own city/country | Show locations |
 | Supabase (developer's database) | The usage statistics listed above | Beta statistics |
-| api.github.com | Nothing (download only) | Check for a newer version |
+| api.github.com, github.com | Nothing (download only) | Check for a newer version and download it |
 | Your own relay agent | Game server address + your token | Measure relay -> server ping |
 
 There are no accounts or passwords; apart from the usage statistics above, nothing about you is collected.
+
+## Updates
+
+Updates are required during the beta. When a new version is out, 2X Ping shows it and you get 3 days to update; after that the old version only offers to update or close.
+**Update now** downloads the release zip from this repository's GitHub Releases, checks it against the published SHA256 file, and refuses it if they don't match. It then replaces `2XPing.exe` and reopens it.
+A release whose notes contain `#optional` is never forced.
 
 ## Relay notes
 

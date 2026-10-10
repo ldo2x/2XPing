@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.10.0-beta
+
+- **One-click updates:** "Update now" downloads the new version, checks its SHA256, replaces the app and reopens it
+- **Updates are required:** when a new version is out you get 3 days (a bar under the header counts down); after that the old version only offers to update or close. It never forces it in the middle of a match. Releases marked `#optional` are never forced
+- The "check for updates" option is gone (it's always on)
+- **No more popups:** notices appear as chat lines at the bottom of the window (like a game chat) and fade out by themselves; hover to keep one, click to dismiss. No OK buttons. While the app is next to the clock, important ones show as a tray balloon
+- The new-version notice is a chat line plus the bar at the top; the update window only opens when you press Update now (or when the 3 days are over)
+- "Which server am I on?" and "Back to normal" start right away, without a confirmation box
+- **Opening 2X Ping again** brings the open window to the front (even from next to the clock) instead of an "already running" message
+- **New font:** Readex Pro, embedded in the app (SIL Open Font License)
+- **Lives next to the clock:** minimize it and it goes to the system tray, the lock keeps working, and the tooltip shows your live ping
+- **Opens on your game:** if a supported game is running it's selected; otherwise the game you used last
+- **Opens with your last results** straight away; the new test refreshes them
+- Friendlier texts everywhere; the welcome screen just asks "What's your name?"
+- Beta statistics now include hardware and setup details, internet provider, every ping-test result, feature use and session length (see SECURITY.md). Run `tools/supabase-setup.sql` again to store them
+- Developer dashboard: **Versions** tab (who has updated) and **Devices** tab, plus more breakdowns (GPU, CPU, RAM, connection, provider, installed games, average session)
+- The beta notice shows once, not after every update
+- If Steam is slow, the server list is retried once instead of showing an error
+- Fixed: list headers stay dark with the new font
+
 ## v0.9.3-beta (2026-10-10)
 
 - **Much faster ping test:** every server is tested at once, and a server that doesn't answer is skipped after two tries (Deadlock: 13 s → 2 s, CS2: 17 s → 3 s)

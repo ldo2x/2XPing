@@ -11,9 +11,9 @@ using System.Windows.Forms;
 [assembly: AssemblyCopyright("Copyright © 2026 lDo2x. MIT License.")]
 [assembly: AssemblyTrademark("2X Ping by lDo2x")]
 // Release version: change it here (and tag the GitHub release v<version>-beta).
-[assembly: AssemblyVersion("0.9.3.0")]
-[assembly: AssemblyFileVersion("0.9.3.0")]
-[assembly: AssemblyInformationalVersion("0.9.3-beta")]
+[assembly: AssemblyVersion("0.10.0.0")]
+[assembly: AssemblyFileVersion("0.10.0.0")]
+[assembly: AssemblyInformationalVersion("0.10.0-beta")]
 
 namespace PingBoost
 {
@@ -109,7 +109,7 @@ namespace PingBoost
                 f.ShowInTaskbar = false;
                 f.BackColor = MainForm.Bg;
                 f.ForeColor = MainForm.TextC;
-                f.Font = new Font("Segoe UI", 10f);
+                f.Font = Fonts.Ui(10f);
                 f.ClientSize = new Size(440, 420);
 
                 var pic = new PictureBox
@@ -131,17 +131,17 @@ namespace PingBoost
                     y += h;
                     return l;
                 };
-                line(Brand.Name.ToUpperInvariant(), new Font("Segoe UI Black", 22f), MainForm.Accent, 46);
+                line(Brand.Name.ToUpperInvariant(), Fonts.Bold(22f), MainForm.Accent, 46);
                 line(Lang.T("Version ", "الإصدار ") + Brand.Version, f.Font, MainForm.Dim, 24);
                 if (Brand.IsBeta)
-                    line(Lang.T("BETA - early test version", "نسخة تجريبية (Beta)"), new Font("Segoe UI Semibold", 9.5f), MainForm.Warn, 24);
-                line(Lang.T("Made by ", "من تطوير ") + Brand.Developer, new Font("Segoe UI Semibold", 12f), MainForm.TextC, 34);
+                    line(Lang.T("BETA - early test version", "نسخة تجريبية (Beta)"), Fonts.Semi(9.5f), MainForm.Warn, 24);
+                line(Lang.T("Made by ", "من تطوير ") + Brand.Developer, Fonts.Semi(12f), MainForm.TextC, 34);
                 line(Lang.T("Finds you the best server and route, and shows your ping live.",
                             "يلقى لك أحسن سيرفر وأحسن طريق، ويوريك البنق أول بأول."), f.Font, MainForm.Dim, 44);
                 // separate lines so Arabic and Latin text never get reordered together
-                line(Brand.Copyright, new Font("Segoe UI", 9f), MainForm.Dim, 20).RightToLeft = RightToLeft.No;
-                line(Lang.T("Free and open source (MIT License)", "مجاني ومفتوح المصدر (رخصة MIT)"), new Font("Segoe UI", 9f), MainForm.Dim, 22);
-                line("Discord: " + Brand.DiscordUser, new Font("Segoe UI", 9f), MainForm.Dim, 22).RightToLeft = RightToLeft.No;
+                line(Brand.Copyright, Fonts.Ui(9f), MainForm.Dim, 20).RightToLeft = RightToLeft.No;
+                line(Lang.T("Free and open source (MIT License)", "مجاني ومفتوح المصدر (رخصة MIT)"), Fonts.Ui(9f), MainForm.Dim, 22);
+                line("Discord: " + Brand.DiscordUser, Fonts.Ui(9f), MainForm.Dim, 22).RightToLeft = RightToLeft.No;
 
                 y += 8;
                 Func<string, string, int, LinkLabel> link = (text, url, x) =>
@@ -189,20 +189,20 @@ namespace PingBoost
                 f.ShowInTaskbar = false;
                 f.BackColor = MainForm.Bg;
                 f.ForeColor = MainForm.TextC;
-                f.Font = new Font("Segoe UI", 10f);
+                f.Font = Fonts.Ui(10f);
                 // RTL text without mirrored layout: the layout here is symmetric anyway
                 f.RightToLeft = Lang.Ar ? RightToLeft.Yes : RightToLeft.No;
 
                 int y = 16;
                 f.Controls.Add(new Label
                 {
-                    Text = Lang.T("You are using a BETA. Your feedback decides what gets fixed next!",
-                                  "إنت تجرّب نسخة بيتا، ورأيك هو اللي يحدد إيش نصلّح ونضيف بعدين!"),
+                    Text = Lang.T("You're using a beta. Your feedback decides what we fix and add next.",
+                                  "إنت تجرّب نسخة بيتا، ورأيك هو اللي يحدد إيش نصلّح ونضيف بعدين."),
                     ForeColor = MainForm.Warn, Bounds = new Rectangle(16, y, 448, 44)
                 });
                 y += 52;
 
-                Action<string, string, Action> row = (title, sub, act) =>
+                Action<string, string, Action<Button>> row = (title, sub, act) =>
                 {
                     var b = new Button
                     {
@@ -212,11 +212,11 @@ namespace PingBoost
                         Padding = new Padding(10, 0, 10, 0)
                     };
                     b.FlatAppearance.BorderSize = 0;
-                    b.Click += delegate { act(); };
+                    b.Click += delegate { act(b); };
                     f.Controls.Add(b);
                     f.Controls.Add(new Label
                     {
-                        Text = sub, ForeColor = MainForm.Dim, Font = new Font("Segoe UI", 8.5f),
+                        Text = sub, ForeColor = MainForm.Dim, Font = Fonts.Ui(8.5f),
                         Bounds = new Rectangle(18, y + 42, 446, 20)
                     });
                     y += 70;
@@ -225,26 +225,36 @@ namespace PingBoost
                 row(Lang.T("Report a bug", "بلّغ عن مشكلة"),
                     Lang.T("GitHub Issues - tip: press 'Copy diagnostic info' first and paste it in",
                            "على GitHub. نصيحة: اضغط «انسخ معلومات التشخيص» أول، والصقها في البلاغ"),
-                    () => Brand.Open(Brand.IssuesUrl + "/new/choose"));
+                    b => Brand.Open(Brand.IssuesUrl + "/new/choose"));
                 row(Lang.T("Suggest an idea / ask a question", "اقترح فكرة أو اسأل"),
                     Lang.T("GitHub Discussions", "ساحة النقاش على GitHub"),
-                    () => Brand.Open(Brand.DiscussionsUrl));
+                    b => Brand.Open(Brand.DiscussionsUrl));
+                // copying shows "Copied ✓" on the button itself for a moment, no popup
+                Action<Button, string> copied = (b, text) =>
+                {
+                    string before = b.Text;
+                    b.Text = text;
+                    b.ForeColor = MainForm.Good;
+                    var t = new Timer { Interval = 2000 };
+                    t.Tick += delegate { t.Stop(); t.Dispose(); if (!b.IsDisposed) { b.Text = before; b.ForeColor = MainForm.TextC; } };
+                    t.Start();
+                };
                 row("Discord: " + Brand.DiscordUser,
                     string.IsNullOrEmpty(Brand.DiscordInvite)
                         ? Lang.T("Click to copy the username, then add it as a friend on Discord", "اضغط عشان تنسخ اليوزر، وبعدين ضيفه في ديسكورد")
                         : Lang.T("Join the community server", "ادخل سيرفر المجتمع"),
-                    () =>
+                    b =>
                     {
                         if (!string.IsNullOrEmpty(Brand.DiscordInvite)) { Brand.Open(Brand.DiscordInvite); return; }
                         try { Clipboard.SetText(Brand.DiscordUser); } catch { }
-                        MessageBox.Show(f, Lang.T("Copied: ", "نسخته: ") + Brand.DiscordUser, Brand.Caption);
+                        copied(b, Lang.T("Copied ✓  ", "نسخته ✓  ") + Brand.DiscordUser);
                     });
                 row(Lang.T("Copy diagnostic info", "انسخ معلومات التشخيص"),
                     Lang.T("Version, Windows and the recent log - no personal data", "الإصدار والويندوز وآخر السجل، بدون أي بيانات شخصية"),
-                    () =>
+                    b =>
                     {
                         try { Clipboard.SetText(Diagnostics(log)); } catch { }
-                        MessageBox.Show(f, Lang.T("Copied - paste it into your report.", "نسخته! الصقه في البلاغ."), Brand.Caption);
+                        copied(b, Lang.T("Copied ✓  paste it into your report", "نسخته ✓  الصقه في البلاغ"));
                     });
 
                 var ok = new Button
@@ -271,60 +281,6 @@ namespace PingBoost
                    "Language: " + (Lang.Ar ? "ar" : "en") + Environment.NewLine +
                    "WireGuard: " + (Tunnel.Installed ? "installed" : "not installed") + Environment.NewLine +
                    "--- log ---" + Environment.NewLine + tail + Environment.NewLine + "```";
-        }
-    }
-
-    static class BetaNotice
-    {
-        // Shown on first launch of each beta version.
-        public static void ShowOnce(IWin32Window owner)
-        {
-            if (!Brand.IsBeta) return;
-            string key = "beta_ack";
-            if (Storage.GetSetting(key) == Brand.Version) return;
-            string text = Lang.T(
-                "Welcome to 2X Ping " + Brand.DisplayVersion + "!\n\n" +
-                "This is a BETA version: features may change and you may hit bugs.\n\n" +
-                "- Results (player numbers, match time) are estimates.\n" +
-                "- Region lock uses Windows Firewall and is removed when you close the app.\n" +
-                "- Use it at your own risk; 2X Ping does not modify any game files.\n\n" +
-                "Found a problem or have an idea? Press the Feedback button (top of the window).",
-                "يا هلا فيك في ‎2X Ping " + Brand.DisplayVersion + "‎!\n\n" +
-                "هادي نسخة بيتا، يعني لسا نجرّب ونطوّر، وممكن تطلع لك أخطاء بسيطة.\n\n" +
-                "- عدد اللاعبين ووقت الانتظار أرقام تقريبية.\n" +
-                "- تثبيت السيرفرات يشتغل عن طريق جدار حماية ويندوز، وينشال لحاله لما تقفل البرنامج.\n" +
-                "- البرنامج ما يلمس ملفات اللعبة أبداً، والاستخدام على مسؤوليتك.\n\n" +
-                "لقيت مشكلة أو عندك فكرة؟ اضغط «تواصل معنا» فوق.");
-            MessageBox.Show(owner, text, Brand.Name + " Beta", MessageBoxButtons.OK, MessageBoxIcon.Information,
-                MessageBoxDefaultButton.Button1, Lang.Ar ? MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign : 0);
-            Storage.SetSetting(key, Brand.Version);
-        }
-    }
-
-    static class Updater
-    {
-        // Newest release tag on GitHub (pre-releases included), or null when there is nothing newer / no network.
-        public static string NewerVersion()
-        {
-            try
-            {
-                string json = Http.Get("https://api.github.com/repos/" + Brand.Repo + "/releases?per_page=5", 10000);
-                var list = (object[])new System.Web.Script.Serialization.JavaScriptSerializer().DeserializeObject(json);
-                Version best = null;
-                string bestTag = null;
-                foreach (var o in list)
-                {
-                    var d = (System.Collections.Generic.Dictionary<string, object>)o;
-                    var tag = (string)d["tag_name"];
-                    var m = System.Text.RegularExpressions.Regex.Match(tag ?? "", @"(\d+)\.(\d+)\.(\d+)");
-                    if (!m.Success) continue;
-                    var v = new Version(int.Parse(m.Groups[1].Value), int.Parse(m.Groups[2].Value), int.Parse(m.Groups[3].Value));
-                    if (best == null || v > best) { best = v; bestTag = tag; }
-                }
-                var mine = new Version(Brand.VersionNumber.Major, Brand.VersionNumber.Minor, Brand.VersionNumber.Build);
-                return best != null && best > mine ? bestTag : null;
-            }
-            catch { return null; }
         }
     }
 

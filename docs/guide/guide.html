@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <title>2X Ping - دليل البرنامج</title>
 <style>
+  @font-face { font-family: "Readex Pro"; font-weight: 400; src: url("../../assets/fonts/ReadexPro-Regular.ttf"); }
+  @font-face { font-family: "Readex Pro"; font-weight: 500; src: url("../../assets/fonts/ReadexPro-Medium.ttf"); }
+  @font-face { font-family: "Readex Pro"; font-weight: 600; src: url("../../assets/fonts/ReadexPro-SemiBold.ttf"); }
+  @font-face { font-family: "Readex Pro"; font-weight: 700 900; src: url("../../assets/fonts/ReadexPro-Bold.ttf"); }
   @page { size: A4; margin: 16mm 15mm 16mm 15mm; }
   :root {
     --ink: #151821; --muted: #5d6475; --line: #e3e6ec; --soft: #f4f6f9;
@@ -12,7 +16,7 @@
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; background: #fff; }
-  body { font-family: "Segoe UI", Arial, sans-serif; color: var(--ink); font-size: 11.5pt; line-height: 1.75; }
+  body { font-family: "Readex Pro", "Segoe UI", Arial, sans-serif; color: var(--ink); font-size: 11.5pt; line-height: 1.75; }
   .ltr { direction: ltr; unicode-bidi: isolate; display: inline-block; }
   code, .mono { font-family: Consolas, "Courier New", monospace; font-size: 9.5pt; direction: ltr; unicode-bidi: isolate; background: var(--soft); padding: 1px 5px; border-radius: 4px; }
 
@@ -20,7 +24,7 @@
   .cover { height: 263mm; background: var(--dark); color: #e8eaf0; border-radius: 10px; padding: 34mm 22mm;
            display: flex; flex-direction: column; justify-content: space-between; page-break-after: always; }
   .cover img { width: 120px; height: 120px; }
-  .cover h1 { font-family: "Segoe UI Black", "Segoe UI", Arial; font-size: 46pt; margin: 18px 0 0; color: #ff6fc8; letter-spacing: 1px; direction: ltr; text-align: right; }
+  .cover h1 { font-family: "Readex Pro", "Segoe UI", Arial; font-weight: 700; font-size: 46pt; margin: 18px 0 0; color: #ff6fc8; letter-spacing: 1px; direction: ltr; text-align: right; }
   .cover .tag { font-size: 18pt; margin: 4px 0 0; color: #fff; }
   .cover .sub { font-size: 13pt; color: #b3a6cc; margin-top: 18px; max-width: 120mm; }
   .cover .meta { display: flex; gap: 10px; flex-wrap: wrap; }
@@ -86,7 +90,7 @@
     <div class="sub">دليل البرنامج: إيش يسوي، وكيف يشتغل من جوا، وإيش التقنيات اللي يستخدمها، عشان تقدر تشرحه لأي أحد.</div>
   </div>
   <div class="meta">
-    <span class="pill beta">بيتا ‎0.9.3‎</span>
+    <span class="pill beta">بيتا ‎0.10.0‎</span>
     <span class="pill dark">من تطوير lDo2x</span>
     <span class="pill dark">ويندوز 10 و 11</span>
     <span class="pill dark">مجاني ومفتوح المصدر</span>
@@ -133,13 +137,17 @@
     <li><b>أول مرة بس:</b> اكتب اسمك، واختار الألعاب اللي تلعبها، واضغط «موافق وأبدأ».</li>
     <li><b>اختار لعبتك</b> من القائمة اليمين. البرنامج يجيب سيرفراتها ويفحص البنق لحاله في ثانيتين ثلاث.</li>
     <li>شوف بطاقة <b>«أحسن سيرفر لك»</b> فوق واضغط <b>«العب عليه»</b>. أو علّم (✓) على المناطق اللي تبغاها واضغط <b>«ثبّت سيرفراتي»</b>.</li>
-    <li><b>طلّع من اللعبة ورجّع ادخل</b>، وبعدين دوّر مباراة.</li>
+    <li><b>اقفل اللعبة وافتحها من جديد</b>، وبعدين دوّر مباراة.</li>
     <li><b>تأكد:</b> وإنت داخل المباراة اضغط <b>«على أي سيرفر أنا؟»</b>. لازم يطلع لك ✓.</li>
-    <li>لما تخلص، قفّل البرنامج، أو اضغط <b>«رجّع كل شي طبيعي»</b> من الإعدادات.</li>
+    <li>وإنت تلعب <b>صغّر البرنامج</b>: يروح جنب الساعة والتثبيت يبقى شغّال. ولما تخلص اقفله، أو اضغط <b>«رجّع كل شي طبيعي»</b> من الإعدادات.</li>
   </ol>
   <img class="shot" src="../screenshot-ar.png" alt="">
   <p class="cap">الوضع البسيط: بطاقة أحسن سيرفر مع «افحص البنق»، والسيرفرات متجمّعة تحت مناطقها مع أعلام دولها</p>
   <p>فوق، <b>«الحالة»</b> تقولك إذا البرنامج جاهز، ولما تثبّت سيرفر تقولك عليه وكم البنق له دحين، مثلاً: «الحالة: مثبّت على فرانكفورت · <span class="ltr">78 ms</span>».</p>
+  <p>والتنبيهات تطلع تحت زي رسائل الشات في الألعاب وتختفي لحالها، فما في نوافذ تقاطعك ولا زر «تمام». ولو فتحت البرنامج وهو مفتوح أصلاً، يطلع لك قدامك على طول.</p>
+
+  <h3>التحديثات</h3>
+  <p>لما تنزل نسخة جديدة يطلع شريط ذهبي فوق، وعندك <b>3 أيام</b> تحدّث. التحديث بضغطة وحدة على <b>«حدّث دحين»</b>: البرنامج ينزّل النسخة، ويتأكد من بصمتها، ويستبدل نفسه ويفتح من جديد في كم ثانية. بعد الأيام الثلاثة النسخة القديمة توقف لين تحدّث، بس عمره ما يقفل عليك وإنت داخل مباراة.</p>
 
   <h3>الوضع البسيط والمتقدم</h3>
   <table>
@@ -173,7 +181,7 @@
 
   <h3>4.2 ثبّت سيرفراتي</h3>
   <p>ألعاب Valve تختار لك السيرفر حسب بنقك لكل منطقة. البرنامج يحط قواعد في <b>جدار حماية ويندوز</b> تحجب عناوين المناطق اللي ما اخترتها، فاللعبة تشوفها كأنها "ما ترد"، وما يبقى قدامها إلا اختيارك.</p>
-  <svg width="640" height="190" viewBox="0 0 640 190" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, Arial" direction="rtl">
+  <svg width="640" height="190" viewBox="0 0 640 190" xmlns="http://www.w3.org/2000/svg" font-family="Readex Pro, Segoe UI, Arial" direction="rtl">
     <rect x="470" y="65" width="150" height="60" rx="10" fill="#1d1430"/>
     <text x="545" y="92" fill="#fff" font-size="15" text-anchor="middle" font-weight="700">جهازك</text>
     <text x="545" y="112" fill="#b3a6cc" font-size="11" text-anchor="middle">+ جدار الحماية</text>
@@ -220,7 +228,7 @@
 <section>
   <h3>4.5 البوست بالوسيط (Relay) - في الوضع المتقدم</h3>
   <p>هنا الطريقة اللي <b>تنزّل البنق فعلاً</b>: بدل ما يمشي ترافيك اللعبة في طريق شركة النت الطويل، يمشي عن طريق سيرفر وسيط (VPS) استأجرته، وطريقه لسيرفر اللعبة أقصر.</p>
-  <svg width="660" height="200" viewBox="0 0 660 200" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, Arial">
+  <svg width="660" height="200" viewBox="0 0 660 200" xmlns="http://www.w3.org/2000/svg" font-family="Readex Pro, Segoe UI, Arial">
     <rect x="510" y="70" width="130" height="56" rx="10" fill="#1d1430"/>
     <text x="575" y="104" fill="#fff" font-size="15" text-anchor="middle" font-weight="700">جهازك</text>
     <rect x="265" y="10" width="140" height="56" rx="10" fill="#fbe9f5" stroke="#c93f97"/>
@@ -249,7 +257,9 @@
   <table>
     <tr><th>الجزء</th><th>التقنية</th><th>ليش</th></tr>
     <tr><td>البرنامج</td><td>C# و Windows Forms على ‎.NET Framework 4.8‎</td><td>موجود في كل ويندوز 10 و11، فما يحتاج تثبيت أي شي</td></tr>
-    <tr><td>البناء</td><td>مترجم C# المدمج في ويندوز (<span class="mono">csc.exe</span>)</td><td>ملف واحد صغير (حوالي 280KB، مع أيقونات الألعاب وأعلام الدول)</td></tr>
+    <tr><td>البناء</td><td>مترجم C# المدمج في ويندوز (<span class="mono">csc.exe</span>)</td><td>ملف واحد (حوالي 690KB، فيه أيقونات الألعاب وأعلام الدول والخط)</td></tr>
+    <tr><td>الخط</td><td>Readex Pro، مدمج داخل البرنامج</td><td>واضح بالعربي والإنجليزي، ورخصته مفتوحة (OFL)</td></tr>
+    <tr><td>التحديث</td><td>GitHub Releases + بصمة SHA256</td><td>ينزّل ويتأكد من الملف قبل ما يستبدل نفسه</td></tr>
     <tr><td>قياس البنق</td><td>ICMP Ping و TCP Connect وطلب HTTPS قصير</td><td>ثلاث طرق حسب نوع السيرفر</td></tr>
     <tr><td>تثبيت السيرفرات</td><td>جدار حماية ويندوز (<span class="mono">netsh advfirewall</span>)</td><td>آمن ويتشال بسهولة</td></tr>
     <tr><td>معرفة السيرفر</td><td><span class="mono">pktmon</span> و <span class="mono">netstat</span> من ويندوز</td><td>مراقبة الترافيك بدون برامج إضافية</td></tr>
@@ -279,12 +289,12 @@
     <tr><td>Steam</td><td>رقم اللعبة بس (عشان السيرفرات وعدد اللاعبين)</td></tr>
     <tr><td>deadlock-api.com</td><td>استعلام إحصائي ثابت</td></tr>
     <tr><td>ip-api.com</td><td>عنوان <b>سيرفر اللعبة</b> (عشان يعرف موقعه)، ومرة باليوم يسأل عن مدينتك ودولتك لإحصائيات البيتا</td></tr>
-    <tr><td>GitHub</td><td>ولا شي، بس يشيّك على التحديثات</td></tr>
+    <tr><td>GitHub</td><td>ولا شي، بس يشيّك على التحديثات وينزّلها</td></tr>
     <tr><td>قاعدة بيانات المطوّر (Supabase)</td><td>إحصائيات البيتا (تحت)</td></tr>
   </table>
   <h3>إحصائيات البيتا</h3>
-  <p>عشان نطوّر النسخة التجريبية، البرنامج يرسل وهو مفتوح لقاعدة بيانات المطوّر: <b>الاسم اللي تكتبه أول مرة، واسم الجهاز، والمدينة والدولة</b> (تقريباً من الإنترنت، وما نحفظ العنوان)، واللعبة والسيرفر والبنق، والإصدار، وسجل الأخطاء.</p>
-  <p>هذا ينقال للمستخدم بوضوح أول ما يفتح البرنامج، والموافقة شرط لاستخدام البيتا. ما يرسل كلمات سر ولا ملفات ولا أي شي ثاني، والبرنامج يقدر <b>يكتب</b> الإحصائيات بس وما يقدر يقرأ بيانات أحد.</p>
+  <p>عشان نطوّر النسخة التجريبية، البرنامج يرسل وهو مفتوح لقاعدة بيانات المطوّر: <b>الاسم اللي تكتبه أول مرة، واسم الجهاز، والمدينة والدولة وشركة النت</b> (تقريباً من الإنترنت، وما نحفظ العنوان)، ومواصفات الجهاز (المعالج وكرت الشاشة والرام والشاشة والويندوز، واي فاي ولا كيبل)، والألعاب المدعومة المثبتة عندك، واللعبة والسيرفر والبنق ونتائج الفحص، والأزرار اللي تستخدمها ومدة الجلسة، والإصدار، وسجل الأخطاء.</p>
+  <p>هذا ينقال للمستخدم بوضوح أول ما يفتح البرنامج، والموافقة شرط لاستخدام البيتا. ما يرسل كلمات سر ولا ملفات ولا عنوان IP ولا قائمة برامجك، والبرنامج يقدر <b>يكتب</b> الإحصائيات بس وما يقدر يقرأ بيانات أحد.</p>
 </section>
 
 <!-- ============================== 7 -->

@@ -19,10 +19,13 @@ if (-not (Test-Path assets\app.ico)) {
 $iconArgs = Get-ChildItem assets\games\*.png | ForEach-Object { "/resource:assets\games\$($_.Name),game_$($_.Name)" }
 # country flags (assets/flags/<cc>.png) are embedded as "flag_<cc>.png"
 $iconArgs += Get-ChildItem assets\flags\*.png | ForEach-Object { "/resource:assets\flags\$($_.Name),flag_$($_.Name)" }
+# the Readex Pro font (assets/fonts, SIL OFL) is embedded as "font_<file>.ttf"
+$iconArgs += Get-ChildItem assets\fonts\*.ttf | ForEach-Object { "/resource:assets\fonts\$($_.Name),font_$($_.Name)" }
 
 & $csc /nologo /target:winexe /optimize+ /codepage:65001 /out:dist\2XPing.exe /win32manifest:app.manifest /win32icon:assets\app.ico `
     /resource:assets\logo.png,logo.png @iconArgs `
     /r:System.dll /r:System.Core.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.Web.Extensions.dll `
+    /r:System.IO.Compression.dll /r:System.IO.Compression.FileSystem.dll `
     src\*.cs
 if ($LASTEXITCODE -ne 0) { throw "Build failed" }
 Copy-Item relay\setup-relay.sh dist\ -Force
@@ -35,6 +38,7 @@ if ($Release) {
     if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
     New-Item -ItemType Directory -Force $stage | Out-Null
     Copy-Item dist\2XPing.exe, relay\setup-relay.sh, LICENSE, README.md, README.en.md, CHANGELOG.md $stage
+    Copy-Item assets\fonts\OFL.txt (Join-Path $stage "FONT-LICENSE.txt")
     # keep the relay script LF so it runs on Linux even if git checked it out with CRLF
     $sh = Join-Path $stage "setup-relay.sh"
     [IO.File]::WriteAllText($sh, ([IO.File]::ReadAllText($sh) -replace "`r`n", "`n"))

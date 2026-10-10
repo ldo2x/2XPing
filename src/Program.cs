@@ -1,5 +1,6 @@
 using System;
 using System.Net;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Forms;
 
@@ -7,9 +8,18 @@ namespace PingBoost
 {
     static class Program
     {
+        [DllImport("user32.dll")]
+        static extern bool AllowSetForegroundWindow(int processId);
+
+        // set by a second copy of the app: "show yourself"
+        const string ShowSignal = "Local\\lDo2x.2XPing.Show";
+
         [STAThread]
-        static void Main()
+        static void Main(string[] args)
         {
+            // after a self-update: wait for the old version to close (it holds the single-instance lock), then remove it
+            Updater.FinishUpdate(args);
+            Updater.CleanupOld();
             // one copy at a time: two copies would fight over the tunnel and firewall rules
             Lang.Ar = Storage.LoadArabic();
             bool first;
@@ -17,8 +27,13 @@ namespace PingBoost
             {
                 if (!first)
                 {
-                    MessageBox.Show(Lang.T("2X Ping is already running.", "البرنامج مفتوح أصلاً."), Brand.Caption,
-                        MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    // already open (maybe next to the clock): bring that window up instead of showing a message
+                    try
+                    {
+                        AllowSetForegroundWindow(-1); // let the running copy take the foreground
+                        using (var ev = EventWaitHandle.OpenExisting(ShowSignal)) ev.Set();
+                    }
+                    catch { }
                     return;
                 }
                 ServicePointManager.SecurityProtocol = (SecurityProtocolType)3072; // TLS 1.2
@@ -27,8 +42,26 @@ namespace PingBoost
                 ThreadPool.SetMinThreads(64, 64);
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
+                Fonts.Load();
                 CrashHandler.Install();
-                Application.Run(new MainForm());
+                using (var show = new EventWaitHandle(false, EventResetMode.AutoReset, ShowSignal))
+                {
+                    var form = new MainForm();
+                    var listener = new Thread(() =>
+                    {
+                        try
+                        {
+                            while (show.WaitOne())
+                            {
+                                if (form.IsDisposed) return;
+                                try { form.BeginInvoke((Action)form.BringUp); } catch (InvalidOperationException) { }
+                            }
+                        }
+                        catch (ObjectDisposedException) { } // the app is closing
+                    }) { IsBackground = true };
+                    listener.Start();
+                    Application.Run(form);
+                }
             }
         }
     }

@@ -450,6 +450,42 @@ namespace PingBoost
             return list;
         }
 
+        static string LastFile { get { return Path.Combine(Dir, "last.txt"); } }
+
+        // Last ping test of each game, shown right away on the next launch: game \t region \t ping \t loss
+        public static void SaveLast(Game g)
+        {
+            try
+            {
+                var lines = File.Exists(LastFile) ? File.ReadAllLines(LastFile).Where(l => !l.StartsWith(g.Icon + "\t")).ToList() : new List<string>();
+                foreach (var r in g.Regions.Where(r => r.Direct != null && !r.Detected))
+                    lines.Add(string.Join("\t", g.Icon, r.Id, Math.Round(r.Direct.Avg).ToString(System.Globalization.CultureInfo.InvariantCulture),
+                                          Math.Round(r.Direct.Loss).ToString(System.Globalization.CultureInfo.InvariantCulture)));
+                File.WriteAllLines(LastFile, lines);
+            }
+            catch { }
+        }
+
+        public static void LoadLast(Game g)
+        {
+            try
+            {
+                if (!File.Exists(LastFile)) return;
+                var byId = g.Regions.GroupBy(r => r.Id).ToDictionary(x => x.Key, x => x.First());
+                foreach (var line in File.ReadAllLines(LastFile))
+                {
+                    var f = line.Split('\t');
+                    Region r;
+                    double avg, loss;
+                    if (f.Length < 4 || f[0] != g.Icon || !byId.TryGetValue(f[1], out r) || r.Direct != null) continue;
+                    if (!double.TryParse(f[2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out avg)) continue;
+                    double.TryParse(f[3], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out loss);
+                    r.Direct = new PingResult { Avg = avg, Loss = loss };
+                }
+            }
+            catch { }
+        }
+
         static string DetectedFile { get { return Path.Combine(Dir, "detected.txt"); } }
 
         // Servers found by live capture: game \t ip \t location

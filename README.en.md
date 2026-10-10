@@ -3,16 +3,20 @@
 <h1 align="center">2X Ping</h1>
 
 <p align="center">
-Game connection optimizer: measures ping, picks the best server and route, and lets you choose where you play.<br>
+<b>Lower ping, better games.</b><br>
+Tests your game's servers in seconds, tells you where to play, and locks you to the server you want.<br>
 Made by <b>lDo2x</b>
 </p>
 
 <p align="center">
-<img src="https://img.shields.io/badge/version-0.9.3--beta-orange" alt="version">
+<a href="../../releases"><img src="https://img.shields.io/github/v/release/ldo2x/2XPing?include_prereleases&label=version&color=ff6fc8" alt="version"></a>
+<a href="../../releases"><img src="https://img.shields.io/github/downloads/ldo2x/2XPing/total?color=b69eff&label=downloads" alt="downloads"></a>
 <img src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-blue" alt="platform">
 <img src="https://img.shields.io/badge/license-MIT-green" alt="license">
 <a href="README.md"><img src="https://img.shields.io/badge/lang-العربية-lightgrey" alt="Arabic"></a>
 </p>
+
+<p align="center"><a href="../../releases"><b>⬇️ Download the latest version</b></a> · <a href="docs/2XPing-Guide-AR.pdf"><b>📖 Guide (PDF, Arabic)</b></a></p>
 
 > [!WARNING]
 > **Beta version.** 2X Ping is still in development: expect bugs, and features may change.
@@ -26,7 +30,7 @@ Made by <b>lDo2x</b>
 2. Extract it and run `2XPing.exe` (it asks for administrator rights).
 3. If **"Windows protected your PC"** appears, click **More info → Run anyway**. The warning appears because this free app is not code-signed yet.
 
-Requires **Windows 10 or 11**. Nothing to install.
+Requires **Windows 10 or 11**. Nothing to install, and after that updates are one click inside the app.
 
 ## Features
 
@@ -38,8 +42,10 @@ Requires **Windows 10 or 11**. Nothing to install.
 | 👥 Player numbers | Estimated players per region and expected time to find a match (Deadlock) |
 | ✅ Which server am I on? | While in a match, tells you which server you are on and whether it is one you picked |
 | 🎛️ Your way | Pick your games on first launch; Simple layout for everyday players, Advanced with every tool |
+| 🕒 Next to the clock | Minimize it while you play: the lock keeps working and the tray icon shows your live ping |
+| 💬 No annoying popups | Notices show up like game-chat lines and fade out by themselves |
+| ⚡ One-click updates | Downloads the new version, checks its SHA256 and reopens in seconds |
 | 🚀 Relay BOOST (Advanced) | Routes only the game's traffic through your own VPS when that path is faster |
-| 📈 Live ping | Live ping and packet-loss graph while you play |
 | 🌐 Arabic & English | Full right-to-left Arabic interface |
 
 ### Supported games
@@ -48,7 +54,7 @@ Deadlock · Counter-Strike 2 · Dota 2 · Overwatch 2 · Arena Breakout: Infinit
 ## How to use
 
 - **Ping test:** pick a game and every server is tested at once in 2-3 seconds (or press **Test ping**). Green is great (under 60 ms), yellow is OK, red is high.
-- **Server picker (Valve games):** tick the regions, press **Lock my servers**, restart the game, then queue. 2X Ping blocks the other regions' Valve servers in Windows Firewall. The lock is removed when you press **Unlock** or close the app.
+- **Server picker (Valve games):** tick the regions, press **Lock my servers**, restart the game, then queue. Minimize 2X Ping while you play; it waits next to the clock. 2X Ping blocks the other regions' Valve servers in Windows Firewall. The lock is removed when you press **Unlock** or close the app.
 - **Which server am I on?:** join a real match (not practice) and press **Which server am I on?**. 2X Ping watches the game's traffic for 15 seconds and names the server, with a ✓ if it is one you picked. For other games it saves the server it finds.
 - **Relay BOOST (optional):**
   1. Rent an Ubuntu VPS near the game servers and run `sudo bash setup-relay.sh` on it.
@@ -58,7 +64,8 @@ Deadlock · Counter-Strike 2 · Dota 2 · Overwatch 2 · Arena Breakout: Infinit
 
 ## Notes
 - Player numbers and match times are **estimates** based on public data.
-- **Beta statistics:** while open, the app sends the name you enter on first launch, your computer's name, your city and country, the game, server and ping you use, and error logs, to improve the beta. You are told on first launch and accepting is required to use the beta. Details in [SECURITY.md](SECURITY.md).
+- **Updates are required during the beta:** when a new version is out a bar appears, and you have 3 days to update with one click. After that the old version stops until you update.
+- **Beta statistics:** while open, the app sends the name you enter on first launch, your computer's name, your city, country and internet provider, your PC's hardware and setup, the game, server and ping you use, ping-test results, which features you use, and error logs, to improve the beta. You are told on first launch and accepting is required to use the beta. Details in [SECURITY.md](SECURITY.md).
 - 2X Ping **never touches game files or memory**. Everything it changes (firewall rules, tunnel) is undone when you stop it or close the app. See [SECURITY.md](SECURITY.md).
 - Some games have their own anti-cheat policies; use the app at your own risk.
 
@@ -93,5 +100,7 @@ Contributing: [CONTRIBUTING.md](CONTRIBUTING.md) · Security & privacy: [SECURIT
 
 ## License
 [MIT](LICENSE) © 2026 **lDo2x**. Free and open source; keep the copyright notice when you reuse it.
+
+Font: [Readex Pro](https://fonts.google.com/specimen/Readex+Pro), [SIL Open Font License](assets/fonts/OFL.txt).
 
 <sub>2X Ping is an independent project, not affiliated with Valve, Tencent or any game company. Game names are trademarks of their owners.</sub>
