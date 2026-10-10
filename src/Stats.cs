@@ -73,11 +73,11 @@ namespace PingBoost
         // Rough queue-time bucket from how many matches a region starts per hour.
         public static string EstimateWait(int matchesPerHour)
         {
-            if (matchesPerHour >= 100) return Lang.T("~1-3 min", "‎1-3‎ دقائق");
-            if (matchesPerHour >= 40) return Lang.T("~3-6 min", "‎3-6‎ دقائق");
+            if (matchesPerHour >= 100) return Lang.T("~1-3 min", "‎1-3‎ دقايق");
+            if (matchesPerHour >= 40) return Lang.T("~3-6 min", "‎3-6‎ دقايق");
             if (matchesPerHour >= 10) return Lang.T("~6-12 min", "‎6-12‎ دقيقة");
-            if (matchesPerHour > 0) return Lang.T("12+ min", "أكثر من 12 دقيقة");
-            return Lang.T("very slow", "بطيء جداً");
+            if (matchesPerHour > 0) return Lang.T("12+ min", "فوق 12 دقيقة");
+            return Lang.T("very slow", "بطيء مرة");
         }
 
         // "≈1,234+" kept left-to-right inside Arabic text
@@ -101,7 +101,7 @@ namespace PingBoost
         {
             try
             {
-                string json = Http.Get("http://ip-api.com/json/" + ip + "?fields=status,country,city" + (Lang.Ar ? "&lang=ar" : ""), 6000);
+                string json = Http.Get("http://ip-api.com/json/" + ip + "?fields=status,country,city", 6000);
                 var d = (Dictionary<string, object>)new JavaScriptSerializer().DeserializeObject(json);
                 if ((string)d["status"] != "success") return null;
                 return d["country"] + " - " + d["city"];
@@ -122,8 +122,20 @@ namespace PingBoost
             public int Port, Packets;
         }
 
-        // Local UDP ports opened by the game's processes.
-        static HashSet<int> GamePorts(string[] processNames)
+        // Apps that send a lot of UDP (voice chat, browsers, music) and must never be taken for a game server.
+        static readonly string[] Noisy =
+        {
+            "discord", "discordptb", "discordcanary", "chrome", "msedge", "brave", "firefox", "opera", "opera_gx",
+            "spotify", "steam", "steamwebhelper", "teams", "ms-teams", "zoom", "whatsapp", "telegram", "skype", "onedrive"
+        };
+
+        public static bool IsRunning(string[] processNames)
+        {
+            return processNames.Any(n => Process.GetProcessesByName(n).Length > 0);
+        }
+
+        // Local UDP ports opened by the given processes.
+        static HashSet<int> PortsOf(string[] processNames)
         {
             var pids = new HashSet<int>(processNames.SelectMany(n => Process.GetProcessesByName(n)).Select(p => p.Id));
             var ports = new HashSet<int>();
@@ -152,6 +164,8 @@ namespace PingBoost
             return true;
         }
 
+        // Game known (processNames given): only that game's traffic counts, never a guess.
+        // Custom servers (no process): any UDP except well-known chat/browser apps.
         public static List<Hit> Capture(string[] processNames, int seconds, out bool matchedGame)
         {
             string dir = Path.Combine(Storage.Dir, "capture");
@@ -159,7 +173,9 @@ namespace PingBoost
             string etl = Path.Combine(dir, "cap.etl"), txt = Path.Combine(dir, "cap.txt");
             if (File.Exists(txt)) File.Delete(txt);
 
-            var gamePorts = GamePorts(processNames);
+            bool knownGame = processNames.Length > 0;
+            var gamePorts = PortsOf(processNames);
+            var noisyPorts = PortsOf(Noisy);
             Run("pktmon", "filter remove");
             Run("pktmon", "filter add 2XPingUDP -t UDP");
             try
@@ -176,8 +192,14 @@ namespace PingBoost
             if (!File.Exists(txt)) throw new Exception("pktmon produced no output.");
 
             // also refresh after capture: the game may have opened its socket during it
-            gamePorts.UnionWith(GamePorts(processNames));
+            gamePorts.UnionWith(PortsOf(processNames));
+            noisyPorts.UnionWith(PortsOf(Noisy));
             matchedGame = gamePorts.Count > 0;
+            if (knownGame && !matchedGame)
+            {
+                try { File.Delete(etl); File.Delete(txt); } catch { }
+                return new List<Hit>();
+            }
 
             var hits = new Dictionary<string, Hit>();
             foreach (var line in File.ReadLines(txt))
@@ -191,13 +213,39 @@ namespace PingBoost
                 else if (IsPublic(a) && !IsPublic(b)) { remote = a; rport = pa; lport = pb; }
                 else continue;
                 if (rport == 53 || rport == 123 || rport == 443) continue; // DNS, time sync, QUIC web traffic
-                if (matchedGame && !gamePorts.Contains(lport)) continue;
+                if (knownGame ? !gamePorts.Contains(lport) : noisyPorts.Contains(lport)) continue;
                 Hit h;
                 if (!hits.TryGetValue(remote, out h)) hits[remote] = h = new Hit { Ip = remote, Port = rport };
                 h.Packets++;
             }
             try { File.Delete(etl); File.Delete(txt); } catch { }
-            return hits.Values.Where(h => h.Packets >= 20).OrderByDescending(h => h.Packets).Take(3).ToList();
+            return hits.Values.Where(h => h.Packets >= 20).OrderByDescending(h => h.Packets).Take(5).ToList();
+        }
+
+        // Is the IPv4 address inside a.b.c.d/n ?
+        public static bool InCidr(string ip, string cidr)
+        {
+            try
+            {
+                var parts = cidr.Split('/');
+                int bits = parts.Length > 1 ? int.Parse(parts[1]) : 32;
+                uint a = ToUInt(ip), n = ToUInt(parts[0]);
+                uint mask = bits == 0 ? 0 : uint.MaxValue << (32 - bits);
+                return (a & mask) == (n & mask);
+            }
+            catch { return false; }
+        }
+
+        static uint ToUInt(string ip)
+        {
+            var b = ip.Split('.').Select(uint.Parse).ToArray();
+            return (b[0] << 24) | (b[1] << 16) | (b[2] << 8) | b[3];
+        }
+
+        // Removes any capture filter left behind (e.g. if the app was killed mid-capture).
+        public static void Cleanup()
+        {
+            try { Run("pktmon", "stop"); Run("pktmon", "filter remove"); } catch { }
         }
 
         static string Run(string exe, string args)

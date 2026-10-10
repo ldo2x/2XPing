@@ -40,6 +40,13 @@ namespace PingBoost
             Netsh("advfirewall firewall delete rule name=\"PingBoost-RegionLock\"", out output); // pre-2X Ping name
         }
 
+        // Any 2X Ping firewall rule still present?
+        public static bool Exists()
+        {
+            string output;
+            return Netsh("advfirewall firewall show rule name=\"" + Rule + "\"", out output) == 0;
+        }
+
         static int Netsh(string args, out string output)
         {
             var psi = new ProcessStartInfo("netsh", args)

@@ -11,9 +11,9 @@ using System.Windows.Forms;
 [assembly: AssemblyCopyright("Copyright © 2026 lDo2x. MIT License.")]
 [assembly: AssemblyTrademark("2X Ping by lDo2x")]
 // Release version: change it here (and tag the GitHub release v<version>-beta).
-[assembly: AssemblyVersion("0.9.0.0")]
-[assembly: AssemblyFileVersion("0.9.0.0")]
-[assembly: AssemblyInformationalVersion("0.9.0-beta")]
+[assembly: AssemblyVersion("0.9.1.0")]
+[assembly: AssemblyFileVersion("0.9.1.0")]
+[assembly: AssemblyInformationalVersion("0.9.1-beta")]
 
 namespace PingBoost
 {
@@ -102,9 +102,9 @@ namespace PingBoost
                 line(Lang.T("Version ", "الإصدار ") + Brand.Version, f.Font, MainForm.Dim, 24);
                 if (Brand.IsBeta)
                     line(Lang.T("BETA - early test version", "نسخة تجريبية (Beta)"), new Font("Segoe UI Semibold", 9.5f), MainForm.Warn, 24);
-                line(Lang.T("Developed by ", "تطوير: ") + Brand.Developer, new Font("Segoe UI Semibold", 12f), MainForm.TextC, 34);
-                line(Lang.T("Game connection optimizer: best server, best route, live ping.",
-                            "محسّن اتصال الألعاب: أفضل سيرفر، أفضل مسار، وبنق مباشر."), f.Font, MainForm.Dim, 44);
+                line(Lang.T("Made by ", "من تطوير ") + Brand.Developer, new Font("Segoe UI Semibold", 12f), MainForm.TextC, 34);
+                line(Lang.T("Finds you the best server and route, and shows your ping live.",
+                            "يلقى لك أحسن سيرفر وأحسن طريق، ويوريك البنق أول بأول."), f.Font, MainForm.Dim, 44);
                 // separate lines so Arabic and Latin text never get reordered together
                 line(Brand.Copyright, new Font("Segoe UI", 9f), MainForm.Dim, 20).RightToLeft = RightToLeft.No;
                 line(Lang.T("Free and open source (MIT License)", "مجاني ومفتوح المصدر (رخصة MIT)"), new Font("Segoe UI", 9f), MainForm.Dim, 22);
@@ -128,7 +128,7 @@ namespace PingBoost
 
                 var ok = new Button
                 {
-                    Text = Lang.T("OK", "موافق"), DialogResult = DialogResult.OK, Bounds = new Rectangle(170, y + 8, 100, 34),
+                    Text = Lang.T("OK", "تمام"), DialogResult = DialogResult.OK, Bounds = new Rectangle(170, y + 8, 100, 34),
                     FlatStyle = FlatStyle.Flat, BackColor = MainForm.Accent, ForeColor = Color.Black
                 };
                 ok.FlatAppearance.BorderSize = 0;
@@ -147,7 +147,7 @@ namespace PingBoost
         {
             using (var f = new Form())
             {
-                f.Text = Lang.T("Feedback & contact", "التواصل والملاحظات");
+                f.Text = Lang.T("Feedback & contact", "تواصل معنا");
                 f.FormBorderStyle = FormBorderStyle.FixedDialog;
                 f.StartPosition = FormStartPosition.CenterParent;
                 f.MinimizeBox = f.MaximizeBox = false;
@@ -162,7 +162,7 @@ namespace PingBoost
                 f.Controls.Add(new Label
                 {
                     Text = Lang.T("You are using a BETA. Your feedback decides what gets fixed next!",
-                                  "أنت تستخدم نسخة تجريبية. ملاحظاتك تحدد وش نصلّح ونضيف بعدين!"),
+                                  "إنت تجرّب نسخة بيتا، ورأيك هو اللي يحدد إيش نصلّح ونضيف بعدين!"),
                     ForeColor = MainForm.Warn, Bounds = new Rectangle(16, y, 448, 44)
                 });
                 y += 52;
@@ -189,32 +189,32 @@ namespace PingBoost
 
                 row(Lang.T("Report a bug", "بلّغ عن مشكلة"),
                     Lang.T("GitHub Issues - tip: press 'Copy diagnostic info' first and paste it in",
-                           "GitHub Issues - نصيحة: اضغط 'نسخ معلومات التشخيص' أول والصقها في البلاغ"),
+                           "على GitHub. نصيحة: اضغط «انسخ معلومات التشخيص» أول، والصقها في البلاغ"),
                     () => Brand.Open(Brand.IssuesUrl + "/new/choose"));
-                row(Lang.T("Suggest an idea / ask a question", "اقترح فكرة أو اسأل سؤال"),
-                    Lang.T("GitHub Discussions", "ساحة النقاش في GitHub"),
+                row(Lang.T("Suggest an idea / ask a question", "اقترح فكرة أو اسأل"),
+                    Lang.T("GitHub Discussions", "ساحة النقاش على GitHub"),
                     () => Brand.Open(Brand.DiscussionsUrl));
                 row("Discord: " + Brand.DiscordUser,
                     string.IsNullOrEmpty(Brand.DiscordInvite)
-                        ? Lang.T("Click to copy the username, then add it as a friend on Discord", "اضغط لنسخ اليوزر، وبعدها أضفه في ديسكورد")
+                        ? Lang.T("Click to copy the username, then add it as a friend on Discord", "اضغط عشان تنسخ اليوزر، وبعدين ضيفه في ديسكورد")
                         : Lang.T("Join the community server", "ادخل سيرفر المجتمع"),
                     () =>
                     {
                         if (!string.IsNullOrEmpty(Brand.DiscordInvite)) { Brand.Open(Brand.DiscordInvite); return; }
                         try { Clipboard.SetText(Brand.DiscordUser); } catch { }
-                        MessageBox.Show(f, Lang.T("Copied: ", "تم النسخ: ") + Brand.DiscordUser, Brand.Name);
+                        MessageBox.Show(f, Lang.T("Copied: ", "نسخته: ") + Brand.DiscordUser, "‎" + Brand.Name);
                     });
-                row(Lang.T("Copy diagnostic info", "نسخ معلومات التشخيص"),
-                    Lang.T("Version, Windows and the recent log - no personal data", "الإصدار والويندوز وآخر السجل - بدون أي بيانات شخصية"),
+                row(Lang.T("Copy diagnostic info", "انسخ معلومات التشخيص"),
+                    Lang.T("Version, Windows and the recent log - no personal data", "الإصدار والويندوز وآخر السجل، بدون أي بيانات شخصية"),
                     () =>
                     {
                         try { Clipboard.SetText(Diagnostics(log)); } catch { }
-                        MessageBox.Show(f, Lang.T("Copied - paste it into your report.", "تم النسخ - الصقه في البلاغ."), Brand.Name);
+                        MessageBox.Show(f, Lang.T("Copied - paste it into your report.", "نسخته! الصقه في البلاغ."), "‎" + Brand.Name);
                     });
 
                 var ok = new Button
                 {
-                    Text = Lang.T("Close", "إغلاق"), DialogResult = DialogResult.OK, Bounds = new Rectangle(184, y + 4, 112, 34),
+                    Text = Lang.T("Close", "تمام"), DialogResult = DialogResult.OK, Bounds = new Rectangle(184, y + 4, 112, 34),
                     FlatStyle = FlatStyle.Flat, BackColor = MainForm.Accent, ForeColor = Color.Black
                 };
                 ok.FlatAppearance.BorderSize = 0;
@@ -254,12 +254,12 @@ namespace PingBoost
                 "- Region lock uses Windows Firewall and is removed when you close the app.\n" +
                 "- Use it at your own risk; 2X Ping does not modify any game files.\n\n" +
                 "Found a problem or have an idea? Press the Feedback button (top of the window).",
-                "أهلاً بك في 2X Ping " + Brand.DisplayVersion + "!\n\n" +
-                "هذي نسخة تجريبية (Beta): المميزات ممكن تتغيّر وممكن تواجه أخطاء.\n\n" +
-                "- الأرقام (عدد اللاعبين ووقت المباراة) تقديرية.\n" +
-                "- قفل السيرفرات يستخدم جدار حماية ويندوز وينشال لما تقفل البرنامج.\n" +
-                "- الاستخدام على مسؤوليتك، والبرنامج ما يعدّل أي ملفات للعبة.\n\n" +
-                "لقيت مشكلة أو عندك فكرة؟ اضغط زر تواصل أعلى البرنامج.");
+                "يا هلا فيك في ‎2X Ping " + Brand.DisplayVersion + "‎!\n\n" +
+                "هادي نسخة بيتا، يعني لسا نجرّب ونطوّر، وممكن تطلع لك أخطاء بسيطة.\n\n" +
+                "- عدد اللاعبين ووقت الانتظار أرقام تقريبية.\n" +
+                "- تثبيت السيرفرات يشتغل عن طريق جدار حماية ويندوز، وينشال لحاله لما تقفل البرنامج.\n" +
+                "- البرنامج ما يلمس ملفات اللعبة أبداً، والاستخدام على مسؤوليتك.\n\n" +
+                "لقيت مشكلة أو عندك فكرة؟ اضغط «تواصل معنا» فوق.");
             MessageBox.Show(owner, text, Brand.Name + " Beta", MessageBoxButtons.OK, MessageBoxIcon.Information,
                 MessageBoxDefaultButton.Button1, Lang.Ar ? MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign : 0);
             Storage.SetSetting(key, Brand.Version);
@@ -314,8 +314,8 @@ namespace PingBoost
             var answer = MessageBox.Show(Lang.T(
                     "Something went wrong:\n" + (ex != null ? ex.Message : "") + "\n\nDetails were saved to:\n" + path +
                     "\n\nOpen the issue page to report it?",
-                    "صار خطأ غير متوقع:\n" + (ex != null ? ex.Message : "") + "\n\nانحفظت التفاصيل في:\n" + path +
-                    "\n\nتبي تفتح صفحة البلاغات عشان ترسله؟"),
+                    "صار خطأ ما توقعناه:\n" + (ex != null ? ex.Message : "") + "\n\nحفظت التفاصيل هنا:\n" + path +
+                    "\n\nتبغى تفتح صفحة البلاغات وترسله لنا؟"),
                 Brand.Name, MessageBoxButtons.YesNo, MessageBoxIcon.Error);
             if (answer == DialogResult.Yes) Brand.Open(Brand.IssuesUrl);
         }

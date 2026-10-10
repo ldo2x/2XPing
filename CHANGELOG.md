@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.9.1-beta (2026-10-10)
+
+- **Arabic first:** all Arabic text rewritten naturally (not translated), with a light Hijazi touch
+- **Simple and Advanced layouts:** Simple shows only server, ping, players and wait time; Advanced keeps every tool
+- **Settings window:** language, layout, auto ping test, update check, reset
+- **"Put my PC back as it was"** (Settings, and Tools in Advanced): removes the server lock and relay route, resets game priority, clears your ticks, then verifies nothing is left
+- **"Which server am I on?"** (was "Detect my server"): in Valve games it names the server you are on and confirms it is one you locked
+- Fixed: server detection no longer picks up Discord or browser traffic, and refuses to guess when the game is closed
+- Locked-out regions now show "blocked" instead of a timeout, and are skipped in the ping test
+- Fixed cut-off text in the ping and loss columns
+
 ## v0.9.0-beta (2026-10-10)
 
 First public **beta**.

@@ -8,7 +8,7 @@ Made by <b>lDo2x</b>
 </p>
 
 <p align="center">
-<img src="https://img.shields.io/badge/version-0.9.0--beta-orange" alt="version">
+<img src="https://img.shields.io/badge/version-0.9.1--beta-orange" alt="version">
 <img src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-blue" alt="platform">
 <img src="https://img.shields.io/badge/license-MIT-green" alt="license">
 <a href="README.md"><img src="https://img.shields.io/badge/lang-العربية-lightgrey" alt="Arabic"></a>
@@ -35,7 +35,8 @@ Requires **Windows 10 or 11**. Nothing to install.
 | 📶 Ping test | Ping, jitter and packet loss per server region, closest first |
 | 🔒 Server picker | **Deadlock, CS2, Dota 2**: tick the regions you want and lock out the rest |
 | 👥 Player numbers | Estimated players per region and expected time to find a match (Deadlock) |
-| 🔍 Detect my server | Finds the server you are playing on right now, and its location (any game) |
+| ✅ Which server am I on? | While in a match, tells you which server you are on and whether it is one you picked |
+| 🎛️ Simple or Advanced | Simple layout for everyday players, Advanced with every tool |
 | 🚀 Relay BOOST | Routes only the game's traffic through your own VPS when that path is faster |
 | 📈 Live ping | Live ping and packet-loss graph while you play |
 | 🌐 Arabic & English | Full right-to-left Arabic interface |
@@ -46,12 +47,12 @@ Deadlock · Counter-Strike 2 · Dota 2 · Arena Breakout: Infinite · Valorant �
 ## How to use
 
 - **Ping test:** pick a game and press **Test ping**. Green is great (under 60 ms), yellow is OK, red is high.
-- **Server picker (Valve games):** tick the regions, press **Lock servers**, restart the game, then queue. 2X Ping blocks the other regions' Valve servers in Windows Firewall. The lock is removed when you press **Unlock** or close the app.
-- **Detect my server:** join a match or raid, then press **Detect my server**. 2X Ping watches the game's traffic for 15 seconds and saves the server it finds.
+- **Server picker (Valve games):** tick the regions, press **Lock my servers**, restart the game, then queue. 2X Ping blocks the other regions' Valve servers in Windows Firewall. The lock is removed when you press **Unlock** or close the app.
+- **Which server am I on?:** join a real match (not practice) and press **Which server am I on?**. 2X Ping watches the game's traffic for 15 seconds and names the server, with a ✓ if it is one you picked. For other games it saves the server it finds.
 - **Relay BOOST (optional):**
   1. Rent an Ubuntu VPS near the game servers and run `sudo bash setup-relay.sh` on it.
   2. Install [WireGuard for Windows](https://www.wireguard.com/install/).
-  3. Add the printed `client.conf` under **Relays**.
+  3. Switch to the **Advanced** layout in **Settings**, then add the printed `client.conf` under **Relays**.
   4. Leave the route on **Auto** and press **BOOST**.
 
 ## Notes
@@ -76,7 +77,7 @@ What's next: [ROADMAP.md](ROADMAP.md)
 ### Known issues
 - Windows shows a SmartScreen warning because the app is not code-signed yet.
 - Region lock has no effect if Windows Firewall is off or replaced by another security suite.
-- Detect my server only works while you are **inside** a match or raid.
+- Which server am I on? only works while you are **inside** a match or raid (not the menu or practice).
 - Per-region player numbers exist for Deadlock only; other games show the Steam total.
 
 ## 💬 Contact

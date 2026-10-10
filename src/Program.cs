@@ -17,7 +17,7 @@ namespace PingBoost
             {
                 if (!first)
                 {
-                    MessageBox.Show(Lang.T("2X Ping is already running.", "البرنامج شغّال أصلاً."), Brand.Name,
+                    MessageBox.Show(Lang.T("2X Ping is already running.", "البرنامج مفتوح أصلاً."), Brand.Name,
                         MessageBoxButtons.OK, MessageBoxIcon.Information);
                     return;
                 }

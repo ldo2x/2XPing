@@ -22,6 +22,7 @@ namespace PingBoost
         public string Id, NameEn, NameAr;
         public bool Picked; // "play on this server" (Valve region lock)
         public bool Detected; // found by live capture
+        public bool Here;     // the game is connected to this region right now
         public List<Endpoint> Endpoints = new List<Endpoint>();
         public List<string> Cidrs = new List<string>();
         public PingResult Direct;
@@ -108,38 +109,38 @@ namespace PingBoost
             return new List<Game>
             {
                 new Game { Name = "Deadlock", Provider = Provider.Valve, AppId = "1422450", Processes = new[] {"deadlock", "project8"},
-                    NoteEn = "Valve network. Tick the servers you want to play on, then press Lock.",
-                    NoteAr = "شبكة Valve. حدد السيرفرات اللي تبي تلعب عليها واضغط قفل السيرفرات." },
+                    NoteEn = "Tick the servers you want to play on, then press Lock my servers.",
+                    NoteAr = "علّم (✓) على السيرفرات اللي تبغى تلعب عليها، وبعدين اضغط «ثبّت سيرفراتي»." },
                 new Game { Name = "Counter-Strike 2", Provider = Provider.Valve, AppId = "730", SteamAppId = "730", Processes = new[] {"cs2"},
-                    NoteEn = "Valve network. Tick the servers you want to play on, then press Lock.",
-                    NoteAr = "شبكة Valve. حدد السيرفرات اللي تبي تلعب عليها واضغط قفل السيرفرات." },
+                    NoteEn = "Tick the servers you want to play on, then press Lock my servers.",
+                    NoteAr = "علّم (✓) على السيرفرات اللي تبغى تلعب عليها، وبعدين اضغط «ثبّت سيرفراتي»." },
                 new Game { Name = "Dota 2", Provider = Provider.Valve, AppId = "570", SteamAppId = "570", Processes = new[] {"dota2"},
-                    NoteEn = "Valve network. Tick the servers you want to play on, then press Lock.",
-                    NoteAr = "شبكة Valve. حدد السيرفرات اللي تبي تلعب عليها واضغط قفل السيرفرات." },
+                    NoteEn = "Tick the servers you want to play on, then press Lock my servers.",
+                    NoteAr = "علّم (✓) على السيرفرات اللي تبغى تلعب عليها، وبعدين اضغط «ثبّت سيرفراتي»." },
                 new Game { Name = "Arena Breakout: Infinite", Provider = Provider.Tencent, SteamAppId = "2073620", Processes = new[] {"UAGame"},
-                    NoteEn = "Hosted on Tencent Cloud; your region is fixed to your account. Join a raid, then press Detect server to find the real one.",
-                    NoteAr = "سيرفراتها على Tencent Cloud والمنطقة مربوطة بحسابك. ادخل رايد واضغط اكتشاف السيرفر عشان تعرف سيرفرك الحقيقي." },
+                    NoteEn = "The game picks your region from your account. Join a raid and press Which server am I on? to see your real server.",
+                    NoteAr = "اللعبة تحدد منطقتك من حسابك. ادخل رايد واضغط «على أي سيرفر أنا؟» عشان تعرف سيرفرك الحقيقي." },
                 new Game { Name = "Valorant", Provider = Provider.Aws, AwsRegions = aws, Processes = new[] {"VALORANT-Win64-Shipping"},
-                    NoteEn = "Hosted on AWS. Ping is measured to the AWS datacenter of each region.",
-                    NoteAr = "سيرفراتها على AWS. البنق مقاس لداتا سنتر كل منطقة." },
+                    NoteEn = "The ping shown is to each region's AWS datacenter, where the game servers are.",
+                    NoteAr = "البنق اللي تشوفه هو لمركز البيانات (AWS) في كل منطقة، وهناك سيرفرات اللعبة." },
                 new Game { Name = "Fortnite", Provider = Provider.Aws, AwsRegions = aws, Processes = new[] {"FortniteClient-Win64-Shipping"},
-                    NoteEn = "Hosted on AWS. Ping is measured to the AWS datacenter of each region.",
-                    NoteAr = "سيرفراتها على AWS. البنق مقاس لداتا سنتر كل منطقة." },
+                    NoteEn = "The ping shown is to each region's AWS datacenter, where the game servers are.",
+                    NoteAr = "البنق اللي تشوفه هو لمركز البيانات (AWS) في كل منطقة، وهناك سيرفرات اللعبة." },
                 new Game { Name = "PUBG: Battlegrounds", SteamAppId = "578080", Provider = Provider.Aws, AwsRegions = aws, Processes = new[] {"TslGame"},
-                    NoteEn = "Hosted on AWS. Ping is measured to the AWS datacenter of each region.",
-                    NoteAr = "سيرفراتها على AWS. البنق مقاس لداتا سنتر كل منطقة." },
+                    NoteEn = "The ping shown is to each region's AWS datacenter, where the game servers are.",
+                    NoteAr = "البنق اللي تشوفه هو لمركز البيانات (AWS) في كل منطقة، وهناك سيرفرات اللعبة." },
                 new Game { Name = "Apex Legends", SteamAppId = "1172470", Provider = Provider.Aws, AwsRegions = aws, Processes = new[] {"r5apex"},
-                    NoteEn = "Multi-cloud hosting - AWS regions shown as a reference point.",
-                    NoteAr = "مستضافة على أكثر من مزوّد. مناطق AWS هنا كمرجع تقريبي." },
+                    NoteEn = "Apex uses several hosting providers, so these numbers are a rough guide.",
+                    NoteAr = "Apex على أكثر من مزوّد، فالأرقام هنا تقريبية." },
                 new Game { Name = "Rocket League", SteamAppId = "252950", Provider = Provider.Aws, AwsRegions = aws, Processes = new[] {"RocketLeague"},
-                    NoteEn = "AWS regions shown as a reference point.",
-                    NoteAr = "مناطق AWS هنا كمرجع تقريبي." },
+                    NoteEn = "These numbers are a rough guide based on AWS datacenters.",
+                    NoteAr = "الأرقام هنا تقريبية حسب مراكز AWS." },
                 new Game { Name = "Dead by Daylight", SteamAppId = "381210", Provider = Provider.Aws, AwsRegions = aws, Processes = new[] {"DeadByDaylight-Win64-Shipping"},
-                    NoteEn = "Hosted on AWS GameLift.",
-                    NoteAr = "سيرفراتها على AWS GameLift." },
+                    NoteEn = "The ping shown is to each region's AWS datacenter, where the game servers are.",
+                    NoteAr = "البنق اللي تشوفه هو لمركز البيانات (AWS) في كل منطقة، وهناك سيرفرات اللعبة." },
                 new Game { Name = "Custom servers", Provider = Provider.Custom,
-                    NoteEn = "Your own servers - add them from Tools > Add custom server.",
-                    NoteAr = "سيرفراتك الخاصة. أضفها من الأدوات > إضافة سيرفر مخصص." },
+                    NoteEn = "Your own servers. Add them from Tools > Add a server (Advanced layout).",
+                    NoteAr = "سيرفرات تضيفها بنفسك من «أدوات وسجل» ← «ضيف سيرفر» (في الوضع المتقدم)." },
             };
         }
 
@@ -176,7 +177,8 @@ namespace PingBoost
             {
                 list = Storage.LoadCustom();
             }
-            list.InsertRange(0, Storage.LoadDetected(g.Name));
+            // Valve servers are matched to their region instead (see "Which server am I on?")
+            if (g.Provider != Provider.Valve) list.InsertRange(0, Storage.LoadDetected(g.Name));
             g.Regions = list;
             g.Loaded = g.Provider != Provider.Custom;
         }
@@ -319,6 +321,11 @@ namespace PingBoost
             File.WriteAllLines(PicksFile, lines);
         }
 
+        public static void ClearPicks()
+        {
+            try { if (File.Exists(PicksFile)) File.Delete(PicksFile); } catch { }
+        }
+
         public static List<Relay> LoadRelays()
         {
             var list = new List<Relay>();
@@ -378,8 +385,8 @@ namespace PingBoost
             var r = new Region
             {
                 Id = "detected-" + ip, Detected = true,
-                NameEn = "Your server (detected) " + ip + loc,
-                NameAr = "سيرفرك (مكتشف) " + ip + loc
+                NameEn = "Your server" + loc + "  (" + ip + ")",
+                NameAr = "سيرفرك" + loc + "  (" + ip + ")"
             };
             r.Endpoints.Add(new Endpoint(ip, 0));
             int dot = ip.LastIndexOf('.');
