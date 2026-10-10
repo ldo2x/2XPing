@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
+using System.Linq;
 using System.Windows.Forms;
 
 namespace PingBoost
@@ -10,6 +12,17 @@ namespace PingBoost
         public static bool Simple { get { return Storage.GetSetting("mode") != "advanced"; } }
         public static bool AutoTest { get { return Storage.GetSetting("autotest") != "0"; } }
         public static bool CheckUpdates { get { return Storage.GetSetting("updates") != "0"; } }
+
+        // games the player unticked in Settings (by icon key)
+        public static HashSet<string> HiddenGames
+        {
+            get
+            {
+                var v = Storage.GetSetting("hidden_games") ?? "";
+                return new HashSet<string>(v.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries));
+            }
+            set { Storage.SetSetting("hidden_games", string.Join(",", value)); }
+        }
     }
 
     static class SettingsDialog
@@ -33,14 +46,16 @@ namespace PingBoost
                 // RTL text, no mirrored layout: every control spans the full width
                 f.RightToLeft = Lang.Ar ? RightToLeft.Yes : RightToLeft.No;
 
-                int y = 14;
-                const int W = 460;
+                // two columns: settings on the reading side, games + actions on the other
+                const int W = 400;
+                int colA = Lang.Ar ? 440 : 20, colB = Lang.Ar ? 20 : 440;
+                int x = colA, y = 14;
                 Func<string, Label> heading = text =>
                 {
                     var l = new Label
                     {
                         Text = text, Font = new Font("Segoe UI Semibold", 10.5f), ForeColor = MainForm.Accent,
-                        Bounds = new Rectangle(20, y, W, 26)
+                        Bounds = new Rectangle(x, y, W, 26)
                     };
                     f.Controls.Add(l);
                     y += 30;
@@ -48,7 +63,7 @@ namespace PingBoost
                 };
                 Func<string, string, bool, RadioButton> radio = (text, sub, on) =>
                 {
-                    var r = new RadioButton { Text = text, Checked = on, Bounds = new Rectangle(20, y, W, 26), ForeColor = MainForm.TextC };
+                    var r = new RadioButton { Text = text, Checked = on, Bounds = new Rectangle(x, y, W, 26), ForeColor = MainForm.TextC };
                     f.Controls.Add(r);
                     y += 26;
                     if (sub != null)
@@ -56,7 +71,7 @@ namespace PingBoost
                         f.Controls.Add(new Label
                         {
                             Text = sub, ForeColor = MainForm.Dim, Font = new Font("Segoe UI", 8.5f),
-                            Bounds = new Rectangle(40, y, W - 20, 20)
+                            Bounds = new Rectangle(x, y, W, 20)
                         });
                         y += 24;
                     }
@@ -64,11 +79,20 @@ namespace PingBoost
                 };
                 Func<string, bool, CheckBox> check = (text, on) =>
                 {
-                    var c = new CheckBox { Text = text, Checked = on, Bounds = new Rectangle(20, y, W, 26), ForeColor = MainForm.TextC };
+                    var c = new CheckBox { Text = text, Checked = on, Bounds = new Rectangle(x, y, W, 26), ForeColor = MainForm.TextC };
                     f.Controls.Add(c);
                     y += 30;
                     return c;
                 };
+
+                heading(Lang.T("Your name", "اسمك"));
+                var nick = new TextBox
+                {
+                    Text = Telemetry.Nickname, Bounds = new Rectangle(x, y, W, 28), MaxLength = 30,
+                    BackColor = MainForm.Panel2, ForeColor = MainForm.TextC, BorderStyle = BorderStyle.FixedSingle
+                };
+                f.Controls.Add(nick);
+                y += 40;
 
                 heading(Lang.T("Language", "اللغة"));
                 var ar = radio("العربية", null, Lang.Ar);
@@ -97,14 +121,39 @@ namespace PingBoost
                 heading(Lang.T("Options", "خيارات"));
                 var auto = check(Lang.T("Test ping automatically when I pick a game", "افحص البنق تلقائي لما أختار لعبة"), Prefs.AutoTest);
                 var upd = check(Lang.T("Check for updates when the app starts", "شيّك على التحديثات لما يفتح البرنامج"), Prefs.CheckUpdates);
-                y += 8;
+                int bottomA = y;
+
+                // ---- second column
+                x = colB;
+                y = 14;
+                heading(Lang.T("Games in your list", "الألعاب اللي تظهر لك"));
+                var hiddenBefore = Prefs.HiddenGames;
+                var gameChecks = new List<KeyValuePair<string, CheckBox>>();
+                foreach (var g in GameDb.All())
+                {
+                    var cb = new CheckBox
+                    {
+                        Text = "  " + g.Name, Checked = !hiddenBefore.Contains(g.Icon), ForeColor = MainForm.TextC,
+                        Bounds = new Rectangle(x, y, W, 28),
+                        TextImageRelation = TextImageRelation.ImageBeforeText, ImageAlign = ContentAlignment.MiddleLeft
+                    };
+                    var ic = Brand.GameIcon(g.Icon);
+                    if (ic != null) cb.Image = new Bitmap(ic, 20, 20);
+                    f.Controls.Add(cb);
+                    gameChecks.Add(new KeyValuePair<string, CheckBox>(g.Icon, cb));
+                    y += 28;
+                }
+                y += 12;
 
                 heading(Lang.T("More", "أكثر"));
-                Func<string, int, Action, Button> small = (text, x, act) =>
+                // two calm buttons side by side, the first on the reading side
+                Func<string, int, Action, Button> small = (text, i, act) =>
                 {
+                    const int bw = (W - 8) / 2;
+                    int bx = (i == 0) ^ Lang.Ar ? x : x + bw + 8;
                     var b = new Button
                     {
-                        Text = text, Bounds = new Rectangle(x, y, 146, 34), FlatStyle = FlatStyle.Flat,
+                        Text = text, Bounds = new Rectangle(bx, y, bw, 36), FlatStyle = FlatStyle.Flat,
                         BackColor = MainForm.Panel2, ForeColor = MainForm.TextC, Cursor = Cursors.Hand
                     };
                     b.FlatAppearance.BorderSize = 0;
@@ -112,41 +161,27 @@ namespace PingBoost
                     f.Controls.Add(b);
                     return b;
                 };
-                small(Lang.T("About", "عن البرنامج"), 20, () => AboutDialog.Show(f));
-                small(Lang.T("Data folder", "مجلد البيانات"), 177, () => Brand.Open(Storage.Dir));
-                small(Lang.T("Reset settings", "رجّع الافتراضي"), 334, () =>
-                {
-                    ar.Checked = true; simple.Checked = true; auto.Checked = true; upd.Checked = true;
-                });
-                y += 44;
-
-                var reset = new Button
-                {
-                    Text = Lang.T("Put my PC back as it was", "رجّع جهازي زي ما كان"), Bounds = new Rectangle(20, y, W, 36),
-                    FlatStyle = FlatStyle.Flat, BackColor = MainForm.Panel2, ForeColor = MainForm.Bad, Cursor = Cursors.Hand,
-                    Font = new Font("Segoe UI Semibold", 10f)
-                };
-                reset.FlatAppearance.BorderSize = 0;
-                reset.Click += delegate { wantReset = true; f.DialogResult = DialogResult.Cancel; f.Close(); };
-                f.Controls.Add(reset);
-                y += 38;
+                small(Lang.T("About 2X Ping", "عن البرنامج"), 0, () => AboutDialog.Show(f));
+                small(Lang.T("Back to normal", "رجّع كل شي طبيعي"), 1,
+                    () => { wantReset = true; f.DialogResult = DialogResult.Cancel; f.Close(); });
+                y += 42;
                 f.Controls.Add(new Label
                 {
-                    Text = Lang.T("Removes the server lock and relay route, resets game priority and clears your ticks.",
-                                  "يشيل تثبيت السيرفرات وطريق الوسيط، ويرجّع أولوية اللعبة، ويمسح اختياراتك."),
-                    ForeColor = MainForm.Dim, Font = new Font("Segoe UI", 8.5f), Bounds = new Rectangle(20, y, W, 20)
+                    Text = Lang.T("\"Back to normal\" unlocks your servers. Closing the app does it too.",
+                                  "«رجّع كل شي طبيعي» يفك تثبيت السيرفرات، ونفس الشي يصير لما تقفل البرنامج."),
+                    ForeColor = MainForm.Dim, Font = new Font("Segoe UI", 8.5f), Bounds = new Rectangle(x, y, W, 20)
                 });
-                y += 36;
+                y = Math.Max(y + 36, bottomA + 20);
 
                 var save = new Button
                 {
-                    Text = Lang.T("Save", "حفظ"), DialogResult = DialogResult.OK, Bounds = new Rectangle(Lang.Ar ? 370 : 250, y, 110, 36),
+                    Text = Lang.T("Save", "حفظ"), DialogResult = DialogResult.OK, Bounds = new Rectangle(Lang.Ar ? 730 : 610, y, 110, 36),
                     FlatStyle = FlatStyle.Flat, BackColor = MainForm.Accent, ForeColor = Color.Black,
                     Font = new Font("Segoe UI Semibold", 10f)
                 };
                 var cancel = new Button
                 {
-                    Text = Lang.T("Cancel", "إلغاء"), DialogResult = DialogResult.Cancel, Bounds = new Rectangle(Lang.Ar ? 250 : 370, y, 110, 36),
+                    Text = Lang.T("Cancel", "إلغاء"), DialogResult = DialogResult.Cancel, Bounds = new Rectangle(Lang.Ar ? 610 : 730, y, 110, 36),
                     FlatStyle = FlatStyle.Flat, BackColor = MainForm.Panel2, ForeColor = MainForm.TextC
                 };
                 save.FlatAppearance.BorderSize = cancel.FlatAppearance.BorderSize = 0;
@@ -154,7 +189,7 @@ namespace PingBoost
                 f.Controls.Add(cancel);
                 f.AcceptButton = save;
                 f.CancelButton = cancel;
-                f.ClientSize = new Size(W + 40, y + 52);
+                f.ClientSize = new Size(2 * W + 60, y + 52);
 
                 if (f.ShowDialog(owner) != DialogResult.OK)
                 {
@@ -162,12 +197,20 @@ namespace PingBoost
                     return false;
                 }
 
+                if (nick.Text.Trim().Length >= 2) Telemetry.Nickname = nick.Text;
                 Storage.SaveArabic(ar.Checked);
                 Storage.SetSetting("mode", simple.Checked ? "simple" : "advanced");
                 Storage.SetSetting("autotest", auto.Checked ? "1" : "0");
                 Storage.SetSetting("updates", upd.Checked ? "1" : "0");
                 Lang.Ar = ar.Checked;
-                return wasAr != Lang.Ar || wasSimple != Prefs.Simple;
+
+                // nothing ticked = show every game, so the list is never empty
+                var hiddenNow = new HashSet<string>(gameChecks.Where(gc => !gc.Value.Checked).Select(gc => gc.Key));
+                if (hiddenNow.Count == gameChecks.Count) hiddenNow.Clear();
+                Prefs.HiddenGames = hiddenNow;
+                bool gamesChanged = !hiddenNow.SetEquals(hiddenBefore);
+
+                return wasAr != Lang.Ar || wasSimple != Prefs.Simple || gamesChanged;
             }
         }
     }

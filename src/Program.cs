@@ -17,11 +17,14 @@ namespace PingBoost
             {
                 if (!first)
                 {
-                    MessageBox.Show(Lang.T("2X Ping is already running.", "البرنامج مفتوح أصلاً."), Brand.Name,
+                    MessageBox.Show(Lang.T("2X Ping is already running.", "البرنامج مفتوح أصلاً."), Brand.Caption,
                         MessageBoxButtons.OK, MessageBoxIcon.Information);
                     return;
                 }
                 ServicePointManager.SecurityProtocol = (SecurityProtocolType)3072; // TLS 1.2
+                ServicePointManager.DefaultConnectionLimit = 64;
+                // the ping test runs every server at once; don't let the thread pool add threads one by one
+                ThreadPool.SetMinThreads(64, 64);
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
                 CrashHandler.Install();

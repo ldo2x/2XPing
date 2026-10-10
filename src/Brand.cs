@@ -11,9 +11,9 @@ using System.Windows.Forms;
 [assembly: AssemblyCopyright("Copyright © 2026 lDo2x. MIT License.")]
 [assembly: AssemblyTrademark("2X Ping by lDo2x")]
 // Release version: change it here (and tag the GitHub release v<version>-beta).
-[assembly: AssemblyVersion("0.9.2.0")]
-[assembly: AssemblyFileVersion("0.9.2.0")]
-[assembly: AssemblyInformationalVersion("0.9.2-beta")]
+[assembly: AssemblyVersion("0.9.3.0")]
+[assembly: AssemblyFileVersion("0.9.3.0")]
+[assembly: AssemblyInformationalVersion("0.9.3-beta")]
 
 namespace PingBoost
 {
@@ -43,9 +43,42 @@ namespace PingBoost
         public static string DisplayVersion { get { return Version + (IsBeta ? " Beta" : ""); } }
         public static string Copyright { get { return "© " + Year + " " + Developer; } }
 
+        // Window/message captions: an explicit left-to-right embedding keeps "2X" in Latin digits in Arabic title bars.
+        public static string Caption { get { return "‪" + Name + "‬"; } }
+
         public static void Open(string url)
         {
             try { Process.Start(url); } catch { }
+        }
+
+        static readonly System.Collections.Generic.Dictionary<string, Image> icons = new System.Collections.Generic.Dictionary<string, Image>();
+
+        // Game icon embedded at build time as "game_<key>.png" (assets/games); null when missing.
+        public static Image GameIcon(string key)
+        {
+            if (string.IsNullOrEmpty(key)) return null;
+            Image img;
+            if (icons.TryGetValue(key, out img)) return img;
+            var s = Assembly.GetExecutingAssembly().GetManifestResourceStream("game_" + key + ".png");
+            img = s != null ? Image.FromStream(s) : null;
+            icons[key] = img;
+            return img;
+        }
+
+        // Country flag embedded as "flag_<cc>.png" (assets/flags); null when missing.
+        public static Image Flag(string cc)
+        {
+            return string.IsNullOrEmpty(cc) ? null : GameIconResource("flag_" + cc + ".png");
+        }
+
+        static Image GameIconResource(string name)
+        {
+            Image img;
+            if (icons.TryGetValue(name, out img)) return img;
+            var s = Assembly.GetExecutingAssembly().GetManifestResourceStream(name);
+            img = s != null ? Image.FromStream(s) : null;
+            icons[name] = img;
+            return img;
         }
 
         static Image logo;
@@ -69,7 +102,7 @@ namespace PingBoost
         {
             using (var f = new Form())
             {
-                f.Text = Brand.Name;
+                f.Text = Brand.Caption;
                 f.FormBorderStyle = FormBorderStyle.FixedDialog;
                 f.StartPosition = FormStartPosition.CenterParent;
                 f.MinimizeBox = f.MaximizeBox = false;
@@ -116,14 +149,16 @@ namespace PingBoost
                     var l = new LinkLabel
                     {
                         Text = text, AutoSize = false, TextAlign = ContentAlignment.MiddleCenter, Bounds = new Rectangle(x, y, 190, 24),
+                        RightToLeft = Lang.Ar ? RightToLeft.Yes : RightToLeft.No, // keeps "GitHub" after the Arabic words
                         LinkColor = MainForm.Accent, ActiveLinkColor = Color.White, LinkBehavior = LinkBehavior.HoverUnderline
                     };
                     l.LinkClicked += delegate { Brand.Open(url); };
                     f.Controls.Add(l);
                     return l;
                 };
-                link(Lang.T("GitHub page", "صفحة البرنامج على GitHub"), Brand.RepoUrl, 30);
-                link(Lang.T("Report a problem", "بلّغ عن مشكلة"), Brand.IssuesUrl, 220);
+                // first link on the reading side (right in Arabic)
+                link(Lang.T("GitHub page", "صفحة البرنامج على GitHub"), Brand.RepoUrl, Lang.Ar ? 220 : 30);
+                link(Lang.T("Report a problem", "بلّغ عن مشكلة"), Brand.IssuesUrl, Lang.Ar ? 30 : 220);
                 y += 30;
 
                 var ok = new Button
@@ -202,14 +237,14 @@ namespace PingBoost
                     {
                         if (!string.IsNullOrEmpty(Brand.DiscordInvite)) { Brand.Open(Brand.DiscordInvite); return; }
                         try { Clipboard.SetText(Brand.DiscordUser); } catch { }
-                        MessageBox.Show(f, Lang.T("Copied: ", "نسخته: ") + Brand.DiscordUser, "‎" + Brand.Name);
+                        MessageBox.Show(f, Lang.T("Copied: ", "نسخته: ") + Brand.DiscordUser, Brand.Caption);
                     });
                 row(Lang.T("Copy diagnostic info", "انسخ معلومات التشخيص"),
                     Lang.T("Version, Windows and the recent log - no personal data", "الإصدار والويندوز وآخر السجل، بدون أي بيانات شخصية"),
                     () =>
                     {
                         try { Clipboard.SetText(Diagnostics(log)); } catch { }
-                        MessageBox.Show(f, Lang.T("Copied - paste it into your report.", "نسخته! الصقه في البلاغ."), "‎" + Brand.Name);
+                        MessageBox.Show(f, Lang.T("Copied - paste it into your report.", "نسخته! الصقه في البلاغ."), Brand.Caption);
                     });
 
                 var ok = new Button
@@ -304,6 +339,7 @@ namespace PingBoost
 
         static void Report(Exception ex)
         {
+            Telemetry.Send("error", null, -1, "crash: " + ex);
             string path = System.IO.Path.Combine(Storage.Dir, "crash.log");
             try
             {
@@ -316,7 +352,7 @@ namespace PingBoost
                     "\n\nOpen the issue page to report it?",
                     "صار خطأ ما توقعناه:\n" + (ex != null ? ex.Message : "") + "\n\nحفظت التفاصيل هنا:\n" + path +
                     "\n\nتبغى تفتح صفحة البلاغات وترسله لنا؟"),
-                Brand.Name, MessageBoxButtons.YesNo, MessageBoxIcon.Error);
+                Brand.Caption, MessageBoxButtons.YesNo, MessageBoxIcon.Error);
             if (answer == DialogResult.Yes) Brand.Open(Brand.IssuesUrl);
         }
     }

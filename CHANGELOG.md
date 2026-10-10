@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.9.3-beta (2026-10-10)
+
+- **Much faster ping test:** every server is tested at once, and a server that doesn't answer is skipped after two tries (Deadlock: 13 s → 2 s, CS2: 17 s → 3 s)
+- **Welcome screen:** asks for your name and the games you play, and tells you about the beta statistics; accepting is required to use the beta
+- **Beta statistics** (see SECURITY.md): name, computer name, city/country, game, server, ping, version and error logs, sent to the developer's database; the app can only write, never read
+- Your name can be changed in Settings
+- Developer dashboard for the maintainer (online users, statistics, event log)
+- **Overwatch 2** added: Google Cloud regions, including Dammam and Doha
+- **Game icons** next to every game, and **country flags** next to every server
+- **Choose your games** in Settings: only the games you tick appear in the list
+- Settings window in two columns, so it fits smaller screens
+- **Simpler Simple layout:** no BOOST/Stop buttons (BOOST only matters with a relay, so it stays in Advanced); "Test ping" sits next to "Play on it"
+- The status bar shows the live ping of the server you locked: "Status: locked on Frankfurt · 78 ms"
+- Settings open any time (no more "stop the boost first"); changes apply when a running test ends
+- Settings: one calm "Back to normal" button instead of "Reset settings" + a red "Put my PC back"
+- About: links in Arabic reading order
+- Removed "Custom servers" to keep the app simple
+- Fixed: switching games during the automatic ping test no longer leaves the new game untested
+- Window titles keep "2X" in Latin digits on Arabic Windows
+
 ## v0.9.2-beta (2026-10-10)
 
 - **New Celeste theme:** night purple, unicorn pink, lavender and sparkle gold, with a matching logo

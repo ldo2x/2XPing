@@ -45,6 +45,8 @@ namespace PingBoost
 
         static string T(string en, string ar) { return Lang.T(en, ar); }
 
+        static string StatusOff { get { return T("Status: ready", "الحالة: جاهز"); } }
+
         readonly List<Game> games;
         readonly List<Relay> relays;
         bool simple;
@@ -101,6 +103,13 @@ namespace PingBoost
                       "برنامج WireGuard مو مثبّت، فالوسيط مقفّل لين تثبّته (من «أدوات وسجل»)."));
             Shown += delegate
             {
+                // first launch: name + statistics notice; using the beta requires accepting it
+                if (!Telemetry.HasConsent)
+                {
+                    if (!WelcomeDialog.Show(this)) { Close(); return; }
+                    FillGames(); // the games picked on the welcome screen
+                }
+                Telemetry.Start();
                 gameList.SelectedIndex = 0;
                 BetaNotice.ShowOnce(this);
                 if (Prefs.CheckUpdates) CheckForUpdate();
@@ -116,7 +125,7 @@ namespace PingBoost
         void ApplyDirection()
         {
             // LRM first: keeps "2X" in Latin digits inside a right-to-left title bar
-            Text = "‎" + Brand.Name + (Brand.IsBeta ? " (Beta)" : "") + "  -  by " + Brand.Developer;
+            Text = Brand.Caption + (Brand.IsBeta ? " (Beta)" : "") + "  -  by " + Brand.Developer;
             RightToLeft = Lang.Ar ? RightToLeft.Yes : RightToLeft.No;
             RightToLeftLayout = Lang.Ar;
         }
@@ -128,7 +137,7 @@ namespace PingBoost
             var header = new Panel { Dock = DockStyle.Top, Height = 64, BackColor = Panel1 };
             header.Controls.Add(liveLabel = new Label
             {
-                Text = T("OFF", "مو شغّال"), Font = new Font("Segoe UI Semibold", 17f), ForeColor = Dim, Width = 330,
+                Text = StatusOff, Font = new Font("Segoe UI Semibold", 13f), ForeColor = Dim, Width = 420, AutoEllipsis = true,
                 Dock = DockStyle.Right, TextAlign = ContentAlignment.MiddleRight, Padding = new Padding(0, 0, 14, 0)
             });
             header.Controls.Add(HeaderButton(T("Settings", "الإعدادات"), 120, TextC, OpenSettings));
@@ -139,7 +148,15 @@ namespace PingBoost
                 Image = Brand.Logo, SizeMode = PictureBoxSizeMode.Zoom, Bounds = new Rectangle(14, 10, 44, 44),
                 Cursor = Cursors.Hand, BackColor = Color.Transparent
             };
-            logo.Click += delegate { AboutDialog.Show(this); };
+            // 5 quick clicks on the logo open the developer dashboard (MouseDown: rapid clicks would merge into double-clicks)
+            int logoClicks = 0;
+            DateTime lastClick = DateTime.MinValue;
+            logo.MouseDown += delegate
+            {
+                logoClicks = DateTime.Now - lastClick < TimeSpan.FromSeconds(1) ? logoClicks + 1 : 1;
+                lastClick = DateTime.Now;
+                if (logoClicks >= 5) { logoClicks = 0; DevDashboard.Open(this); }
+            };
             header.Controls.Add(logo);
             header.Controls.Add(new Label
             {
@@ -176,7 +193,7 @@ namespace PingBoost
                 Dock = DockStyle.Fill, BorderStyle = BorderStyle.None, BackColor = Panel1, ForeColor = TextC,
                 DrawMode = DrawMode.OwnerDrawFixed, ItemHeight = 40, IntegralHeight = false
             };
-            foreach (var g in games) gameList.Items.Add(g);
+            FillGames();
             gameList.DrawItem += DrawGameItem;
             gameList.SelectedIndexChanged += delegate { OnGameChanged(); };
             left.Controls.Add(gameList);
@@ -266,6 +283,17 @@ namespace PingBoost
             heroCard.Controls.Add(heroSub);
             heroCard.Controls.Add(heroTitle);
             heroCard.Controls.Add(new Panel { Dock = DockStyle.Right, Width = 12 });
+            if (simple)
+            {
+                // simple layout: the only other action, "Test ping", sits next to "Play on it"
+                var testWrap = new Panel { Dock = DockStyle.Right, Width = 140, Padding = new Padding(0, 12, 0, 12) };
+                btnTest.Dock = DockStyle.Fill;
+                btnTest.BackColor = Bg; // darker than the card, so it reads as a button
+                btnTest.FlatAppearance.MouseOverBackColor = RowSel;
+                testWrap.Controls.Add(btnTest);
+                heroCard.Controls.Add(testWrap);
+                heroCard.Controls.Add(new Panel { Dock = DockStyle.Right, Width = 10 });
+            }
             heroCard.Controls.Add(btnWrap);
             return heroCard;
         }
@@ -317,10 +345,11 @@ namespace PingBoost
                 foreach (ListViewItem item in serverList.SelectedItems) { var r = item.Tag as Region; if (r != null) TogglePick(r); }
                 e.Handled = true;
             };
-            serverList.DoubleClick += delegate { if (!clickedCheck) Boost(); };
+            serverList.DoubleClick += delegate { if (!clickedCheck && !simple) Boost(); };
 
             // in the simple layout the live graph only appears while BOOST is on
-            var bottom = bottomPanel = new Panel { Dock = DockStyle.Bottom, Height = simple ? 56 : 200 };
+            // the simple layout has no bottom bar: no BOOST (it only matters with a relay), graph hidden
+            var bottom = bottomPanel = new Panel { Dock = DockStyle.Bottom, Height = 200, Visible = !simple };
             var controls = new Panel { Dock = DockStyle.Bottom, Height = 56 };
             btnTest = MakeButton(T("Test ping", "افحص البنق"), Panel2);
             btnTest.Bounds = new Rectangle(0, 12, 140, 40);
@@ -398,7 +427,6 @@ namespace PingBoost
             var bar = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 56 };
             bar.Controls.Add(ToolButton(T("Flush DNS", "امسح كاش DNS"), FlushDns));
             bar.Controls.Add(ToolButton(T("Raise game priority", "ارفع أولوية اللعبة"), delegate { RaisePriority(CurrentGame); }));
-            bar.Controls.Add(ToolButton(T("Add a server", "ضيف سيرفر"), AddCustomServer));
             bar.Controls.Add(ToolButton(T("Get WireGuard", "نزّل WireGuard"), delegate { Brand.Open("https://www.wireguard.com/install/"); }));
             bar.Controls.Add(ToolButton(T("Data folder", "مجلد البيانات"), delegate { Brand.Open(Storage.Dir); }));
             var reset = ToolButton(T("Put everything back", "رجّع كل شي زي ما كان"), ResetEverything);
@@ -536,6 +564,18 @@ namespace PingBoost
                 textRc = Lang.Ar ? new Rectangle(rc.X + 4, rc.Y, rc.Width - CheckArea - 4, rc.Height)
                                  : new Rectangle(rc.X + CheckArea, rc.Y, rc.Width - CheckArea - 4, rc.Height);
             }
+
+            // country flag (image) on the leading side of the name
+            var flag = Brand.Flag(((Region)e.Item.Tag).Flag);
+            if (flag != null)
+            {
+                const int fw = 24, fh = 16, gap = 8;
+                int fx = Lang.Ar ? textRc.Right - fw : textRc.X;
+                e.Graphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                e.Graphics.DrawImage(flag, new Rectangle(fx, rc.Y + (rc.Height - fh) / 2, fw, fh));
+                textRc = Lang.Ar ? new Rectangle(textRc.X, textRc.Y, textRc.Width - fw - gap, textRc.Height)
+                                 : new Rectangle(textRc.X + fw + gap, textRc.Y, textRc.Width - fw - gap, textRc.Height);
+            }
             TextRenderer.DrawText(e.Graphics, e.SubItem.Text, Font, textRc,
                 e.SubItem.ForeColor, TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | Align);
         }
@@ -551,6 +591,15 @@ namespace PingBoost
             }
         }
 
+        // only the games the player chose (all of them if none are chosen)
+        void FillGames()
+        {
+            var hidden = Prefs.HiddenGames;
+            var shown = games.Where(g => !hidden.Contains(g.Icon)).ToList();
+            gameList.Items.Clear();
+            foreach (var g in shown.Count > 0 ? shown : games) gameList.Items.Add(g);
+        }
+
         void DrawGameItem(object sender, DrawItemEventArgs e)
         {
             if (e.Index < 0) return;
@@ -558,21 +607,31 @@ namespace PingBoost
             bool sel = (e.State & DrawItemState.Selected) != 0;
             using (var b = new SolidBrush(sel ? Panel2 : Panel1)) e.Graphics.FillRectangle(b, e.Bounds);
             if (sel) using (var b = new SolidBrush(Accent)) e.Graphics.FillRectangle(b, e.Bounds.X, e.Bounds.Y + 8, 3, e.Bounds.Height - 16);
-            string name = g.Provider == Provider.Custom ? T("Custom servers", "سيرفرات من عندك") : g.Name;
-            TextRenderer.DrawText(e.Graphics, name, Font,
-                new Rectangle(e.Bounds.X + 14, e.Bounds.Y, e.Bounds.Width - 18, e.Bounds.Height),
-                sel ? TextC : Color.FromArgb(206, 196, 226), TextFormatFlags.VerticalCenter | Align);
+            // icon on the leading side, then the name
+            const int iconSize = 26;
+            var icon = Brand.GameIcon(g.Icon);
+            int iconX = Lang.Ar ? e.Bounds.Right - 12 - iconSize : e.Bounds.X + 12;
+            if (icon != null)
+            {
+                e.Graphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                e.Graphics.DrawImage(icon, new Rectangle(iconX, e.Bounds.Y + (e.Bounds.Height - iconSize) / 2, iconSize, iconSize));
+            }
+            var textRc = Lang.Ar ? new Rectangle(e.Bounds.X + 6, e.Bounds.Y, e.Bounds.Width - iconSize - 30, e.Bounds.Height)
+                                 : new Rectangle(e.Bounds.X + iconSize + 22, e.Bounds.Y, e.Bounds.Width - iconSize - 28, e.Bounds.Height);
+            TextRenderer.DrawText(e.Graphics, g.Name, Font, textRc,
+                sel ? TextC : Color.FromArgb(206, 196, 226), TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | Align);
         }
+
+        bool pendingRebuild; // settings changed while a ping test was running: rebuild when it ends
 
         void OpenSettings()
         {
-            if (busy || boosting)
-            {
-                Msg(T("Stop the boost and let the ping test finish first.", "وقّف البوست واستنى الفحص يخلص، وبعدين افتح الإعدادات."));
-                return;
-            }
             bool resetAsked;
-            if (SettingsDialog.Show(this, out resetAsked)) RebuildUi();
+            if (SettingsDialog.Show(this, out resetAsked))
+            {
+                if (busy) pendingRebuild = true;
+                else RebuildUi();
+            }
             if (resetAsked) ResetEverything();
         }
 
@@ -589,7 +648,10 @@ namespace PingBoost
             foreach (var c in old) c.Dispose();
             ResumeLayout(true);
             RefreshRelays();
-            gameList.SelectedItem = g ?? games[0];
+            btnBoost.Enabled = !boosting;
+            btnStop.Enabled = boosting;
+            if (g != null && gameList.Items.Contains(g)) gameList.SelectedItem = g;
+            else if (gameList.Items.Count > 0) gameList.SelectedIndex = 0; // the open game was hidden in Settings
         }
 
         // ---------------------------------------------------------------- helpers
@@ -610,13 +672,13 @@ namespace PingBoost
 
         void Msg(string text)
         {
-            MessageBox.Show(this, text, "‎" + Brand.Name, MessageBoxButtons.OK, MessageBoxIcon.Information, MessageBoxDefaultButton.Button1,
+            MessageBox.Show(this, text, Brand.Caption, MessageBoxButtons.OK, MessageBoxIcon.Information, MessageBoxDefaultButton.Button1,
                 Lang.Ar ? MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign : 0);
         }
 
         bool Ask(string text)
         {
-            return MessageBox.Show(this, text, "‎" + Brand.Name, MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button1,
+            return MessageBox.Show(this, text, Brand.Caption, MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button1,
                 Lang.Ar ? MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign : 0) == DialogResult.Yes;
         }
 
@@ -668,6 +730,8 @@ namespace PingBoost
             var g = CurrentGame;
             if (g == null) return;
             gameNote.Text = g.Note;
+            Telemetry.Game = g.Name;
+            Telemetry.Server = null;
             pickBar.Visible = g.CanLock;
             UpdateLockBar();
             serverList.Items.Clear();
@@ -683,13 +747,14 @@ namespace PingBoost
                     {
                         SetStatus(T("Couldn't get the servers: ", "ما قدرت أجيب السيرفرات: ") + err);
                         Log(g.Name + ": " + err);
+                        Telemetry.Send("error", null, -1, "load servers " + g.Name + ": " + err);
                         return;
                     }
                     FillServers(g);
                     UpdateLockBar();
                     LoadStats(g);
                     if (g.Regions.Count == 0)
-                        SetStatus(T("No servers yet. Add one from Tools > Add a server.", "ما في سيرفرات للحين. ضيف سيرفر من «أدوات وسجل»."));
+                        SetStatus(T("No servers for this game right now. Try again in a bit.", "ما لقيت سيرفرات لهادي اللعبة دحين، جرّب بعد شوي."));
                     else if (Prefs.AutoTest && g.Regions.All(r => r.Direct == null))
                         RunTest();
                     else
@@ -902,14 +967,16 @@ namespace PingBoost
                 Ui(RefreshRelays);
 
                 int done = 0;
-                Parallel.ForEach(regions, new ParallelOptions { MaxDegreeOfParallelism = 8 }, r =>
+                // every region (and each of its addresses) at once: the whole test takes about as long as the slowest server
+                Parallel.ForEach(regions, new ParallelOptions { MaxDegreeOfParallelism = 64 }, r =>
                 {
+                    var results = r.Endpoints.AsParallel().AsOrdered().Select(ep => Pinger.Measure(ep, 3, 1000)).ToList();
                     PingResult best = null;
                     Endpoint bestEp = null;
-                    foreach (var ep in r.Endpoints)
+                    for (int i = 0; i < results.Count; i++)
                     {
-                        var res = Pinger.Measure(ep, 4, 1200);
-                        if (best == null || (res.Ok && (!best.Ok || res.Avg < best.Avg))) { best = res; bestEp = ep; }
+                        var res = results[i];
+                        if (best == null || (res.Ok && (!best.Ok || res.Avg < best.Avg))) { best = res; bestEp = r.Endpoints[i]; }
                     }
                     r.Direct = best ?? new PingResult();
                     r.BestEndpoint = best != null && best.Ok ? bestEp : null;
@@ -932,6 +999,14 @@ namespace PingBoost
                 {
                     busy = false;
                     btnTest.Enabled = true;
+                    if (pendingRebuild) { pendingRebuild = false; RebuildUi(); return; }
+                    // the user switched games while this test ran: test the game they are looking at now
+                    var cur = CurrentGame;
+                    if (cur != g && cur != null && Prefs.AutoTest && cur.Regions.Count > 0 && cur.Regions.All(r => r.Direct == null))
+                    {
+                        RunTest();
+                        return;
+                    }
                     var top = regions.Where(r => BestLatency(r) < double.MaxValue).OrderBy(BestLatency).FirstOrDefault();
                     if (top == null)
                     {
@@ -945,6 +1020,7 @@ namespace PingBoost
                         FillServers(g);
                     }
                     SetStatus(T("Done! Your best region: ", "خلصنا! أحسن منطقة لك: ") + ShortName(top) + "  " + Ms(BestLatency(top)));
+                    Telemetry.Send("test", top.NameEn, (int)Math.Round(BestLatency(top)), regions.Count + " regions");
                     Log(g.Name + ": " + T("best region ", "أحسن منطقة ") + top.Name + " " + Ms(BestLatency(top)));
                 });
             });
@@ -1052,6 +1128,7 @@ namespace PingBoost
                 catch (Exception ex)
                 {
                     Log(T("Server check failed: ", "ما زبط الفحص: ") + ex.Message);
+                    Telemetry.Send("error", null, -1, "detect: " + ex);
                     Ui(() => { busy = false; btnDetect.Enabled = true; Msg(T("Server check failed: ", "ما زبط الفحص: ") + ex.Message); });
                 }
             });
@@ -1087,6 +1164,9 @@ namespace PingBoost
             }
             string names = string.Join("، ", found.Select(ShortName));
             SetStatus(T("You are on: ", "إنت دحين على: ") + names);
+            Telemetry.Server = string.Join(", ", found.Select(r => r.NameEn));
+            Telemetry.Send("detect", Telemetry.Server, -1,
+                lockSummary == null ? "no lock" : found.All(r => r.Picked) ? "lock OK" : "NOT on picked servers");
 
             string verdict = "";
             if (lockSummary != null)
@@ -1124,6 +1204,8 @@ namespace PingBoost
                 if (CurrentGame == g) FillServers(g);
                 var top = found[0];
                 SetStatus(T("You are on: ", "إنت دحين على: ") + top.Name);
+                Telemetry.Server = top.NameEn;
+                Telemetry.Send("detect", top.NameEn, top.Direct.Ok ? (int)Math.Round(top.Direct.Avg) : -1, null);
                 Msg(T("You are playing on:\n", "إنت تلعب دحين على:\n") + top.Name + "\n" +
                     (top.Direct.Ok ? T("Ping: ", "البنق: ") + Ms(top.Direct.Avg)
                                    : T("This server doesn't answer ping (normal for some games).", "السيرفر ما يرد على البنق (عادي في بعض الألعاب).")) +
@@ -1187,11 +1269,14 @@ namespace PingBoost
                     Ui(() =>
                     {
                         lockSummary = names;
+                        Telemetry.Server = string.Join(", ", picked.Select(r => r.NameEn));
+                        Telemetry.Send("lock", Telemetry.Server, -1, n + " ranges blocked");
                         btnLock.Enabled = true;
                         UpdateLockBar();
                         FillServers(g);
                         Log(T("Lock ON (", "التثبيت شغّال (") + g.Name + "): " + names + "  (" + n + ")");
                         SetStatus(T("Locked: ", "مثبّت على: ") + names);
+                        StartLockMonitor();
                         Msg(T("Done! You will only be matched on: " + names +
                               "\n\nIf the game is open, quit and reopen it (or wait a minute) before you queue." +
                               "\nTo double-check, join a match and press Which server am I on?" +
@@ -1208,6 +1293,7 @@ namespace PingBoost
                     {
                         btnLock.Enabled = true;
                         Log(T("Lock failed: ", "ما زبط التثبيت: ") + ex.Message);
+                        Telemetry.Send("error", null, -1, "lock: " + ex);
                         Msg(T("Lock failed: ", "ما زبط التثبيت: ") + ex.Message);
                     });
                 }
@@ -1218,6 +1304,9 @@ namespace PingBoost
         {
             if (lockSummary == null) return;
             lockSummary = null;
+            if (!boosting) StopMonitor();
+            Telemetry.Server = null;
+            Telemetry.Send("unlock", null, -1, null);
             UpdateLockBar();
             var g = CurrentGame;
             if (g != null) FillServers(g);
@@ -1237,22 +1326,16 @@ namespace PingBoost
                 Msg(T("Wait for the current test to finish first.", "استنى الفحص الحالي يخلص أول."));
                 return;
             }
-            if (!Ask(T("This puts your PC back exactly as it was before 2X Ping:\n\n" +
-                       "- removes the server lock from Windows Firewall\n" +
-                       "- stops the boost and any relay route\n" +
-                       "- sets the game priority back to normal\n" +
-                       "- clears the servers you ticked\n\nContinue?",
-                       "بيرجّع جهازك زي ما كان قبل البرنامج بالضبط:\n\n" +
-                       "- يشيل تثبيت السيرفرات من جدار حماية ويندوز\n" +
-                       "- يوقف البوست وطريق الوسيط\n" +
-                       "- يرجّع أولوية اللعبة عادية\n" +
-                       "- يمسح السيرفرات اللي علّمت عليها\n\nنكمّل؟")))
+            if (!Ask(T("This unlocks your servers and puts everything back to normal.\n(Closing 2X Ping does this too.)\n\nContinue?",
+                       "بنفك تثبيت السيرفرات ونرجّع كل شي طبيعي.\n(نفس اللي يصير لما تقفل البرنامج)\n\nنكمّل؟")))
                 return;
 
-            StopAll();
             lockSummary = null;
+            StopAll();
             foreach (var g in games) foreach (var r in g.Regions) { r.Picked = false; r.Here = false; }
             Storage.ClearPicks();
+            Telemetry.Server = null;
+            Telemetry.Send("reset", null, -1, null);
             busy = true;
             SetStatus(T("Putting everything back...", "لحظة، أرجّع كل شي زي ما كان..."));
             Task.Run(() =>
@@ -1315,7 +1398,8 @@ namespace PingBoost
                 Log(region.Name + ": " + T("direct route", "طريق مباشر") +
                     (simple || routeBox.SelectedIndex == 0 ? T(" (already the fastest)", " (هو الأسرع أصلاً)") : ""));
                 RaisePriority(g);
-                StartMonitor(target, ShortName(region));
+                StartMonitor(target, T("BOOST · ", "بوست · ") + ShortName(region));
+                Telemetry.Send("boost", region.NameEn, -1, "direct");
                 return;
             }
 
@@ -1345,23 +1429,25 @@ namespace PingBoost
                     Tunnel.Start(Tunnel.BuildConf(relay, cidrs));
                     tunnelActive = true;
                     Log(T("Route ready through ", "الطريق جاهز عن طريق ") + relay.Name + " - " + region.Name + " (" + cidrs.Count + ")");
-                    Ui(() => { RaisePriority(g); StartMonitor(target, ShortName(region) + T(" via ", " عن طريق ") + relay.Name); });
+                    Telemetry.Send("boost", region.NameEn, -1, "relay " + relay.Name);
+                    Ui(() => { RaisePriority(g); StartMonitor(target, T("BOOST · ", "بوست · ") + ShortName(region) + T(" via ", " عن طريق ") + relay.Name); });
                 }
                 catch (Exception ex)
                 {
                     Log(T("Boost failed: ", "ما زبط البوست: ") + ex.Message);
+                    Telemetry.Send("error", region.NameEn, -1, "boost via " + relay.Name + ": " + ex);
                     Ui(() => { StopAll(); Msg(ex.Message); });
                 }
             });
         }
 
+        // Live ping in the status bar (and the graph in the advanced layout), every second.
         void StartMonitor(Endpoint target, string label)
         {
             int gen = ++monitorGen;
             graph.Clear();
-            if (simple) { graph.Visible = true; bottomPanel.Height = 200; }
             graph.Label = label;
-            SetStatus(T("BOOST is on: ", "البوست شغّال: ") + label);
+            SetStatus(label);
             var t = new Thread(() =>
             {
                 while (gen == monitorGen)
@@ -1371,8 +1457,9 @@ namespace PingBoost
                     Ui(() =>
                     {
                         if (gen != monitorGen) return;
-                        liveLabel.Text = Ms(v) + "  ·  " + label;
+                        liveLabel.Text = T("Status: ", "الحالة: ") + label + "  ·  " + Ms(v);
                         liveLabel.ForeColor = PingColor(v);
+                        Telemetry.Ping = v < 0 ? -1 : (int)Math.Round(v);
                         graph.Add(v);
                     });
                     Thread.Sleep(1000);
@@ -1381,16 +1468,31 @@ namespace PingBoost
             t.Start();
         }
 
-        void StopAll()
+        void StopMonitor()
         {
             monitorGen++;
-            boosting = false;
-            liveLabel.Text = T("OFF", "مو شغّال");
+            Telemetry.Ping = -1;
+            liveLabel.Text = StatusOff;
             liveLabel.ForeColor = Dim;
-            if (simple) { graph.Visible = false; bottomPanel.Height = 56; }
+        }
+
+        // While servers are locked, the status bar follows the ping of the locked server.
+        void StartLockMonitor()
+        {
+            var g = CurrentGame;
+            if (lockSummary == null || boosting || g == null) return;
+            var r = g.Regions.Where(x => x.Picked && x.Target != null).OrderBy(BestLatency).FirstOrDefault();
+            if (r != null) StartMonitor(r.Target, T("locked on ", "مثبّت على ") + ShortName(r));
+        }
+
+        void StopAll()
+        {
+            StopMonitor();
+            boosting = false;
             btnBoost.Enabled = true;
             btnStop.Enabled = false;
             SetStatus(T("Stopped.", "وقّفناه."));
+            StartLockMonitor();
             if (tunnelActive)
             {
                 tunnelActive = false;
@@ -1515,20 +1617,6 @@ namespace PingBoost
             }
         }
 
-        void AddCustomServer()
-        {
-            var vals = InputDialog.Show(this, T("Add a server", "ضيف سيرفر"),
-                new[] { T("Name (e.g. My Rust server)", "الاسم (مثلاً: سيرفر راست حقي)"),
-                        T("Servers: host or host:port, comma separated (no port = normal ping)", "السيرفرات: IP أو IP:منفذ، وافصل بينهم بفاصلة (بدون منفذ = بنق عادي)"),
-                        T("IP ranges to send through a relay (optional, e.g. 1.2.3.0/24)", "نطاقات IP تمشي عن طريق الوسيط (مو ضروري، مثلاً 1.2.3.0/24)") },
-                new[] { "", "", "" });
-            if (vals == null || vals[0] == "" || vals[1] == "") return;
-            Storage.AddCustom(vals[0], vals[1], vals[2]);
-            Log(T("Server added: ", "ضفنا السيرفر: ") + vals[0]);
-            var custom = games.First(x => x.Provider == Provider.Custom);
-            custom.Loaded = false;
-            if (CurrentGame == custom) OnGameChanged(); else gameList.SelectedItem = custom;
-        }
     }
 
     static class InputDialog

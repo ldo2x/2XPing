@@ -8,7 +8,7 @@ Made by <b>lDo2x</b>
 </p>
 
 <p align="center">
-<img src="https://img.shields.io/badge/version-0.9.2--beta-orange" alt="version">
+<img src="https://img.shields.io/badge/version-0.9.3--beta-orange" alt="version">
 <img src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-blue" alt="platform">
 <img src="https://img.shields.io/badge/license-MIT-green" alt="license">
 <a href="README.md"><img src="https://img.shields.io/badge/lang-العربية-lightgrey" alt="Arabic"></a>
@@ -37,17 +37,17 @@ Requires **Windows 10 or 11**. Nothing to install.
 | 🔒 Server picker | **Deadlock, CS2, Dota 2**: tick the regions you want and lock out the rest |
 | 👥 Player numbers | Estimated players per region and expected time to find a match (Deadlock) |
 | ✅ Which server am I on? | While in a match, tells you which server you are on and whether it is one you picked |
-| 🎛️ Simple or Advanced | Simple layout for everyday players, Advanced with every tool |
-| 🚀 Relay BOOST | Routes only the game's traffic through your own VPS when that path is faster |
+| 🎛️ Your way | Pick your games on first launch; Simple layout for everyday players, Advanced with every tool |
+| 🚀 Relay BOOST (Advanced) | Routes only the game's traffic through your own VPS when that path is faster |
 | 📈 Live ping | Live ping and packet-loss graph while you play |
 | 🌐 Arabic & English | Full right-to-left Arabic interface |
 
 ### Supported games
-Deadlock · Counter-Strike 2 · Dota 2 · Arena Breakout: Infinite · Valorant · Fortnite · PUBG: Battlegrounds · Apex Legends · Rocket League · Dead by Daylight, **plus any other game** through custom or detected servers.
+Deadlock · Counter-Strike 2 · Dota 2 · Overwatch 2 · Arena Breakout: Infinite · Valorant · Fortnite · PUBG: Battlegrounds · Apex Legends · Rocket League · Dead by Daylight
 
 ## How to use
 
-- **Ping test:** pick a game and press **Test ping**. Green is great (under 60 ms), yellow is OK, red is high.
+- **Ping test:** pick a game and every server is tested at once in 2-3 seconds (or press **Test ping**). Green is great (under 60 ms), yellow is OK, red is high.
 - **Server picker (Valve games):** tick the regions, press **Lock my servers**, restart the game, then queue. 2X Ping blocks the other regions' Valve servers in Windows Firewall. The lock is removed when you press **Unlock** or close the app.
 - **Which server am I on?:** join a real match (not practice) and press **Which server am I on?**. 2X Ping watches the game's traffic for 15 seconds and names the server, with a ✓ if it is one you picked. For other games it saves the server it finds.
 - **Relay BOOST (optional):**
@@ -58,6 +58,7 @@ Deadlock · Counter-Strike 2 · Dota 2 · Arena Breakout: Infinite · Valorant �
 
 ## Notes
 - Player numbers and match times are **estimates** based on public data.
+- **Beta statistics:** while open, the app sends the name you enter on first launch, your computer's name, your city and country, the game, server and ping you use, and error logs, to improve the beta. You are told on first launch and accepting is required to use the beta. Details in [SECURITY.md](SECURITY.md).
 - 2X Ping **never touches game files or memory**. Everything it changes (firewall rules, tunnel) is undone when you stop it or close the app. See [SECURITY.md](SECURITY.md).
 - Some games have their own anti-cheat policies; use the app at your own risk.
 

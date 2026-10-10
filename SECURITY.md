@@ -18,6 +18,22 @@ Contact the developer (lDo2x) privately through GitHub instead, and give them ti
 
 2X Ping **never** reads or modifies game files or game memory.
 
+## Usage statistics (beta)
+
+To improve the beta, 2X Ping sends usage statistics to the developer's own database (Supabase) while it is open.
+This is shown on first launch, and accepting it is required to use the beta.
+
+| Sent | Why |
+|---|---|
+| The name you type on first launch, and your computer's name | Tell users apart |
+| A random install ID | Count devices |
+| City and country (looked up from your internet address; the address itself is not stored) | See where the app is used |
+| Game, server and ping in use, app and Windows version, language and layout | Usage statistics |
+| Events (ping test, lock, unlock, server check, boost, reset) and error logs | Find and fix problems |
+
+Nothing else is collected: no passwords, no files, no browsing data. The app can only **write** these statistics; it cannot read anyone's data.
+To have your data removed, contact the developer (Discord `2x.x`) with the name you used.
+
 ## Data sent to other services
 
 | Service | What is sent | Why |
@@ -25,11 +41,12 @@ Contact the developer (lDo2x) privately through GitHub instead, and give them ti
 | Steam Web API | Game app id | Online player count, Valve server list |
 | deadlock-api.com | A fixed statistics query | Deadlock players per region |
 | ip-ranges.amazonaws.com | Nothing (download only) | AWS game server IP ranges |
-| ip-api.com | The **game server** IP you detected | Show the server's country / city |
+| ip-api.com | The **game server** IP you detected, and a once-a-day lookup of your own city/country | Show locations |
+| Supabase (developer's database) | The usage statistics listed above | Beta statistics |
 | api.github.com | Nothing (download only) | Check for a newer version |
 | Your own relay agent | Game server address + your token | Measure relay -> server ping |
 
-No personal data, account data or usage tracking is collected.
+There are no accounts or passwords; apart from the usage statistics above, nothing about you is collected.
 
 ## Relay notes
 

@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-<img src="https://img.shields.io/badge/version-0.9.2--beta-orange" alt="version">
+<img src="https://img.shields.io/badge/version-0.9.3--beta-orange" alt="version">
 <img src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-blue" alt="platform">
 <img src="https://img.shields.io/badge/license-MIT-green" alt="license">
 <a href="README.en.md"><img src="https://img.shields.io/badge/lang-English-lightgrey" alt="English"></a>
@@ -41,16 +41,16 @@
 | 👥 عدد اللاعبين | كم لاعب في كل منطقة تقريباً، وكم بتستنى عشان تلقى مباراة (Deadlock) |
 | 🚀 بوست عن طريق وسيط | ترافيك اللعبة بس يمشي من سيرفر VPS حقك لو طلع أسرع |
 | 📈 بنق مباشر | رسم للبنق والفقد وإنت تلعب |
-| 🎛️ بسيط أو متقدم | الوضع البسيط للاعب العادي، والمتقدم فيه كل الأدوات |
+| 🎛️ على كيفك | تختار ألعابك من أول مرة، والوضع البسيط للاعب العادي، والمتقدم فيه كل الأدوات |
 | 🌐 عربي وإنجليزي | العربي هو الأساس، وتقدر تبدّل من الإعدادات |
 
 ### الألعاب المدعومة
-Deadlock · Counter-Strike 2 · Dota 2 · Arena Breakout: Infinite · Valorant · Fortnite · PUBG: Battlegrounds · Apex Legends · Rocket League · Dead by Daylight، **وأي لعبة ثانية** تضيف سيرفرها بنفسك أو يكتشفه البرنامج.
+Deadlock · Counter-Strike 2 · Dota 2 · Overwatch 2 · Arena Breakout: Infinite · Valorant · Fortnite · PUBG: Battlegrounds · Apex Legends · Rocket League · Dead by Daylight
 
 ## طريقة الاستخدام
 
 ### افحص البنق
-اختار لعبتك والبرنامج يفحص لحاله، أو اضغط **افحص البنق**. الأخضر ممتاز (أقل من 60ms)، والأصفر متوسط، والأحمر عالي.
+اختار لعبتك والبرنامج يفحص كل السيرفرات لحاله في ثانيتين ثلاث، أو اضغط **افحص البنق**. الأخضر ممتاز (أقل من 60ms)، والأصفر متوسط، والأحمر عالي.
 
 ### ثبّت سيرفراتي (Deadlock / CS2 / Dota 2)
 1. علّم (✓) على المناطق اللي تبغى تلعب عليها، والبرنامج يحفظ اختيارك.
@@ -73,6 +73,7 @@ Deadlock · Counter-Strike 2 · Dota 2 · Arena Breakout: Infinite · Valorant �
 
 ## ملاحظات مهمة
 - عدد اللاعبين ووقت المباراة **تقديرية**، مبنية على بيانات عامة.
+- **إحصائيات البيتا:** البرنامج يرسل وهو مفتوح اسمك (اللي تكتبه أول مرة) واسم جهازك ومدينتك ودولتك واللعبة والسيرفر والبنق وسجل الأخطاء، عشان نطوّره. ينقال لك هذا أول ما تفتحه، والموافقة شرط لاستخدام البيتا. التفاصيل في [SECURITY.md](SECURITY.md).
 - البرنامج **ما يعدّل ملفات اللعبة ولا ذاكرتها**. كل التغييرات (جدار الحماية، الوسيط) تنشال لما توقفها أو تقفل البرنامج. التفاصيل في [SECURITY.md](SECURITY.md).
 - بعض الألعاب عندها أنظمة حماية (Anti-Cheat) لها سياساتها الخاصة، والاستخدام على مسؤوليتك.
 

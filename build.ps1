@@ -15,8 +15,13 @@ if (-not (Test-Path assets\app.ico)) {
     Remove-Item dist\MakeLogo.exe
 }
 
+# game icons (assets/games/<key>.png) are embedded as "game_<key>.png"
+$iconArgs = Get-ChildItem assets\games\*.png | ForEach-Object { "/resource:assets\games\$($_.Name),game_$($_.Name)" }
+# country flags (assets/flags/<cc>.png) are embedded as "flag_<cc>.png"
+$iconArgs += Get-ChildItem assets\flags\*.png | ForEach-Object { "/resource:assets\flags\$($_.Name),flag_$($_.Name)" }
+
 & $csc /nologo /target:winexe /optimize+ /codepage:65001 /out:dist\2XPing.exe /win32manifest:app.manifest /win32icon:assets\app.ico `
-    /resource:assets\logo.png,logo.png `
+    /resource:assets\logo.png,logo.png @iconArgs `
     /r:System.dll /r:System.Core.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.Web.Extensions.dll `
     src\*.cs
 if ($LASTEXITCODE -ne 0) { throw "Build failed" }

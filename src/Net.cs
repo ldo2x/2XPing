@@ -13,8 +13,9 @@ namespace PingBoost
 {
     class Endpoint
     {
+        public const int Http = -1;
         public string Host;
-        public int Port; // 0 = ICMP ping, otherwise TCP connect time
+        public int Port; // 0 = ICMP ping, Http (-1) = Host is a URL timed with a request, otherwise TCP connect time
 
         public Endpoint(string host, int port) { Host = host; Port = port; }
 
@@ -28,7 +29,7 @@ namespace PingBoost
             return new Endpoint(s, 0);
         }
 
-        public override string ToString() { return Port == 0 ? Host : Host + ":" + Port; }
+        public override string ToString() { return Port <= 0 ? Host : Host + ":" + Port; }
     }
 
     class PingResult
@@ -61,8 +62,27 @@ namespace PingBoost
             try { return Resolve(host); } catch { return null; }
         }
 
+        // Time of a small HTTPS request on a kept-alive connection (Google's regional test endpoints).
+        static double HttpOnce(string url, int timeout)
+        {
+            try
+            {
+                var req = (HttpWebRequest)WebRequest.Create(url);
+                req.Timeout = timeout;
+                req.ReadWriteTimeout = timeout;
+                req.KeepAlive = true;
+                req.UserAgent = "2XPing";
+                var sw = Stopwatch.StartNew();
+                using (var resp = req.GetResponse())
+                using (var s = resp.GetResponseStream()) { var buf = new byte[256]; while (s.Read(buf, 0, buf.Length) > 0) { } }
+                return sw.Elapsed.TotalMilliseconds;
+            }
+            catch { return -1; }
+        }
+
         public static double Once(Endpoint ep, int timeout)
         {
+            if (ep.Port == Endpoint.Http) return HttpOnce(ep.Host, timeout);
             IPAddress ip = TryResolve(ep.Host);
             if (ip == null) return -1;
 
@@ -98,13 +118,19 @@ namespace PingBoost
         {
             var samples = new List<double>();
             int lost = 0;
+            // the first HTTPS request also pays for DNS + TLS; warm the connection up and don't count it
+            if (ep.Port == Endpoint.Http) Once(ep, timeout);
+            int sent = 0;
             for (int i = 0; i < count; i++)
             {
                 double v = Once(ep, timeout);
+                sent++;
                 if (v < 0) lost++; else samples.Add(v);
-                Thread.Sleep(60);
+                // two misses in a row before any reply: the server is down, don't wait for the rest
+                if (samples.Count == 0 && lost >= 2) break;
+                if (i < count - 1) Thread.Sleep(30);
             }
-            var r = new PingResult { Loss = 100.0 * lost / count };
+            var r = new PingResult { Loss = 100.0 * lost / sent };
             if (samples.Count > 0)
             {
                 r.Avg = samples.Average();
@@ -118,6 +144,27 @@ namespace PingBoost
 
     static class Http
     {
+        // Request with custom headers (used for the statistics backend). Returns the response body.
+        public static string Send(string method, string url, string body, IDictionary<string, string> headers, int timeout)
+        {
+            var req = (HttpWebRequest)WebRequest.Create(url);
+            req.Method = method;
+            req.Timeout = timeout;
+            req.ReadWriteTimeout = timeout;
+            req.UserAgent = "2XPing/" + Brand.Version;
+            if (headers != null) foreach (var h in headers) req.Headers[h.Key] = h.Value;
+            if (body != null)
+            {
+                var bytes = System.Text.Encoding.UTF8.GetBytes(body);
+                req.ContentType = "application/json";
+                req.ContentLength = bytes.Length;
+                using (var s = req.GetRequestStream()) s.Write(bytes, 0, bytes.Length);
+            }
+            using (var resp = req.GetResponse())
+            using (var sr = new StreamReader(resp.GetResponseStream()))
+                return sr.ReadToEnd();
+        }
+
         public static string Get(string url, int timeout)
         {
             var req = (HttpWebRequest)WebRequest.Create(url);
