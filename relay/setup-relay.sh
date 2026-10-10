@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 2X Ping (by D7oom2x) relay setup for a Ubuntu/Debian VPS.
+# 2X Ping (by lDo2x) relay setup for a Ubuntu/Debian VPS.
 # Installs WireGuard (game traffic relay) + a small latency agent (lets the app measure relay -> game server ping).
 # Usage:  sudo bash setup-relay.sh
 set -euo pipefail
@@ -118,7 +118,7 @@ PY
 TOKEN=$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')
 cat > /etc/systemd/system/2xping-agent.service <<EOF
 [Unit]
-Description=2X Ping latency agent (D7oom2x)
+Description=2X Ping latency agent (lDo2x)
 After=network-online.target
 
 [Service]
@@ -142,7 +142,7 @@ if command -v ufw >/dev/null && ufw status | grep -q active; then
 fi
 
 echo
-echo "========== 2X Ping relay ready (by D7oom2x) =========="
+echo "========== 2X Ping relay ready (by lDo2x) =========="
 echo "1) Copy this file to your PC as  <name>.conf :"
 echo "-------------------------------------------------------"
 cat /etc/wireguard/client.conf

@@ -4,7 +4,7 @@
 
 <p align="center">
 Game connection optimizer: measures ping, picks the best server and route, and lets you choose where you play.<br>
-Made by <b>D7oom2x</b>
+Made by <b>lDo2x</b>
 </p>
 
 <p align="center">
@@ -89,6 +89,6 @@ What's next: [ROADMAP.md](ROADMAP.md)
 Contributing: [CONTRIBUTING.md](CONTRIBUTING.md) · Security & privacy: [SECURITY.md](SECURITY.md)
 
 ## License
-[MIT](LICENSE) © 2026 **D7oom2x**. Free and open source; keep the copyright notice when you reuse it.
+[MIT](LICENSE) © 2026 **lDo2x**. Free and open source; keep the copyright notice when you reuse it.
 
 <sub>2X Ping is an independent project, not affiliated with Valve, Tencent or any game company. Game names are trademarks of their owners.</sub>

@@ -5,11 +5,11 @@ using System.Reflection;
 using System.Windows.Forms;
 
 [assembly: AssemblyTitle("2X Ping")]
-[assembly: AssemblyDescription("2X Ping - game connection optimizer by D7oom2x")]
-[assembly: AssemblyCompany("D7oom2x")]
+[assembly: AssemblyDescription("2X Ping - game connection optimizer by lDo2x")]
+[assembly: AssemblyCompany("lDo2x")]
 [assembly: AssemblyProduct("2X Ping")]
-[assembly: AssemblyCopyright("Copyright © 2026 D7oom2x. MIT License.")]
-[assembly: AssemblyTrademark("2X Ping by D7oom2x")]
+[assembly: AssemblyCopyright("Copyright © 2026 lDo2x. MIT License.")]
+[assembly: AssemblyTrademark("2X Ping by lDo2x")]
 // Release version: change it here (and tag the GitHub release v<version>-beta).
 [assembly: AssemblyVersion("0.9.0.0")]
 [assembly: AssemblyFileVersion("0.9.0.0")]
@@ -21,7 +21,7 @@ namespace PingBoost
     static class Brand
     {
         public const string Name = "2X Ping";
-        public const string Developer = "D7oom2x";
+        public const string Developer = "lDo2x";
         public const string Year = "2026";
         public static readonly bool IsBeta = true;
 

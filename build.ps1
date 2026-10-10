@@ -1,4 +1,4 @@
-# Builds dist\2XPing.exe (2X Ping by D7oom2x) with the C# compiler that ships with Windows (.NET Framework 4.8).
+# Builds dist\2XPing.exe (2X Ping by lDo2x) with the C# compiler that ships with Windows (.NET Framework 4.8).
 # Nothing to install.
 #   powershell -ExecutionPolicy Bypass -File build.ps1            -> dist\2XPing.exe
 #   powershell -ExecutionPolicy Bypass -File build.ps1 -Release   -> also release\2XPing-v<version>.zip + SHA256

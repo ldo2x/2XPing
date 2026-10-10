@@ -13,7 +13,7 @@ namespace PingBoost
             // one copy at a time: two copies would fight over the tunnel and firewall rules
             Lang.Ar = Storage.LoadArabic();
             bool first;
-            using (new Mutex(true, "Local\\D7oom2x.2XPing", out first))
+            using (new Mutex(true, "Local\\lDo2x.2XPing", out first))
             {
                 if (!first)
                 {

@@ -6,7 +6,7 @@
 
 <p align="center">
 محسّن اتصال الألعاب: يقيس البنق، ويختار أفضل سيرفر وأفضل مسار، ويخليك تلعب على السيرفرات اللي تبيها.<br>
-من تطوير <b>D7oom2x</b>
+من تطوير <b>lDo2x</b>
 </p>
 
 <p align="center">
@@ -110,7 +110,7 @@ powershell -ExecutionPolicy Bypass -File build.ps1 -Release   # release\2XPing-v
 للمساهمة في الكود: [CONTRIBUTING.md](CONTRIBUTING.md). للأمان والخصوصية: [SECURITY.md](SECURITY.md).
 
 ## الرخصة
-[MIT](LICENSE) © 2026 **D7oom2x**: مجاني ومفتوح المصدر. تقدر تستخدمه وتعدّله، بشرط تحتفظ باسم المطوّر والرخصة.
+[MIT](LICENSE) © 2026 **lDo2x**: مجاني ومفتوح المصدر. تقدر تستخدمه وتعدّله، بشرط تحتفظ باسم المطوّر والرخصة.
 
 <sub>2X Ping مشروع مستقل وغير تابع لـ Valve أو Tencent أو أي شركة ألعاب. أسماء الألعاب علامات تجارية لأصحابها.</sub>
 

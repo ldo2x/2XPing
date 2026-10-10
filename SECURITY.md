@@ -3,7 +3,7 @@
 ## Reporting a problem
 
 If you find a security issue in 2X Ping, please **do not** open a public issue.
-Contact the developer (D7oom2x) privately through GitHub instead, and give them time to fix it before sharing details.
+Contact the developer (lDo2x) privately through GitHub instead, and give them time to fix it before sharing details.
 
 ## What 2X Ping does on your PC
 
