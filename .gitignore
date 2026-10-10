@@ -1,0 +1,15 @@
+# build output (the .exe is published through GitHub Releases, not committed)
+dist/
+release/
+*.exe
+*.pdb
+
+# local tools / editors
+.vs/
+.vscode/
+*.user
+Thumbs.db
+desktop.ini
+
+# never commit WireGuard configs: they contain private keys
+*.conf

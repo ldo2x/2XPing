@@ -1,0 +1,15 @@
+# Linux scripts must keep LF line endings or bash fails on the VPS
+*.sh   text eol=lf
+
+# Windows sources and scripts
+*.cs   text eol=crlf
+*.ps1  text eol=crlf
+*.manifest text eol=crlf
+*.md   text
+*.yml  text eol=lf
+
+# binaries
+*.png  binary
+*.ico  binary
+*.exe  binary
+*.zip  binary
