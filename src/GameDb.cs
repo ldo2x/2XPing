@@ -48,6 +48,19 @@ namespace PingBoost
         public string[] LockAllow; // never blocked (the game's own services that aren't match servers)
         public string LockPorts;   // remote ports the lock covers (null = all)
         public Dictionary<string, string[]> LockGroups; // "Play on it" picks the whole group, so matches are found quickly
+        // Valve: the datacenters that host this game's matches (null = all). The others are only relays: the game
+        // enters Valve's network through the closest one (e.g. Dubai for Saudi players) and rides it to the match
+        // server, so blocking them gains nothing and makes the route longer.
+        public HashSet<string> HostPops;
+        public bool Hosts(Region r) { return HostPops == null || HostPops.Contains(r.Id); }
+        // Valve: the usual ping between two of its datacenters over its own network (GetSDRConfig "typical_pings")
+        public Dictionary<string, int> Backbone = new Dictionary<string, int>();
+        public int Between(string a, string b)
+        {
+            if (a == b) return 0;
+            int ms;
+            return Backbone.TryGetValue(string.CompareOrdinal(a, b) < 0 ? a + " " + b : b + " " + a, out ms) ? ms : -1;
+        }
         public bool CanLock { get { return Provider == Provider.Valve || LockSpace != null; } }
         public string LockKey { get { return AppId ?? Icon; } } // where the picks are saved
         public override string ToString() { return Name; }
@@ -235,6 +248,7 @@ namespace PingBoost
             return new List<Game>
             {
                 new Game { Name = "Deadlock", Icon = "deadlock", Released = true, Provider = Provider.Valve, AppId = "1422450", Processes = new[] {"deadlock", "project8"},
+                    HostPops = new HashSet<string>(Stats.PopToMm.Keys),
                     NoteEn = "Tick the servers you want to play on, then press Lock my servers.",
                     NoteAr = "علّم (✓) على السيرفرات اللي تبغى تلعب عليها، وبعدين اضغط «ثبّت سيرفراتي»." },
                 new Game { Name = "Counter-Strike 2", Icon = "cs2", Provider = Provider.Valve, AppId = "730", SteamAppId = "730", Processes = new[] {"cs2"},
@@ -339,7 +353,7 @@ namespace PingBoost
             }
             else if (g.Provider == Provider.Valve)
             {
-                list = LoadValve(g.AppId);
+                list = LoadValve(g.AppId, g.Backbone);
                 var picks = Storage.LoadPicks(g.AppId);
                 foreach (var r in list) r.Picked = picks.Contains(r.Id);
             }
@@ -373,11 +387,21 @@ namespace PingBoost
             return e == null || o is string ? Enumerable.Empty<object>() : e.Cast<object>();
         }
 
-        static List<Region> LoadValve(string appId)
+        static List<Region> LoadValve(string appId, Dictionary<string, int> backbone)
         {
             string json = Http.Get("https://api.steampowered.com/ISteamApps/GetSDRConfig/v1/?appid=" + appId, 10000);
             var root = (Dictionary<string, object>)new JavaScriptSerializer { MaxJsonLength = int.MaxValue }.DeserializeObject(json);
             var pops = (Dictionary<string, object>)root["pops"];
+            object typical;
+            backbone.Clear();
+            if (root.TryGetValue("typical_pings", out typical))
+                foreach (var e in Arr(typical))
+                {
+                    var t = Arr(e).ToList();
+                    if (t.Count < 3) continue;
+                    string a = t[0].ToString(), b = t[1].ToString();
+                    backbone[string.CompareOrdinal(a, b) < 0 ? a + " " + b : b + " " + a] = Convert.ToInt32(t[2], System.Globalization.CultureInfo.InvariantCulture);
+                }
             var list = new List<Region>();
             foreach (var kv in pops)
             {

@@ -75,7 +75,7 @@ namespace PingBoost
         Dictionary<string, int> activity; // Deadlock matches/hour per matchmaking region
 
         Game CurrentGame { get { return gameList.SelectedItem as Game; } }
-        bool LockedOut(Game g, Region r) { return lockSummary != null && g != null && g.CanLock && !r.Picked; }
+        bool LockedOut(Game g, Region r) { return lockSummary != null && g != null && g.CanLock && !r.Picked && g.Hosts(r); }
 
         public MainForm()
         {
@@ -195,6 +195,44 @@ namespace PingBoost
                 }
             };
             Disposed += delegate { tray.Dispose(); };
+            // while the player is in the game (this window not in front), the live ping and the automatic server
+            // check pause, so nothing runs next to the match; coming back refreshes them right away
+            Activated += delegate
+            {
+                if (DateTime.Now - lastInFront < TimeSpan.FromSeconds(20)) return; // only after a real absence
+                lastAutoDetect = DateTime.MinValue;
+                RefreshStats(TimeSpan.FromMinutes(1));
+                if (autoDetectTimer != null) AutoDetectTick();
+            };
+        }
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+        [System.Runtime.InteropServices.DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
+        static readonly uint myPid = (uint)Process.GetCurrentProcess().Id;
+        DateTime lastInFront = DateTime.Now;
+
+        // Is one of 2X Ping's windows in front? Asked of Windows each time (focus events can be missed,
+        // e.g. when a notice or a dialog takes the focus), so the app never stays paused while it's looked at.
+        bool appActive
+        {
+            get
+            {
+                uint pid;
+                GetWindowThreadProcessId(GetForegroundWindow(), out pid);
+                bool front = pid == myPid;
+                if (front) lastInFront = DateTime.Now;
+                return front;
+            }
+        }
+        DateTime statsAt = DateTime.MinValue;
+
+        // Player numbers: every 5 minutes while the window is in front (they're shared by all copies through
+        // Supabase, so this costs deadlock-api nothing); "fresh" = how old they may be before refreshing
+        void RefreshStats(TimeSpan fresh)
+        {
+            var g = CurrentGame;
+            if (g == null || !g.Loaded || busy || DateTime.Now - statsAt < fresh) return;
+            LoadStats(g, true);
         }
 
         void BuildTrayMenu()
@@ -720,7 +758,7 @@ namespace PingBoost
             using (var b = new SolidBrush(RowBack(e.Item, e.ItemIndex))) e.Graphics.FillRectangle(b, rc);
             var g = CurrentGame;
             var textRc = Rectangle.Inflate(rc, -8, 0);
-            if (g != null && g.CanLock)
+            if (g != null && g.CanLock && g.Hosts((Region)e.Item.Tag))
             {
                 var r = (Region)e.Item.Tag;
                 var box = CheckBox(rc);
@@ -1014,6 +1052,18 @@ namespace PingBoost
             return Stats.PopToMm.TryGetValue(r.Id, out mm) && activity != null && activity.ContainsKey(mm) ? mm : "";
         }
 
+        // Deadlock players online (in matches, the queue, the menus or away), -1 when unknown
+        int deadlockOnline = -1;
+
+        // A region's players: the online total split by the region's share of the live matches.
+        // Without the total, the old estimate from the live-match sample (far below the real number).
+        int PlayersOf(int matches)
+        {
+            int all = activity != null ? activity.Values.Sum() : 0;
+            if (deadlockOnline > 0 && all > 0) return (int)Math.Round((double)deadlockOnline * matches / all);
+            return Stats.EstimatePlayers(matches);
+        }
+
         int MatchesOf(Region r)
         {
             string k = RegionKey(r);
@@ -1059,7 +1109,7 @@ namespace PingBoost
         {
             if (h.Key == "") return T("Other regions (no player data)", "مناطق ثانية (ما عندنا أرقامها)");
             string name = Stats.MmRegions.ContainsKey(h.Key) ? Lang.T(Stats.MmRegions[h.Key][0], Stats.MmRegions[h.Key][1]) : h.Key;
-            return name + "   ·   " + Stats.Approx(Stats.EstimatePlayers(h.Matches)) + T(" players", " لاعب") +
+            return name + "   ·   " + Stats.Approx(PlayersOf(h.Matches)) + T(" online", " أونلاين") +
                    "   ·   " + T("wait ", "الانتظار ") + Stats.EstimateWait(h.Matches);
         }
 
@@ -1083,7 +1133,7 @@ namespace PingBoost
         // Best server = lowest ping; for Deadlock only among regions busy enough for quick matches.
         Region BestServer(Game g)
         {
-            var cands = g.Regions.Where(r => !LockedOut(g, r) && BestLatency(r) < double.MaxValue).ToList();
+            var cands = g.Regions.Where(r => g.Hosts(r) && !LockedOut(g, r) && BestLatency(r) < double.MaxValue).ToList();
             if (Grouped(g))
             {
                 var busy = cands.Where(r => MatchesOf(r) >= 40).ToList();
@@ -1111,7 +1161,7 @@ namespace PingBoost
             {
                 string mm = RegionKey(best);
                 string reg = Stats.MmRegions.ContainsKey(mm) ? Lang.T(Stats.MmRegions[mm][0], Stats.MmRegions[mm][1]) : mm;
-                heroSub.Text = T("Region ", "منطقة ") + reg + "  ·  " + Stats.Approx(Stats.EstimatePlayers(m)) + T(" players", " لاعب") +
+                heroSub.Text = T("Region ", "منطقة ") + reg + "  ·  " + Stats.Approx(PlayersOf(m)) + T(" online", " أونلاين") +
                                "  ·  " + T("wait ", "الانتظار ") + Stats.EstimateWait(m) + "  ·  " + T("lowest ping with enough players", "أقل بنق وفيه لاعبين كفاية");
             }
             else heroSub.Text = T("The lowest ping you have right now.", "أقل بنق عندك دحين.");
@@ -1145,6 +1195,7 @@ namespace PingBoost
             if (r == null) return;
             var g = CurrentGame;
             item.SubItems[ColRegion].Text = (r.Here ? T("» ", "« ") : "") + r.Name + (r.Here ? T("  (you are here)", "  (إنت هنا)") : "") +
+                                            (g != null && !g.Hosts(r) ? T("   ·  relay only", "   ·  وسيط بس") : "") +
                                             (devMode ? "   ·  ‎" + r.Cidrs.Count + " ranges‎" : "");
             item.SubItems[ColRegion].ForeColor = r.Here || r.Picked ? Accent : (r.Detected ? Warn : TextC);
 
@@ -1153,7 +1204,7 @@ namespace PingBoost
             if (g != null && g.AppId == "1422450" && activity != null && Stats.PopToMm.TryGetValue(r.Id, out mm) &&
                 activity.TryGetValue(mm, out matches))
             {
-                SetSub(item, ColPlayers, Stats.Approx(Stats.EstimatePlayers(matches)), TextC);
+                SetSub(item, ColPlayers, Stats.Approx(PlayersOf(matches)), TextC);
                 SetSub(item, ColWait, Stats.EstimateWait(matches), matches >= 100 ? Accent : matches >= 40 ? Warn : Bad);
             }
             else
@@ -1383,27 +1434,37 @@ namespace PingBoost
             return bar;
         }
 
-        void LoadStats(Game g)
+        void LoadStats(Game g, bool quiet = false)
         {
-            infoLabel.Text = T("Getting player numbers...", "لحظة، أجيب عدد اللاعبين...");
-            infoLabel.ForeColor = Dim;
+            statsAt = DateTime.Now;
+            if (!quiet)
+            {
+                infoLabel.Text = T("Getting player numbers...", "لحظة، أجيب عدد اللاعبين...");
+                infoLabel.ForeColor = Dim;
+            }
             Task.Run(() =>
             {
                 Dictionary<string, int> act = null;
-                if (g.AppId == "1422450") { try { act = Stats.DeadlockActivity(); } catch { } }
+                int online = -1;
+                if (g.AppId == "1422450")
+                {
+                    try { act = Stats.DeadlockActivity(); } catch { }
+                    try { online = Stats.DeadlockOnline(); } catch { }
+                }
                 int steam = Stats.SteamPlayers(g.SteamAppId);
                 Ui(() =>
                 {
                     if (CurrentGame != g) return;
                     activity = act;
+                    deadlockOnline = online;
                     string text;
                     if (act != null && act.Count > 0)
                     {
-                        int total = act.Values.Sum(m => Stats.EstimatePlayers(m));
-                        text = T("Playing right now (est.): ", "يلعبون دحين تقريباً: ") + Stats.Approx(total) + T("", " لاعب") + "   |   " +
+                        int total = act.Values.Sum(m => PlayersOf(m));
+                        text = T("Online now (est.): ", "أونلاين دحين تقريباً: ") + Stats.Approx(total) + T("", " لاعب") + "   |   " +
                                string.Join("   ", act.OrderByDescending(kv => kv.Value).Take(4).Select(kv =>
                                    (Stats.MmRegions.ContainsKey(kv.Key) ? Lang.T(Stats.MmRegions[kv.Key][0], Stats.MmRegions[kv.Key][1]) : kv.Key) +
-                                   " " + Stats.Approx(Stats.EstimatePlayers(kv.Value))));
+                                   " " + Stats.Approx(PlayersOf(kv.Value))));
                     }
                     else if (steam >= 0)
                         text = T("Online now on Steam: ", "أونلاين دحين على Steam: ") + steam.ToString("N0") +
@@ -1414,7 +1475,10 @@ namespace PingBoost
                         text = T("Player numbers aren't available for this game.", "عدد اللاعبين مو متوفر لهادي اللعبة.");
                     infoLabel.Text = text;
                     infoLabel.ForeColor = TextC;
-                    FillServers(g); // regroup now that the activity numbers are in
+                    // regroup now that the activity numbers are in, keeping the list where the player left it
+                    int top = serverList.TopItem != null ? serverList.TopItem.Index : 0;
+                    FillServers(g);
+                    if (quiet && top > 0 && top < serverList.Items.Count) serverList.TopItem = serverList.Items[top];
                 });
             });
         }
@@ -1423,6 +1487,18 @@ namespace PingBoost
         static Region ValveRegionOf(Game g, string ip)
         {
             return g.Regions.FirstOrDefault(r => r.Cidrs.Any(c => Detector.InCidr(ip, c)));
+        }
+
+        // The datacenter the game is on, from the addresses it talks to: one that hosts matches, or null when the game
+        // only talks to a relay (e.g. Dubai), which hides the match server behind it.
+        static Region HostRegionOf(Game g, List<Detector.Hit> hits)
+        {
+            return hits.Select(h => ValveRegionOf(g, h.Ip)).FirstOrDefault(r => r != null && g.Hosts(r));
+        }
+
+        static Region RelayRegionOf(Game g, List<Detector.Hit> hits)
+        {
+            return hits.Select(h => ValveRegionOf(g, h.Ip)).FirstOrDefault(r => r != null && !g.Hosts(r));
         }
 
         void DetectServer()
@@ -1495,8 +1571,21 @@ namespace PingBoost
             busy = false;
             btnDetect.Enabled = true;
             foreach (var r in g.Regions) r.Here = false;
-            var found = hits.Select(h => ValveRegionOf(g, h.Ip)).Where(r => r != null).Distinct().ToList();
+            var found = hits.Select(h => ValveRegionOf(g, h.Ip)).Where(r => r != null && g.Hosts(r)).Distinct().ToList();
             foreach (var h in hits) Log(T("Game traffic: ", "ترافيك اللعبة: ") + h.Ip + ":" + h.Port + "  (" + h.Packets + ")");
+            var relay = RelayRegionOf(g, hits);
+            if (found.Count == 0 && relay != null)
+            {
+                // the game goes through a nearby Valve relay, which hides which datacenter the match is on
+                if (CurrentGame == g) FillServers(g);
+                SetStatus(T("Through Valve's relay in ", "داخل شبكة Valve من وسيط ") + ShortName(relay));
+                Telemetry.Send("detect", relay.NameEn, -1, "through relay");
+                Msg(T("Your game goes through Valve's relay in " + ShortName(relay) + ", the shortest way into their network, so the match server itself is hidden. " +
+                      (lockSummary != null ? "Your lock still only allows the servers you picked." : ""),
+                      "لعبتك داخلة شبكة Valve من وسيط " + ShortName(relay) + "، وهو أقصر طريق لها، فسيرفر المباراة نفسه ما يبان. " +
+                      (lockSummary != null ? "والتثبيت ما يسمح إلا بالسيرفرات اللي اخترتها." : "")), ToastKind.Good);
+                return;
+            }
             if (found.Count == 0)
             {
                 if (CurrentGame == g) FillServers(g);
@@ -1582,7 +1671,7 @@ namespace PingBoost
         {
             if (autoDetectTimer != null) return;
             autoDetectTimer = new System.Windows.Forms.Timer { Interval = 10000 };
-            autoDetectTimer.Tick += delegate { AutoDetectTick(); };
+            autoDetectTimer.Tick += delegate { AutoDetectTick(); if (appActive) RefreshStats(TimeSpan.FromMinutes(5)); };
             autoDetectTimer.Start();
         }
 
@@ -1620,7 +1709,7 @@ namespace PingBoost
         {
             var g = CurrentGame;
             CheckLockRules();
-            if (g == null || busy || autoDetecting || g.Processes.Length == 0) return;
+            if (g == null || busy || autoDetecting || !appActive || g.Processes.Length == 0) return;
             if (DateTime.Now - lastAutoDetect < TimeSpan.FromSeconds(Verifying ? 30 : 90)) return;
             autoDetecting = true;
             lastAutoDetect = DateTime.Now;
@@ -1687,7 +1776,15 @@ namespace PingBoost
             }
             matchSinceLock = true;
             var top = hits[0];
-            var dc = hits.Select(h => ValveRegionOf(g, h.Ip)).FirstOrDefault(r => r != null);
+            var dc = HostRegionOf(g, hits);
+            var relay = dc == null ? RelayRegionOf(g, hits) : null;
+            if (relay != null)
+            {
+                // only a relay in sight: the match server is hidden behind it, so there's nothing to check or report
+                SetDetect(T("Via relay: ", "عن طريق وسيط: ") + ShortName(relay), Lavender);
+                lastAutoServer = relay.Id;
+                return;
+            }
             string name = dc != null ? ShortName(dc) : (where ?? top.Ip);
             bool ok = dc == null ? lockSummary == null : (lockSummary == null || dc.Picked);
             SetDetect(T("On: ", "إنت على: ") + name, ok ? Good : Warn);
@@ -1719,6 +1816,7 @@ namespace PingBoost
         void TogglePick(Region r)
         {
             var g = CurrentGame;
+            if (g == null || !g.Hosts(r)) return; // a relay only: no matches are played there
             r.Picked = !r.Picked;
             Storage.SavePicks(g.LockKey, g.Regions.Where(x => x.Picked).Select(x => x.Id));
             UpdateRegion(r);
@@ -1772,6 +1870,7 @@ namespace PingBoost
                     return;
                 }
             }
+            WarnLongerRoute(g, picked);
             btnLock.Enabled = false;
             SetStatus(T("Locking your servers...", "أثبّت سيرفراتك..."));
             Task.Run(() =>
@@ -1786,7 +1885,8 @@ namespace PingBoost
                     else
                     {
                         var keep = new HashSet<string>(picked.SelectMany(r => r.Cidrs));
-                        block = g.Regions.Where(r => !r.Picked && !r.Detected).SelectMany(r => r.Cidrs).Where(c => !keep.Contains(c)).ToList();
+                        // relay-only datacenters stay open: the game enters Valve's network through them
+                        block = g.Regions.Where(r => !r.Picked && !r.Detected && g.Hosts(r)).SelectMany(r => r.Cidrs).Where(c => !keep.Contains(c)).ToList();
                     }
                     int n = ServerLock.Apply(block, exe, exe != null ? "UDP" : null, g.LockPorts);
                     bool firewallOn = ServerLock.FirewallOn();
@@ -1832,6 +1932,45 @@ namespace PingBoost
                     });
                 }
             });
+        }
+
+        // Valve games enter Valve's network through the closest datacenter and ride it to the match server.
+        // If that closest one hosts matches too, the lock has to block it, and the route gets longer: say so,
+        // with the ping it costs and the fix (tick it as well), from the player's own pings and Valve's.
+        void WarnLongerRoute(Game g, List<Region> picked)
+        {
+            if (g.Provider != Provider.Valve || g.Backbone.Count == 0) return;
+            Func<Region, double> ping = r => r.Direct != null && r.Direct.Ok ? r.Direct.Avg : double.MaxValue;
+            var open = g.Regions.Where(r => r.Picked || !g.Hosts(r)).ToList();
+            Region worstX = null, worstP = null;
+            double worstGain = 0;
+            foreach (var p in picked)
+            {
+                // the best way to this server that stays open
+                double best = double.MaxValue;
+                foreach (var o in open)
+                {
+                    int hop = g.Between(o.Id, p.Id);
+                    if (hop >= 0 && ping(o) < double.MaxValue) best = Math.Min(best, ping(o) + hop);
+                }
+                if (best == double.MaxValue) continue;
+                // ...and through each datacenter the lock blocks
+                foreach (var x in g.Regions.Where(r => !r.Picked && g.Hosts(r)))
+                {
+                    int hop = g.Between(x.Id, p.Id);
+                    if (hop < 0 || ping(x) == double.MaxValue) continue;
+                    double gain = best - (ping(x) + hop);
+                    if (gain > worstGain) { worstGain = gain; worstX = x; worstP = p; }
+                }
+            }
+            if (worstX == null || worstGain < 10) return;
+            int ms = (int)Math.Round(worstGain);
+            Telemetry.Send("use", worstX.NameEn, ms, "longer route warning, " + worstP.Id);
+            Msg(T("Heads up: " + ShortName(worstX) + " is your shortest way into Valve's network to " + ShortName(worstP) +
+                  ", so blocking it can add about " + ms + " ms. Tick " + ShortName(worstX) + " too to keep it.",
+                  "تنبيه: " + ShortName(worstX) + " هي أقصر طريق لك لشبكة Valve عشان توصل " + ShortName(worstP) +
+                  "، وحجبها ممكن يزيد بنقك حوالي " + ms + " ms. علّم على " + ShortName(worstX) + " بعد عشان تبقى مفتوحة."),
+                ToastKind.Warn);
         }
 
         void UnlockServers()
@@ -1981,8 +2120,12 @@ namespace PingBoost
             SetStatus(label);
             var t = new Thread(() =>
             {
+                var last = DateTime.MinValue;
                 while (gen == monitorGen)
                 {
+                    // while the game is in front: one ping every 15 s, just for the tray icon
+                    if (!appActive && DateTime.Now - last < TimeSpan.FromSeconds(15)) { Thread.Sleep(500); continue; }
+                    last = DateTime.Now;
                     double v = Pinger.Once(target, 1500);
                     if (gen != monitorGen) break;
                     Ui(() =>

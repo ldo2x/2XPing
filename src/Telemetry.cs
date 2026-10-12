@@ -110,7 +110,7 @@ namespace PingBoost
             catch { }
         }
 
-        static Dictionary<string, string> Headers(string key)
+        public static Dictionary<string, string> Headers(string key)
         {
             var h = new Dictionary<string, string> { { "apikey", key } };
             if (key.StartsWith("eyJ")) h["Authorization"] = "Bearer " + key; // legacy JWT keys

@@ -38,16 +38,84 @@ namespace PingBoost
         };
 
         public const int PlayersPerMatch = 12;
-        public const double AvgMatchMinutes = 30;
+        // average of all modes (deadlock-api, one day: normal 36 min, Street Brawl 14 min)
+        public const double AvgMatchMinutes = 32;
+        // share of the players with the game open who are inside a match; the rest are in the menus, the queue or away
+        public const double InMatchShare = 0.75;
+
+        static int deadlockPerDay = -1;
+        static DateTime deadlockPerDayAt;
+
+        static Dictionary<string, object> shared;
+        static DateTime sharedAt;
+
+        // The Deadlock numbers Supabase fetches once a minute for every copy of the app (tools/supabase-setup.sql),
+        // or null when they're missing or more than 10 minutes old: then each PC asks deadlock-api itself.
+        static Dictionary<string, object> SharedDeadlock()
+        {
+            if (shared != null && DateTime.Now - sharedAt < TimeSpan.FromSeconds(60)) return shared;
+            try
+            {
+                string json = Http.Send("GET", Telemetry.SupabaseUrl + "/rest/v1/game_stats?game=eq.deadlock&select=regions,matches_per_day,now_factor,updated_at",
+                                        null, Telemetry.Headers(Telemetry.SupabaseKey), 8000);
+                var rows = (object[])new JavaScriptSerializer().DeserializeObject(json);
+                if (rows.Length == 0) return null;
+                var row = (Dictionary<string, object>)rows[0];
+                DateTime at;
+                if (!(row["updated_at"] is string) ||
+                    !DateTime.TryParse((string)row["updated_at"], CultureInfo.InvariantCulture,
+                                       DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out at) ||
+                    DateTime.UtcNow - at > TimeSpan.FromMinutes(10))
+                    return null;
+                shared = row;
+                sharedAt = DateTime.Now;
+                return row;
+            }
+            catch { return null; }
+        }
+
+        // Deadlock players online right now (in matches, the queue, the menus or away), or -1.
+        // The total comes from every match deadlock-api fetches in a day; the active-match list below only holds
+        // the top 200 matches of the game's Watch tab, so it is used for each region's share, never for the count.
+        public static int DeadlockOnline()
+        {
+            lock (MmRegions)
+            {
+                var s = SharedDeadlock();
+                if (s != null && s["matches_per_day"] != null)
+                {
+                    deadlockPerDay = Convert.ToInt32(s["matches_per_day"], CultureInfo.InvariantCulture);
+                    deadlockPerDayAt = DateTime.Now;
+                }
+                else if (deadlockPerDay < 0 || DateTime.Now - deadlockPerDayAt > TimeSpan.FromHours(1))
+                {
+                    var d = (Dictionary<string, object>)new JavaScriptSerializer { MaxJsonLength = int.MaxValue }
+                        .DeserializeObject(Http.Get("https://api.deadlock-api.com/v1/info", 15000));
+                    deadlockPerDay = Convert.ToInt32(d["fetched_matches_per_day"], CultureInfo.InvariantCulture);
+                    deadlockPerDayAt = DateTime.Now;
+                }
+                double inMatches = deadlockPerDay / 24.0 * PlayersPerMatch * AvgMatchMinutes / 60.0;
+                // the day's average, scaled to how busy this hour is (about 0.5 at night, 1.5 at the evening peak)
+                double busy = 1;
+                if (s != null && s.ContainsKey("now_factor") && s["now_factor"] != null)
+                    busy = Math.Max(0.3, Math.Min(2.5, Convert.ToDouble(s["now_factor"], CultureInfo.InvariantCulture)));
+                return (int)Math.Round(inMatches * busy / InMatchShare);
+            }
+        }
 
         static Dictionary<string, int> deadlockCache;
         static DateTime deadlockAt;
 
-        // Deadlock matches started in the last hour per matchmaking region (sample tracked by deadlock-api.com).
+        // Deadlock matches started in the last hour per matchmaking region, among the top 200 live matches
+        // (the game's Watch tab, tracked by deadlock-api.com): a sample, good for comparing regions.
         public static Dictionary<string, int> DeadlockActivity()
         {
             lock (MmRegions)
             {
+                var s = SharedDeadlock();
+                var regions = s != null ? s["regions"] as Dictionary<string, object> : null;
+                if (regions != null)
+                    return regions.ToDictionary(kv => kv.Key, kv => Convert.ToInt32(kv.Value, CultureInfo.InvariantCulture));
                 if (deadlockCache != null && DateTime.Now - deadlockAt < TimeSpan.FromMinutes(3)) return deadlockCache;
                 string sql = "SELECT toString(region_mode) AS region, uniq(match_id) AS matches FROM active_matches " +
                              "WHERE start_time > now() - INTERVAL 1 HOUR GROUP BY region";

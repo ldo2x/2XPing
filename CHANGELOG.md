@@ -1,5 +1,17 @@
 # Changelog
 
+## Next (in testing)
+
+- **Deadlock: lower ping with a lock.** The lock no longer blocks Valve's relay-only locations (Dubai, Johannesburg): the game enters Valve's network through the closest one and rides it to the match server. Blocking Dubai pushed players in the Gulf onto their internet provider's longer route (about +30 ms to Frankfurt for a player in Riyadh on STC)
+- Deadlock: before locking, 2X Ping checks your shortest way into Valve's network (from your own pings and Valve's published pings between its datacenters). If the lock has to block it because matches are played there too, you're told how many ms it can add and to tick it as well
+- Deadlock: relay-only locations are no longer suggested as "Your best server" (no matches are played there) and can't be ticked; the list marks them "relay only"
+- "Which server am I on?" recognises when the game goes through a Valve relay, which hides the match server, instead of reporting it as outside the lock
+- **Deadlock player numbers are now realistic** (about 49,000 online instead of about 2,000): the total comes from every match deadlock-api collects in a day (about 139,000), with the real average match length (32 min) and the players in the menus, the queue or away counted too (a match holds about 3 in 4 of them). The live-match list only holds the top 200 matches of the Watch tab, so it now only gives each region's share
+- Deadlock player numbers follow the time of day: the day's total is scaled by how busy the latest complete hour was (Deadlock starts about 1,600 matches an hour at its quietest and 4,800 at its peak), instead of staying on the day's average
+- The app now asks Windows whether its window is in front, instead of relying on focus events that can be missed, so it never stays paused while you're looking at it
+- Player numbers are fetched once a minute by our database for every copy of the app (instead of each PC asking deadlock-api, which allows 2 queries a minute), and refresh by themselves every 5 minutes while the window is in front. If the shared numbers are ever more than 10 minutes old, the app asks deadlock-api itself. A copy is kept every 10 minutes, to learn each region's busy hours
+- While the game is in front, 2X Ping stays quiet: the automatic server check pauses and the live ping only refreshes every 15 s for the tray icon. Both refresh as soon as you come back to the window
+
 ## v0.11.0-beta (2026-10-12)
 
 - **Only fully tested games in the public version:** Deadlock, Arena Breakout: Infinite, Overwatch 2 and Dead by Daylight. The others stay hidden until they're verified; developer mode shows them with a "Trial" tag

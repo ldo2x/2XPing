@@ -107,3 +107,121 @@ $$;
 
 revoke all on function public.checkin(jsonb) from public;
 grant execute on function public.checkin(jsonb) to anon, authenticated;
+
+-- ---------------------------------------------------------------------------------------------------------------
+-- 0.11.1: shared game numbers. Supabase fetches Deadlock's numbers from deadlock-api.com once a minute and every
+-- copy of the app reads them from here, instead of each PC asking deadlock-api (which allows 2 queries a minute).
+-- Needs the pg_cron and pg_net extensions (Database > Extensions, or the two lines below).
+
+create extension if not exists pg_net;
+create extension if not exists pg_cron;
+
+-- the latest numbers: public, the app reads them with the public key (no personal data in here)
+create table if not exists public.game_stats (
+  game            text primary key,       -- 'deadlock'
+  regions         jsonb,                  -- {"Europe": 159, ...}: matches started in the last hour (top 200 live matches)
+  matches_per_day int,                    -- every match deadlock-api fetched in the last day
+  updated_at      timestamptz             -- when "regions" was last refreshed
+);
+-- busy-ness right now: matches started in the latest complete hour / the 24 hours before it (1 = a usual hour)
+alter table public.game_stats add column if not exists now_factor real;
+alter table public.game_stats enable row level security;
+drop policy if exists game_stats_read on public.game_stats;
+create policy game_stats_read on public.game_stats for select to anon, authenticated using (true);
+grant select on public.game_stats to anon, authenticated;
+
+-- every 10 minutes a copy, for busy hours per region and real queue times later (developer only)
+create table if not exists public.game_stats_history (
+  id              bigint generated always as identity primary key,
+  at              timestamptz not null default now(),
+  game            text not null,
+  regions         jsonb,
+  matches_per_day int
+);
+alter table public.game_stats_history add column if not exists now_factor real;
+create index if not exists game_stats_history_at_idx on public.game_stats_history (game, at desc);
+alter table public.game_stats_history enable row level security;
+revoke all on public.game_stats_history from anon, authenticated;
+
+-- pg_net answers after the job ends, so each run reads the answers of the previous one, then asks again
+create table if not exists public.stats_requests (
+  name       text primary key,
+  request_id bigint,
+  at         timestamptz
+);
+alter table public.stats_requests enable row level security;
+revoke all on public.stats_requests from anon, authenticated;
+
+create or replace function public.refresh_stats()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  resp    record;
+  reg     jsonb;
+  per_day int;
+  factor  real;
+begin
+  -- 1) last run's answers
+  select r.status_code, r.content into resp from net._http_response r
+    where r.id = (select request_id from stats_requests where name = 'regions');
+  if found and resp.status_code = 200 then
+    select jsonb_object_agg(e->>'region', (e->>'matches')::int) into reg from jsonb_array_elements(resp.content::jsonb) e;
+  end if;
+  select r.status_code, r.content into resp from net._http_response r
+    where r.id = (select request_id from stats_requests where name = 'info');
+  if found and resp.status_code = 200 then
+    per_day := (resp.content::jsonb->>'fetched_matches_per_day')::int;
+  end if;
+  -- matches per hour (the newest two hours are still coming in, so the hour before them is "now")
+  select r.status_code, r.content into resp from net._http_response r
+    where r.id = (select request_id from stats_requests where name = 'hourly');
+  if found and resp.status_code = 200 then
+    with h as (
+      select (e->>'h')::timestamp as h, (e->>'m')::int as m from jsonb_array_elements(resp.content::jsonb) e
+    ), ref as (
+      select date_trunc('hour', now() at time zone 'utc') - interval '2 hours' as at
+    )
+    select (select h.m from h, ref where h.h = ref.at)::real /
+           nullif((select avg(h.m) from h, ref where h.h >= ref.at - interval '24 hours' and h.h < ref.at), 0)
+      into factor;
+  end if;
+
+  if reg is not null or per_day is not null or factor is not null then
+    insert into game_stats (game, regions, matches_per_day, now_factor, updated_at)
+    values ('deadlock', reg, per_day, factor, case when reg is not null then now() end)
+    on conflict (game) do update set
+      regions         = coalesce(excluded.regions, game_stats.regions),
+      matches_per_day = coalesce(excluded.matches_per_day, game_stats.matches_per_day),
+      now_factor      = coalesce(excluded.now_factor, game_stats.now_factor),
+      updated_at      = coalesce(excluded.updated_at, game_stats.updated_at);
+    if not exists (select 1 from game_stats_history where game = 'deadlock' and at > now() - interval '10 minutes') then
+      insert into game_stats_history (game, regions, matches_per_day, now_factor)
+        select game, regions, matches_per_day, now_factor from game_stats where game = 'deadlock';
+      delete from game_stats_history where at < now() - interval '180 days';
+    end if;
+  end if;
+
+  -- 2) ask again: the regions every minute, the daily total every 10 minutes (it changes slowly)
+  insert into stats_requests (name, request_id, at)
+  values ('regions', net.http_get('https://api.deadlock-api.com/v1/sql?query=SELECT%20toString%28region_mode%29%20AS%20region%2C%20uniq%28match_id%29%20AS%20matches%20FROM%20active_matches%20WHERE%20start_time%20%3E%20now%28%29%20-%20INTERVAL%201%20HOUR%20GROUP%20BY%20region'), now())
+  on conflict (name) do update set request_id = excluded.request_id, at = excluded.at;
+  if not exists (select 1 from stats_requests where name = 'info' and at > now() - interval '10 minutes') then
+    insert into stats_requests (name, request_id, at)
+    values ('info', net.http_get('https://api.deadlock-api.com/v1/info'), now())
+    on conflict (name) do update set request_id = excluded.request_id, at = excluded.at;
+  end if;
+  if not exists (select 1 from stats_requests where name = 'hourly' and at > now() - interval '10 minutes') then
+    insert into stats_requests (name, request_id, at)
+    values ('hourly', net.http_get('https://api.deadlock-api.com/v1/sql?query=SELECT%20toString%28toStartOfHour%28start_time%29%29%20h%2C%20uniq%28match_id%29%20m%20FROM%20player_match_history%20WHERE%20start_time%20%3E%20now%28%29%20-%20INTERVAL%2030%20HOUR%20GROUP%20BY%20h%20ORDER%20BY%20h'), now())
+    on conflict (name) do update set request_id = excluded.request_id, at = excluded.at;
+  end if;
+end;
+$$;
+
+revoke all on function public.refresh_stats() from public, anon, authenticated;
+
+-- once a minute (running this file again just updates the job)
+select cron.schedule('2xping-stats', '* * * * *', 'select public.refresh_stats()');
