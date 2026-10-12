@@ -70,6 +70,10 @@ namespace PingBoost
 
             hasButton = v != null && v.Button != null;
             if (hasButton) button.Text = v.Button;
+            // once locked, "Unlock" is a quiet secondary action; pink stays for what we want the player to press
+            bool secondary = v != null && (v.Kind == CardKind.Locked || v.Kind == CardKind.InMatchOk || v.Kind == CardKind.InMatchRelay || v.Kind == CardKind.Outside);
+            button.BackColor = secondary ? MainForm.Panel2 : MainForm.Accent;
+            button.ForeColor = secondary ? MainForm.TextC : Color.Black;
             button.Visible = hasButton;
             hasLinks = v != null && v.ShowLinks;
             other.Visible = manual.Visible = hasLinks;
