@@ -46,7 +46,12 @@ namespace PingBoost
                 g.Regions.Add(region);
                 g.RegionMap.Add(new RegionDef { Key = key, En = key, Ar = key, Ids = new[] { key.ToLower() } });
             }
-            return RegionGroups.Build(g, activity, m => m * 10);
+            return RegionGroups.Build(g, activity, m => m * 10, DirectLatency);
+        }
+
+        static double DirectLatency(Region r)
+        {
+            return r.Direct != null && r.Direct.Ok ? r.Direct.Avg : double.MaxValue;
         }
 
         static Dictionary<string, int> Queue(params object[] kv)
@@ -149,8 +154,19 @@ namespace PingBoost
             g.RegionMap.Add(new RegionDef { Key = "A", Ids = new[] { "a" } });
             g.RegionMap.Add(new RegionDef { Key = "R", Ids = new[] { "relay" } });
             g.RegionMap.Add(new RegionDef { Key = "Z", Ids = new[] { "missing" } });
-            var all = RegionGroups.Build(g, new Dictionary<string, int>(), m => m);
+            var all = RegionGroups.Build(g, new Dictionary<string, int>(), m => m, DirectLatency);
             Check(all.Count == 1 && all[0].Def.Key == "A", "only the region with a hosting datacenter is built");
+        }
+
+        static void PingUsesTheGivenLatencyAndTheBestMember()
+        {
+            var g = new Game { Name = "Fake", RegionMap = new List<RegionDef>() };
+            g.Regions.Add(new Region { Id = "a1", Direct = new PingResult { Avg = 100 } });
+            g.Regions.Add(new Region { Id = "a2", Direct = new PingResult { Avg = 140 } });
+            g.RegionMap.Add(new RegionDef { Key = "A", Ids = new[] { "a1", "a2" } });
+            // a2 is faster through a relay, like MainForm.BestLatency would report
+            var all = RegionGroups.Build(g, null, null, r => r.Id == "a2" ? 60 : DirectLatency(r));
+            Check(all.Count == 1 && all[0].Ping == 60, "ping is the best member's latency, relay included");
         }
 
         static void BusyWords()
@@ -173,6 +189,7 @@ namespace PingBoost
             Run("FeaturedWithoutQueueData", FeaturedWithoutQueueData);
             Run("UnknownPingSortsLast", UnknownPingSortsLast);
             Run("RegionsWithoutHostingDatacentersAreDropped", RegionsWithoutHostingDatacentersAreDropped);
+            Run("PingUsesTheGivenLatencyAndTheBestMember", PingUsesTheGivenLatencyAndTheBestMember);
             Run("BusyWords", BusyWords);
             Console.WriteLine(failures == 0 ? "ALL PASS" : failures + " FAILED");
             return failures == 0 ? 0 : 1;

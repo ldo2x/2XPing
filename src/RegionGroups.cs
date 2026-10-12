@@ -34,8 +34,9 @@ namespace PingBoost
     {
         const int FeaturedMax = 3;
 
-        // activity: matches running per region key (null or missing = no queue data); playersOf turns matches into players.
-        public static List<RegionChoice> Build(Game g, Dictionary<string, int> activity, Func<int, int> playersOf)
+        // activity: matches running per region key (null or missing = no queue data); playersOf turns matches into players;
+        // latency: a datacenter's best ping in ms (double.MaxValue = unknown), so the tile agrees with the rest of the app.
+        public static List<RegionChoice> Build(Game g, Dictionary<string, int> activity, Func<int, int> playersOf, Func<Region, double> latency)
         {
             var result = new List<RegionChoice>();
             if (g.RegionMap == null) return result;
@@ -48,7 +49,7 @@ namespace PingBoost
                     if (r != null && g.Hosts(r)) c.Members.Add(r);
                 }
                 if (c.Members.Count == 0) continue;
-                c.Ping = c.Members.Min(m => PingOf(m));
+                c.Ping = c.Members.Min(m => latency(m));
                 int matches;
                 if (activity != null && activity.TryGetValue(def.Key, out matches))
                 {
@@ -58,11 +59,6 @@ namespace PingBoost
                 result.Add(c);
             }
             return result;
-        }
-
-        static double PingOf(Region r)
-        {
-            return r.Direct != null && r.Direct.Ok ? r.Direct.Avg : double.MaxValue;
         }
 
         // The tiles shown first: the best ping, the fastest queue, then the next best pings, at most three.
