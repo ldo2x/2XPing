@@ -57,6 +57,8 @@
   .tbl td { background: var(--card); padding: 22px 28px; }
   .tbl td:first-child { border-radius: 0 16px 16px 0; font-weight: 700; color: #fff; width: 30%; }
   .tbl td:last-child { border-radius: 16px 0 0 16px; color: var(--muted); }
+  .tbl.tight { border-spacing: 0 9px; font-size: 26px; }
+  .tbl.tight td { padding: 16px 28px; }
   .mono { font-family: Consolas, monospace; direction: ltr; unicode-bidi: isolate; color: var(--green); }
 </style>
 </head>
@@ -69,7 +71,7 @@
   <div style="font-size:56px;font-weight:700;margin-top:24px;">بنق أقل، لعب أحلى</div>
   <div style="font-size:32px;color:var(--muted);margin-top:22px;">دليل سريع: إيش يسوي البرنامج، وكيف يشتغل، وإيش يستخدم</div>
   <div style="margin-top:60px;display:flex;gap:16px;">
-    <span class="chip a">بيتا ‎0.10.0‎</span>
+    <span class="chip a">بيتا ‎0.11.0‎</span>
     <span class="chip g">من تطوير lDo2x</span>
     <span class="chip" style="background:#2c2240;color:#d8cdea;">مجاني ومفتوح المصدر</span>
   </div>
@@ -95,11 +97,11 @@
   <p class="lead">أربع أدوات بسيطة تخليك تلعب على السيرفر اللي يناسبك.</p>
   <div class="grid g4">
     <div class="card"><div class="ico">1</div><h3>افحص البنق</h3><p>يقيس البنق لكل مناطق اللعبة، ويرتّبها من الأقرب للأبعد.</p></div>
-    <div class="card"><div class="ico">2</div><h3>ثبّت سيرفراتي</h3><p>ضغطة وحدة على «العب عليه»، واللعبة ما تحطك إلا فيه.</p></div>
-    <div class="card"><div class="ico">3</div><h3>على أي سيرفر أنا؟</h3><p>وإنت داخل المباراة، يقولك وين إنت، وهل هو من اختيارك ✓</p></div>
+    <div class="card"><div class="ico">2</div><h3>ثبّت سيرفراتي</h3><p>ضغطة وحدة على «العب عليه»، واللعبة ما تحطك إلا فيه. في Deadlock وOverwatch 2 وDead by Daylight.</p></div>
+    <div class="card"><div class="ico">3</div><h3>على أي سيرفر أنا؟</h3><p>يتحدّث لحاله وإنت داخل المباراة: يقولك وين إنت، وهل هو من اختيارك ✓</p></div>
     <div class="card"><div class="ico">4</div><h3>البوست بالوسيط</h3><p>في الوضع المتقدم: ترافيك اللعبة بس يمشي من سيرفر وسيط لو طريقه أسرع.</p></div>
   </div>
-  <p class="lead" style="margin-top:40px;font-size:26px;">ومعها: عدد اللاعبين ووقت الانتظار، تختار ألعابك، يصغر جنب الساعة، وتحديث بضغطة.</p>
+  <p class="lead" style="margin-top:40px;font-size:26px;">ومعها: يكتشف المشاكل ويرسلها لنا لحاله، عدد اللاعبين ووقت الانتظار، تختار ألعابك، يصغر جنب الساعة، وتحديث بضغطة.</p>
   <div class="brand"><img src="../../assets/logo.png">2X Ping</div><div class="pageno">3</div>
 </div>
 
@@ -125,9 +127,9 @@
   <h1>افحص البنق</h1>
   <p class="lead">يجيب قائمة السيرفرات الرسمية لكل لعبة، ويفحصها كلها مع بعض: الفحص كله ثانيتين ثلاث.</p>
   <div class="grid g3">
-    <div class="card"><div class="ico">V</div><h3>ألعاب Valve</h3><p>Deadlock و CS2 و Dota 2: قائمة Valve الحية من Steam، ويقيس بـ Ping عادي.</p></div>
-    <div class="card"><div class="ico">A</div><h3>ألعاب AWS</h3><p>Valorant و Fortnite و PUBG وغيرها: مراكز بيانات Amazon في كل منطقة.</p></div>
-    <div class="card"><div class="ico">T</div><h3>Tencent و Google</h3><p><span class="ltr">Arena&nbsp;Breakout</span> على Tencent، <span style="white-space:nowrap">و<span class="ltr">Overwatch&nbsp;2</span></span> على Google (الدمام والدوحة).</p></div>
+    <div class="card"><div class="ico">V</div><h3>Deadlock</h3><p>قائمة Valve الحية من Steam، ويقيس بـ Ping عادي.</p></div>
+    <div class="card"><div class="ico">B</div><h3>Overwatch 2</h3><p>15 مركز بيانات (الدمام والدوحة والبحرين وغيرها) من قوائم Google وAmazon وشبكة Blizzard.</p></div>
+    <div class="card"><div class="ico">A</div><h3>Dead by Daylight</h3><p>مناطق Amazon GameLift، بنفس الإشارة اللي تستخدمها اللعبة. و<span class="ltr">Arena&nbsp;Breakout</span> على Tencent.</p></div>
   </div>
   <div style="display:flex;gap:20px;margin-top:46px;align-items:center;font-size:28px;">
     <span class="chip ok">أقل من 60 ms ممتاز</span>
@@ -142,7 +144,7 @@
 <div class="slide">
   <div class="kicker">كيف يشتغل · 2</div>
   <h1>ثبّت سيرفراتي</h1>
-  <p class="lead">يحط قواعد في <b style="color:#fff">جدار حماية ويندوز</b> تحجب المناطق اللي ما اخترتها، فاللعبة ما تشوف إلا اختيارك.</p>
+  <p class="lead">يحط قواعد في <b style="color:#fff">جدار حماية ويندوز</b> تحجب السيرفرات اللي ما اخترتها، فاللعبة ما تشوف إلا اختيارك. العناوين من القوائم الرسمية وتتحدّث لحالها كل يوم.</p>
   <svg width="1700" height="470" viewBox="0 0 1700 470" style="display:block;margin:0 auto;" font-family="Readex Pro, Segoe UI, Arial">
     <rect x="1250" y="160" width="400" height="150" rx="26" fill="#221a33"/>
     <text x="1450" y="225" fill="#fff" font-size="44" text-anchor="middle" font-weight="700">جهازك</text>
@@ -159,7 +161,7 @@
     <text x="720" y="252" fill="#ff5c7a" font-size="58" font-weight="800">✕</text>
     <text x="720" y="410" fill="#ff5c7a" font-size="58" font-weight="800">✕</text>
   </svg>
-  <p class="lead" style="font-size:26px;margin-top:20px;">ما يلمس ملفات اللعبة · ينشال لما تفك التثبيت أو تقفل البرنامج</p>
+  <p class="lead" style="font-size:26px;margin-top:20px;">ترافيك المباراة بس: الدخول والشات الصوتي والتدريب ما يتأثرون · ما يلمس ملفات اللعبة · ينشال لما تفك التثبيت أو تقفل البرنامج</p>
   <div class="brand"><img src="../../assets/logo.png">2X Ping</div><div class="pageno">6</div>
 </div>
 
@@ -167,14 +169,14 @@
 <div class="slide">
   <div class="kicker">كيف يشتغل · 3</div>
   <h1>على أي سيرفر أنا؟</h1>
-  <p class="lead">الدليل بعينك إن التثبيت شغّال، وإنت داخل مباراة حقيقية.</p>
+  <p class="lead">الدليل بعينك إن التثبيت شغّال، وإنت داخل مباراة حقيقية. الزر يتحدّث لحاله بعد ما تثبّت أو تفك.</p>
   <div class="grid g4" style="margin-top:10px;">
     <div class="card"><div class="ico">1</div><h3>يتأكد</h3><p>إن اللعبة مفتوحة، ويعرف المنافذ اللي فاتحتها هي بس.</p></div>
     <div class="card"><div class="ico">2</div><h3>يراقب</h3><p>ترافيك اللعبة 15 ثانية بأداة <span class="mono">pktmon</span> من ويندوز، ويتجاهل ديسكورد والمتصفح.</p></div>
-    <div class="card"><div class="ico">3</div><h3>يطابق</h3><p>عنوان السيرفر مع قائمة Valve، ويعرف المنطقة.</p></div>
+    <div class="card"><div class="ico">3</div><h3>يطابق</h3><p>عنوان السيرفر مع قائمة سيرفرات اللعبة، ويعرف المنطقة.</p></div>
     <div class="card"><div class="ico" style="background:var(--green);color:#140f1e;">✓</div><h3>يقولك</h3><p>«إنت على أمستردام ✓ من اختيارك»</p></div>
   </div>
-  <div class="note" style="margin-top:46px;">القائمة والتدريب ما فيهم ترافيك سيرفر، فلازم تكون داخل مباراة حقيقية.</div>
+  <div class="note" style="margin-top:46px;">القائمة والتدريب ما فيهم ترافيك سيرفر، فلازم تكون داخل مباراة حقيقية. ولو طحت على سيرفر برا اختيارك، البرنامج يبلّغنا لحاله عشان نصلّحه.</div>
   <div class="brand"><img src="../../assets/logo.png">2X Ping</div><div class="pageno">7</div>
 </div>
 
@@ -225,14 +227,15 @@
 <div class="slide">
   <div class="kicker">التقنيات</div>
   <h1>إيش يستخدم</h1>
-  <table class="tbl" style="margin-top:20px;">
+  <table class="tbl tight" style="margin-top:6px;">
     <tr><td>البرنامج</td><td>C# و Windows Forms على ‎.NET Framework 4.8‎، ملف واحد بدون تثبيت</td></tr>
     <tr><td>التحديث</td><td>بضغطة من GitHub Releases، ويتأكد من بصمة SHA256 قبل ما يستبدل نفسه</td></tr>
-    <tr><td>قياس البنق</td><td>ICMP Ping و TCP Connect وطلب HTTPS قصير</td></tr>
+    <tr><td>قياس البنق</td><td>ICMP Ping و TCP Connect وطلب HTTPS قصير وإشارة UDP</td></tr>
     <tr><td>تثبيت السيرفرات</td><td>جدار حماية ويندوز (<span class="mono">netsh advfirewall</span>)</td></tr>
     <tr><td>معرفة السيرفر</td><td><span class="mono">pktmon</span> و <span class="mono">netstat</span>، أدوات مدمجة في ويندوز</td></tr>
     <tr><td>الوسيط</td><td>WireGuard بنفق جزئي + سكربت Bash على Ubuntu</td></tr>
-    <tr><td>البيانات</td><td><span class="ltr">Steam API</span> · قوائم <span class="ltr">AWS</span> و <span class="ltr">Tencent</span> و <span class="ltr">Google</span> · <span class="ltr">deadlock-api.com</span></td></tr>
+    <tr><td>البيانات</td><td><span class="ltr">Steam API</span> · قوائم <span class="ltr">Amazon</span> و <span class="ltr">Google</span> و <span class="ltr">Blizzard (RIPE)</span> و <span class="ltr">Tencent</span> · <span class="ltr">deadlock-api.com</span></td></tr>
+    <tr><td>المشاكل والإحصائيات</td><td>بلاغات تلقائية بدون مقاطعة، في قاعدة بيانات المطوّر (Supabase)</td></tr>
     <tr><td>النشر</td><td>GitHub + GitHub Actions، بناء ونشر تلقائي</td></tr>
   </table>
   <div class="brand"><img src="../../assets/logo.png">2X Ping</div><div class="pageno">10</div>

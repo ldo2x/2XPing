@@ -18,3 +18,5 @@
 5. افتح Pull Request واشرح التغيير. | Open a pull request describing the change.
 
 ⚠️ لا ترفع أبداً ملفات `.conf` حق WireGuard، لأن فيها مفاتيح سرية. | Never commit WireGuard `.conf` files.
+
+📦 نشر نسخة جديدة: اتبع [docs/RELEASING.md](docs/RELEASING.md). | Releasing a version: follow [docs/RELEASING.md](docs/RELEASING.md).
