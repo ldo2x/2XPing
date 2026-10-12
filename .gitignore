@@ -13,3 +13,6 @@ desktop.ini
 
 # never commit WireGuard configs: they contain private keys
 *.conf
+
+# test runner output
+tests/bin/

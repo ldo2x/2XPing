@@ -52,6 +52,8 @@ namespace PingBoost
         // enters Valve's network through the closest one (e.g. Dubai for Saudi players) and rides it to the match
         // server, so blocking them gains nothing and makes the route longer.
         public HashSet<string> HostPops;
+        // The regions the player chooses between on the main screen (null = none, e.g. Arena Breakout). Deadlock fills it at load.
+        public List<RegionDef> RegionMap;
         public bool Hosts(Region r) { return HostPops == null || HostPops.Contains(r.Id); }
         // Valve: the usual ping between two of its datacenters over its own network (GetSDRConfig "typical_pings")
         public Dictionary<string, int> Backbone = new Dictionary<string, int>();
@@ -176,6 +178,29 @@ namespace PingBoost
             new[] { "GSG1" },                            // Southeast Asia
             new[] { "SYD2" });                           // Australia
 
+        // The regions Overwatch players choose between (datacenters grouped as the spec lists them).
+        static readonly List<RegionDef> OwRegionMap = new List<RegionDef>
+        {
+            RegionDef.Of("me", "Middle East", "الشرق الأوسط", "GMEC2", "GMEC1", "MES1"),
+            RegionDef.Of("eu", "Europe", "أوروبا", "GEW3", "AMS1", "CDG1", "GEN1"),
+            RegionDef.Of("na", "North America", "أمريكا الشمالية", "GUE4", "ORD1", "LAX1"),
+            RegionDef.Of("sa", "South America", "أمريكا الجنوبية", "GBR1"),
+            RegionDef.Of("ea", "East Asia", "شرق آسيا", "ICN1", "GTK1", "TPE1"),
+            RegionDef.Of("sg", "Singapore", "سنغافورة", "GSG1"),
+            RegionDef.Of("au", "Australia", "أستراليا", "SYD2"),
+        };
+
+        static readonly List<RegionDef> DbdRegionMap = new List<RegionDef>
+        {
+            RegionDef.Of("eu", "Europe", "أوروبا", "eu-central-1", "eu-west-1", "eu-west-2"),
+            RegionDef.Of("na", "North America", "أمريكا الشمالية", "us-east-1", "us-east-2", "ca-central-1", "us-west-1", "us-west-2"),
+            RegionDef.Of("in", "India", "الهند", "ap-south-1"),
+            RegionDef.Of("ea", "East Asia", "شرق آسيا", "ap-northeast-1", "ap-northeast-2", "ap-east-1"),
+            RegionDef.Of("sg", "Singapore", "سنغافورة", "ap-southeast-1"),
+            RegionDef.Of("au", "Australia", "أستراليا", "ap-southeast-2"),
+            RegionDef.Of("sa", "South America", "أمريكا الجنوبية", "sa-east-1"),
+        };
+
         static Dictionary<string, string[]> Groups(params string[][] groups)
         {
             var d = new Dictionary<string, string[]>();
@@ -260,7 +285,7 @@ namespace PingBoost
                 new Game { Name = "Arena Breakout: Infinite", Icon = "abi", Released = true, Provider = Provider.Tencent, SteamAppId = "2073620", Processes = new[] {"UAGame"},
                     NoteEn = "The game picks your region from your account. Join a raid and press Which server am I on? to see your real server.",
                     NoteAr = "اللعبة تحدد منطقتك من حسابك. ادخل رايد واضغط «على أي سيرفر أنا؟» عشان تعرف سيرفرك الحقيقي." },
-                new Game { Name = "Overwatch 2", Icon = "overwatch", Released = true, Provider = Provider.Blizzard, SteamAppId = "2357570", Processes = new[] {"Overwatch"}, LockSpace = OwSpace, LockAllow = OwAllow, LockGroups = OwGroups,
+                new Game { Name = "Overwatch 2", Icon = "overwatch", Released = true, Provider = Provider.Blizzard, SteamAppId = "2357570", Processes = new[] {"Overwatch"}, LockSpace = OwSpace, LockAllow = OwAllow, LockGroups = OwGroups, RegionMap = OwRegionMap,
                     LockPorts = "1-3723,3725-65535", // 3724 is Blizzard's own port: never block it
                     NoteEn = "Tick the datacenters you want and press Lock my servers. Try it in Quick Play first: if the game still picks a blocked one, the match won't load.",
                     NoteAr = "علّم على المراكز اللي تبغاها واضغط «ثبّت سيرفراتي». جرّبه في الكويك أول: لو اللعبة اختارت مركز محجوب، المباراة ما تفتح." },
@@ -279,7 +304,7 @@ namespace PingBoost
                 new Game { Name = "Rocket League", Icon = "rocketleague", SteamAppId = "252950", Provider = Provider.Aws, AwsRegions = aws, Processes = new[] {"RocketLeague"},
                     NoteEn = "Rocket League lets you tick the regions yourself in the Play menu. Tick the ones with the lowest ping here.",
                     NoteAr = "Rocket League تخليك تختار المناطق بنفسك من قائمة Play. اختار اللي بنقها أقل هنا." },
-                new Game { Name = "Dead by Daylight", Icon = "dbd", Released = true, SteamAppId = "381210", Provider = Provider.Aws, AwsRegions = DbdRegions,
+                new Game { Name = "Dead by Daylight", Icon = "dbd", Released = true, SteamAppId = "381210", Provider = Provider.Aws, AwsRegions = DbdRegions, RegionMap = DbdRegionMap,
                     LockSpace = DbdRegions.Select(r => "aws:" + r).ToArray(), Processes = new[] {"DeadByDaylight-Win64-Shipping"},
                     NoteEn = "Dead by Daylight runs on Amazon GameLift and has no Middle East region. Tick the regions you want and press Lock my servers.",
                     NoteAr = "Dead by Daylight على Amazon GameLift، وما فيها منطقة للشرق الأوسط. علّم على المناطق اللي تبغاها واضغط «ثبّت سيرفراتي»." },
@@ -378,6 +403,7 @@ namespace PingBoost
             if (g.Provider != Provider.Valve && g.LockSpace == null) list.InsertRange(0, Storage.LoadDetected(g.Name));
             foreach (var r in list) if (r.Flag == null) r.Flag = FlagFor(r.Id, r.NameEn);
             g.Regions = list;
+            if (g.Icon == "deadlock") g.RegionMap = RegionGroups.DeadlockMap(g);
             g.Loaded = g.Provider != Provider.Custom;
         }
 
