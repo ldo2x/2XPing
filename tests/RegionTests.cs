@@ -4,7 +4,7 @@ using System.Linq;
 
 namespace PingBoost
 {
-    static class Tests
+    static partial class Tests
     {
         static int failures;
 
@@ -228,6 +228,7 @@ namespace PingBoost
             Run("BusyWords", BusyWords);
             Run("TwoRegionsLockExactlyTheirDatacenters", TwoRegionsLockExactlyTheirDatacenters);
             Run("PickIdsSkipsNonHostingAndDuplicates", PickIdsSkipsNonHostingAndDuplicates);
+            RunCardTests();
             Console.WriteLine(failures == 0 ? "ALL PASS" : failures + " FAILED");
             return failures == 0 ? 0 : 1;
         }
