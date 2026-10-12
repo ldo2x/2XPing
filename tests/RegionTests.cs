@@ -179,6 +179,41 @@ namespace PingBoost
             Lang.Ar = true;
         }
 
+        static List<RegionChoice> Choices(Game g)
+        {
+            return RegionGroups.Build(g, null, null, DirectLatency);
+        }
+
+        static void TwoRegionsLockExactlyTheirDatacenters()
+        {
+            var g = Find("Deadlock");
+            var all = Choices(g);
+            // the map has no Russia (no datacenter serves it), so Oceania stands in for the second region
+            Check(Def(g, "Russia") == null, "Russia has no datacenter in the map");
+            var eu = all.First(c => c.Def.Key == "Europe");
+            var oc = all.First(c => c.Def.Key == "Oceania");
+            var ids = RegionGroups.PickIds(g, new[] { eu, oc });
+            var expected = eu.Members.Concat(oc.Members).Select(r => r.Id).ToList();
+            Check(ids.OrderBy(x => x).SequenceEqual(expected.OrderBy(x => x)), "ids are the union of both regions' hosting datacenters");
+            Check(ids.Count == ids.Distinct().Count(), "no duplicate ids");
+            Check(ids.Contains("fra") && ids.Contains("syd"), "has fra and syd");
+            Check(!ids.Contains("iad") && !ids.Contains("lax"), "no North America datacenter");
+            Check(!ids.Contains("dxb"), "no relay-only datacenter");
+        }
+
+        static void PickIdsSkipsNonHostingAndDuplicates()
+        {
+            var g = new Game { Name = "Fake", HostPops = new HashSet<string> { "a", "b" } };
+            var a = new Region { Id = "a" };
+            var b = new Region { Id = "b" };
+            var relay = new Region { Id = "relay" };
+            var one = new RegionChoice { Def = RegionDef.Of("One", "One", "One", "a", "relay"), Members = new List<Region> { a, relay } };
+            var two = new RegionChoice { Def = RegionDef.Of("Two", "Two", "Two", "a", "b"), Members = new List<Region> { a, b } };
+            var ids = RegionGroups.PickIds(g, new[] { one, two });
+            Check(ids.SequenceEqual(new[] { "a", "b" }), "a once, then b; relay left out");
+            Check(RegionGroups.PickIds(g, new RegionChoice[0]).Count == 0, "nothing chosen = nothing picked");
+        }
+
         static int Main()
         {
             Run("OverwatchRegionsCoverEveryDatacenterOnce", OverwatchRegionsCoverEveryDatacenterOnce);
@@ -191,6 +226,8 @@ namespace PingBoost
             Run("RegionsWithoutHostingDatacentersAreDropped", RegionsWithoutHostingDatacentersAreDropped);
             Run("PingUsesTheGivenLatencyAndTheBestMember", PingUsesTheGivenLatencyAndTheBestMember);
             Run("BusyWords", BusyWords);
+            Run("TwoRegionsLockExactlyTheirDatacenters", TwoRegionsLockExactlyTheirDatacenters);
+            Run("PickIdsSkipsNonHostingAndDuplicates", PickIdsSkipsNonHostingAndDuplicates);
             Console.WriteLine(failures == 0 ? "ALL PASS" : failures + " FAILED");
             return failures == 0 ? 0 : 1;
         }

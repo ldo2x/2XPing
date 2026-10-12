@@ -91,6 +91,16 @@ namespace PingBoost
             return featured;
         }
 
+        // The datacenters to lock for the chosen regions: hosting members only, each once, in the order chosen.
+        public static List<string> PickIds(Game g, IEnumerable<RegionChoice> chosen)
+        {
+            var ids = new List<string>();
+            foreach (var c in chosen)
+                foreach (var r in c.Members)
+                    if (g.Hosts(r) && !ids.Contains(r.Id)) ids.Add(r.Id);
+            return ids;
+        }
+
         public static string Busy(int players)
         {
             if (players >= 10000) return Lang.T("lots of players", "لاعبين كثير");

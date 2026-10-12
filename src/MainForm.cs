@@ -1173,15 +1173,32 @@ namespace PingBoost
             heroBtn.Text = already ? T("Locked ✓", "مثبّت ✓") : T("Play on it", "العب عليه");
         }
 
-        // One click: pick only this server and lock it.
+        // One click: lock the whole region this server belongs to (games without regions: just this server).
         void PlayOn(Region region)
         {
             var g = CurrentGame;
             if (g == null || !g.CanLock) return;
             Telemetry.Send("use", region.NameEn, -1, "play on it");
-            // games with region groups (Overwatch): the best server's whole region, so queues stay short
-            string[] group;
-            var ids = g.LockGroups != null && g.LockGroups.TryGetValue(region.Id, out group) ? group : new[] { region.Id };
+            var def = g.RegionMap != null ? g.RegionMap.FirstOrDefault(d => d.Ids.Contains(region.Id)) : null;
+            if (def != null)
+            {
+                var choice = RegionGroups.Build(g, null, null, BestLatency).FirstOrDefault(c => c.Def == def);
+                if (choice != null) { LockRegions(new List<RegionChoice> { choice }); return; }
+            }
+            var ids = new[] { region.Id };
+            foreach (var r in g.Regions) r.Picked = ids.Contains(r.Id);
+            Storage.SavePicks(g.LockKey, ids);
+            FillServers(g);
+            UpdateLockBar();
+            LockServers();
+        }
+
+        // Lock the datacenters of the chosen regions (only ones that host matches).
+        void LockRegions(List<RegionChoice> chosen)
+        {
+            var g = CurrentGame;
+            if (g == null || !g.CanLock) return;
+            var ids = RegionGroups.PickIds(g, chosen);
             foreach (var r in g.Regions) r.Picked = ids.Contains(r.Id);
             Storage.SavePicks(g.LockKey, ids);
             FillServers(g);
