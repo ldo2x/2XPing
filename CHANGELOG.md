@@ -1,6 +1,27 @@
 # Changelog
 
-## v0.10.0-beta
+## v0.11.0-beta (2026-10-12)
+
+- **Only fully tested games in the public version:** Deadlock, Arena Breakout: Infinite, Overwatch 2 and Dead by Daylight. The others stay hidden until they're verified; developer mode shows them with a "Trial" tag
+- **New controls that match the design:** Settings and the welcome window are now made of cards, games are tiles you switch on and off, language and layout are segmented buttons, options are on/off switches, and the name is typed in a rounded field that lights up. The server list's square tick boxes are now the same round pink check
+- **Pick your servers in Overwatch 2:** the 15 datacenters (Dammam, Doha, Bahrain, Frankfurt, Amsterdam…) with their real ping. Locking blocks the game's match traffic to every Overwatch server except the ones you picked, new servers included: all of Google Cloud, Amazon Bahrain and Blizzard's network come from their official lists and update by themselves
+- **Pick your servers in Dead by Daylight:** its 15 Amazon GameLift regions, with the ping measured on the same beacons the game uses
+- **Pick your servers in Valorant, Fortnite and PUBG:** their Amazon regions, from Amazon's official list (PUBG also uses Azure, which isn't covered)
+- These locks only block the datacenters you didn't pick, and only the game's own UDP (its match traffic): login, voice chat, the Practice Range and the rest of the PC are untouched (blocking the whole network of Google and Blizzard broke the Overwatch Practice Range, so it isn't done)
+- Locks find the game's exe by themselves: the running game, Steam libraries, Battle.net, the Riot Client and the Epic launcher
+- "Which server am I on?" names the Overwatch datacenter and checks it against your lock
+- Overwatch "Play on it" locks the best server's whole region (e.g. Dammam + Doha + Bahrain), so matches are found as quickly as without a lock
+- Overwatch locks never touch port 3724, Blizzard's own port
+- Overwatch: every block of Blizzard's network is now placed under its datacenter (a match on an unlisted Chicago server slipped past a Tokyo lock), and Paris is its own datacenter
+- **"Which server am I on?" updates by itself:** while the game runs, the button shows your server with a coloured dot ("On: Dammam"), checked every 30 s for 10 minutes after you lock or unlock, then every 90 s
+- **Problems are found and reported by themselves**, without interrupting the player: playing outside the lock, unknown game servers, a lock whose firewall rules disappeared, Windows Firewall off, a lock that failed, long queues after locking, datacenters that don't answer, failed downloads and checks, heavy packet loss, slow start-up, crashes and failed updates. Each one is sent once per session and saved in issues.txt; the crash popup is gone
+- **New logo ("Quiet Signal"):** a glowing core sending out mirrored ping waves, with one gold spark; drawn separately for each size so it stays clear down to the 16 px tray icon (docs/brand)
+- **New look:** rounded cards, buttons that react to hover and clicks, status chips with a coloured dot, ping shown with a coloured dot, hover highlights in the lists, the lock bar and the server list in one card, more breathing room
+- **Developer mode changes the whole app** (five clicks on the logo): DEV badge and a developer strip, a Developer tab with the live statistics (Problems, Online, Statistics, Versions, Devices, Log) and tools (self-test, firewall rules, refresh IP lists, server ranges, test notices, fake update bar, forced update window, test problem, log files, diagnostics, reset first-run), address-block counts in the server list, and every detected problem shown right away
+- Fortnite, PUBG, Apex and Rocket League: the app tells you where to pick the region inside the game
+- The addresses a game talks to are added to the beta statistics, to build server lists for games without official ones (Arena Breakout, Valorant)
+
+## v0.10.0-beta (2026-10-10)
 
 - **One-click updates:** "Update now" downloads the new version, checks its SHA256, replaces the app and reopens it
 - **Updates are required:** when a new version is out you get 3 days (a bar under the header counts down); after that the old version only offers to update or close. It never forces it in the middle of a match. Releases marked `#optional` are never forced

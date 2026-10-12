@@ -106,21 +106,100 @@ namespace PingBoost
             if (nic.Speed > 0) d["net_mbps"] = (long)(nic.Speed / 1000000);
         }
 
+        // Every Steam library folder on this PC.
+        static List<string> SteamLibraries()
+        {
+            string steam = Reg(Registry.CurrentUser, @"Software\Valve\Steam", "SteamPath");
+            var libs = new List<string>();
+            if (string.IsNullOrEmpty(steam)) return libs;
+            libs.Add(steam.Replace('/', '\\'));
+            string vdf = Path.Combine(steam, @"steamapps\libraryfolders.vdf");
+            if (File.Exists(vdf))
+                foreach (Match m in Regex.Matches(File.ReadAllText(vdf), "\"path\"\\s+\"([^\"]+)\""))
+                    libs.Add(m.Groups[1].Value.Replace(@"\\", @"\"));
+            return libs.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        }
+
+        // Full path of the game's exe, for firewall rules that only touch the game: the running game first,
+        // then the last path seen, then the Steam and Battle.net install folders. Null if it can't be found.
+        public static string FindExe(Game g)
+        {
+            foreach (var name in g.Processes)
+                foreach (var p in System.Diagnostics.Process.GetProcessesByName(name))
+                    try
+                    {
+                        string path = p.MainModule.FileName;
+                        Storage.SetSetting("exe_" + g.Icon, path);
+                        return path;
+                    }
+                    catch { }
+                    finally { p.Dispose(); }
+
+            var candidates = new List<string>();
+            string last = Storage.GetSetting("exe_" + g.Icon);
+            if (!string.IsNullOrEmpty(last)) candidates.Add(last);
+            string exe = g.Processes.Length > 0 ? g.Processes[0] + ".exe" : null;
+            if (exe == null) return null;
+            // Steam: steamapps\common\<installdir>\ (and \_retail_\)
+            string id = g.SteamAppId ?? g.AppId;
+            foreach (var lib in SteamLibraries())
+            {
+                string manifest = Path.Combine(lib, @"steamapps\appmanifest_" + id + ".acf");
+                if (id == null || !File.Exists(manifest)) continue;
+                var m = Regex.Match(File.ReadAllText(manifest), "\"installdir\"\\s+\"([^\"]+)\"");
+                if (!m.Success) continue;
+                string dir = Path.Combine(lib, @"steamapps\common", m.Groups[1].Value);
+                candidates.Add(Path.Combine(dir, exe));
+                candidates.Add(Path.Combine(dir, "_retail_", exe));
+                // Unreal games keep it deeper, e.g. DeadByDaylight\Binaries\Win64
+                try { candidates.AddRange(Directory.EnumerateFiles(dir, exe, SearchOption.AllDirectories).Take(1)); } catch { }
+            }
+            // Riot (Valorant): the install folder is written in the Riot Client's product settings
+            if (exe.StartsWith("VALORANT", StringComparison.OrdinalIgnoreCase))
+            {
+                string root = @"C:\Riot Games\VALORANT\live";
+                string riot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+                                           @"Riot Games\Metadata\valorant.live\valorant.live.product_settings.yaml");
+                try
+                {
+                    var m = Regex.Match(File.ReadAllText(riot), "product_install_full_path:\\s*\"?([^\"\\r\\n]+)");
+                    if (m.Success) root = m.Groups[1].Value.Trim().Replace('/', '\\');
+                }
+                catch { }
+                candidates.Add(Path.Combine(root, @"ShooterGame\Binaries\Win64", exe));
+            }
+            // Epic Games launcher (Fortnite): InstallLocation in its manifests, the exe a few folders down
+            string epic = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), @"Epic\EpicGamesLauncher\Data\Manifests");
+            if (Directory.Exists(epic))
+                foreach (var item in Directory.GetFiles(epic, "*.item"))
+                {
+                    try
+                    {
+                        string text = File.ReadAllText(item);
+                        if (text.IndexOf(g.Name.Split(':')[0], StringComparison.OrdinalIgnoreCase) < 0) continue;
+                        var m = Regex.Match(text, "\"InstallLocation\"\\s*:\\s*\"([^\"]+)\"");
+                        if (!m.Success) continue;
+                        string dir = m.Groups[1].Value.Replace(@"\\", @"\").Replace('/', '\\');
+                        candidates.AddRange(Directory.EnumerateFiles(dir, exe, SearchOption.AllDirectories).Take(1));
+                    }
+                    catch { }
+                }
+            // Battle.net (Overwatch): InstallLocation\_retail_\Overwatch.exe
+            string bnet = Reg(Registry.LocalMachine, @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\" + g.Processes[0], "InstallLocation");
+            if (!string.IsNullOrEmpty(bnet))
+            {
+                candidates.Add(Path.Combine(bnet, "_retail_", exe));
+                candidates.Add(Path.Combine(bnet, exe));
+            }
+            return candidates.FirstOrDefault(File.Exists);
+        }
+
         // Which of the supported games are installed (Steam, Epic, Riot, Battle.net). Names only.
         static List<string> InstalledGames(List<Game> games)
         {
             var found = new List<string>();
             // Steam: every library folder, then appmanifest_<appid>.acf
-            string steam = Reg(Registry.CurrentUser, @"Software\Valve\Steam", "SteamPath");
-            var libs = new List<string>();
-            if (!string.IsNullOrEmpty(steam))
-            {
-                libs.Add(steam);
-                string vdf = Path.Combine(steam, @"steamapps\libraryfolders.vdf");
-                if (File.Exists(vdf))
-                    foreach (Match m in Regex.Matches(File.ReadAllText(vdf), "\"path\"\\s+\"([^\"]+)\""))
-                        libs.Add(m.Groups[1].Value.Replace(@"\\", @"\"));
-            }
+            var libs = SteamLibraries();
             foreach (var g in games)
             {
                 string id = g.SteamAppId ?? g.AppId;

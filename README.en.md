@@ -38,9 +38,10 @@ Requires **Windows 10 or 11**. Nothing to install, and after that updates are on
 |---|---|
 | ✦ Best server in one click | Suggests the lowest ping with enough players; **Play on it** locks you to it |
 | 📶 Ping test | Ping, jitter and packet loss per server, grouped by region |
-| 🔒 Server picker | **Deadlock, CS2, Dota 2**: tick the regions you want and lock out the rest |
+| 🔒 Server picker | **Deadlock, Overwatch 2, Dead by Daylight**: tick the servers you want and lock out the rest |
 | 👥 Player numbers | Estimated players per region and expected time to find a match (Deadlock) |
-| ✅ Which server am I on? | While in a match, tells you which server you are on and whether it is one you picked |
+| ✅ Which server am I on? | While in a match, the button updates by itself with your server and whether it is one you picked |
+| 🛠️ Finds problems by itself | Errors (like landing on a server outside your lock) reach us automatically, without interrupting you |
 | 🎛️ Your way | Pick your games on first launch; Simple layout for everyday players, Advanced with every tool |
 | 🕒 Next to the clock | Minimize it while you play: the lock keeps working and the tray icon shows your live ping |
 | 💬 No annoying popups | Notices show up like game-chat lines and fade out by themselves |
@@ -49,12 +50,14 @@ Requires **Windows 10 or 11**. Nothing to install, and after that updates are on
 | 🌐 Arabic & English | Full right-to-left Arabic interface |
 
 ### Supported games
-Deadlock · Counter-Strike 2 · Dota 2 · Overwatch 2 · Arena Breakout: Infinite · Valorant · Fortnite · PUBG: Battlegrounds · Apex Legends · Rocket League · Dead by Daylight
+Deadlock · Overwatch 2 · Dead by Daylight · Arena Breakout: Infinite
+
+Other games (CS2, Dota 2, Valorant, Fortnite, PUBG, Apex, Rocket League) are being tested and will be added once they are verified.
 
 ## How to use
 
 - **Ping test:** pick a game and every server is tested at once in 2-3 seconds (or press **Test ping**). Green is great (under 60 ms), yellow is OK, red is high.
-- **Server picker (Valve games):** tick the regions, press **Lock my servers**, restart the game, then queue. Minimize 2X Ping while you play; it waits next to the clock. 2X Ping blocks the other regions' Valve servers in Windows Firewall. The lock is removed when you press **Unlock** or close the app.
+- **Server picker (Deadlock, Overwatch 2, Dead by Daylight):** tick the servers, press **Lock my servers**, restart the game, then queue. Minimize 2X Ping while you play; it waits next to the clock. 2X Ping blocks the game's other servers in Windows Firewall (match traffic only: login, voice chat and practice are untouched). The lock is removed when you press **Unlock** or close the app.
 - **Which server am I on?:** join a real match (not practice) and press **Which server am I on?**. 2X Ping watches the game's traffic for 15 seconds and names the server, with a ✓ if it is one you picked. For other games it saves the server it finds.
 - **Relay BOOST (optional):**
   1. Rent an Ubuntu VPS near the game servers and run `sudo bash setup-relay.sh` on it.
@@ -88,6 +91,7 @@ What's next: [ROADMAP.md](ROADMAP.md)
 - Region lock has no effect if Windows Firewall is off or replaced by another security suite.
 - Which server am I on? only works while you are **inside** a match or raid (not the menu or practice).
 - Per-region player numbers exist for Deadlock only; other games show the Steam total.
+- In Overwatch 2 and Dead by Daylight the lock works for casual matches; ranked may still put you on your home region.
 
 ## 💬 Contact
 | Channel | For |

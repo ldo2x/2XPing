@@ -32,6 +32,8 @@ This is shown on first launch, and accepting it is required to use the beta.
 | Once per launch: processor, graphics card, memory, screen size and scaling, Windows edition and build, system language and time zone, laptop or desktop, Wi-Fi or cable and its link speed, which of the supported games are installed, how long the app took to open | Know what PCs it runs on and why ping differs |
 | Every result of a ping test (each region's ping, loss and jitter, and how long the test took) | Improve the server lists and the best-server choice |
 | Events (ping test, lock, unlock, server check, boost, reset, update, settings changed, buttons used, session length) and error logs | Find and fix problems, see which features are used |
+| Problems the app detects by itself (e.g. playing on a server outside your lock, a lock whose firewall rules disappeared, Windows Firewall off, a failed download, heavy packet loss, a crash), once each per session, with the details needed to fix them | Fix bugs without you having to report them |
+| The game server addresses the game talks to (servers only, never other traffic) | Build server lists for games without official ones |
 
 Nothing else is collected: no passwords, no files, no IP address, no list of your other programs, no browsing data. The app can only **write** these statistics; it cannot read anyone's data.
 To have your data removed, contact the developer (Discord `2x.x`) with the name you used.
@@ -42,7 +44,9 @@ To have your data removed, contact the developer (Discord `2x.x`) with the name 
 |---|---|---|
 | Steam Web API | Game app id | Online player count, Valve server list |
 | deadlock-api.com | A fixed statistics query | Deadlock players per region |
-| ip-ranges.amazonaws.com | Nothing (download only) | AWS game server IP ranges |
+| ip-ranges.amazonaws.com, www.gstatic.com | Nothing (download only) | Amazon and Google Cloud game server IP ranges |
+| stat.ripe.net | Nothing (download only) | Blizzard network IP ranges (Overwatch 2) |
+| gamelift-ping.*.api.aws | A small ping packet | Dead by Daylight ping per region |
 | ip-api.com | The **game server** IP you detected, and a once-a-day lookup of your own city/country | Show locations |
 | Supabase (developer's database) | The usage statistics listed above | Beta statistics |
 | api.github.com, github.com | Nothing (download only) | Check for a newer version and download it |

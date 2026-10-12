@@ -47,7 +47,8 @@ namespace PingBoost
 
         static string StatusOff { get { return T("Status: ready", "الحالة: جاهز"); } }
 
-        readonly List<Game> games;
+        readonly List<Game> allGames; // every game the app knows
+        List<Game> games;              // the ones shown: released games, plus the rest in developer mode
         readonly List<Relay> relays;
         bool simple;
 
@@ -80,7 +81,16 @@ namespace PingBoost
         {
             Lang.Ar = Storage.LoadArabic();
             simple = Prefs.Simple;
-            games = GameDb.All();
+            devMode = DevModeSaved;
+            allGames = GameDb.All();
+            GameDb.ShowUnreleased = devMode;
+            games = GameDb.Available(allGames);
+            // developer mode: every problem the app detects shows up right away
+            Issues.Reported += r =>
+            {
+                if (!devMode) return;
+                Ui(() => { Msg("Problem · " + r.Code + ": " + r.Detail, ToastKind.Warn); DevOut("problem  " + r.Code + ": " + r.Detail); });
+            };
             relays = Storage.LoadRelays();
 
             SuspendLayout();
@@ -98,7 +108,12 @@ namespace PingBoost
             ResumeLayout(false);
 
             RefreshRelays();
-            Task.Run(() => ServerLock.Remove()); // leftovers from a crash
+            Task.Run(() =>
+            {
+                // leftovers from a crash, and a firewall that's off (locks can't work then)
+                if (ServerLock.Exists()) { Issues.Report("leftover_lock", "rules from a previous session were still there"); ServerLock.Remove(); }
+                if (!ServerLock.FirewallOn()) Issues.Report("firewall_off", "Windows Firewall is off for the current network profile");
+            });
             if (!Tunnel.Installed)
                 Log(T("WireGuard is not installed, so relay routing is off until you install it (Tools).",
                       "برنامج WireGuard مو مثبّت، فالوسيط مقفّل لين تثبّته (من «أدوات وسجل»)."));
@@ -113,8 +128,11 @@ namespace PingBoost
                 }
                 long startupMs = 0;
                 try { startupMs = (long)(DateTime.Now - Process.GetCurrentProcess().StartTime).TotalMilliseconds; } catch { }
-                Telemetry.Start(games, startupMs);
+                Telemetry.Start(allGames, startupMs);
+                if (startupMs > 8000) Issues.Report("slow_startup", startupMs + " ms from launch to the window",
+                    new Dictionary<string, object> { { "ms", startupMs } });
                 SelectStartGame();
+                StartAutoDetect();
                 // first launch only: two short lines about the beta
                 if (string.IsNullOrEmpty(Storage.GetSetting("beta_ack")))
                 {
@@ -217,7 +235,7 @@ namespace PingBoost
         void ApplyDirection()
         {
             // LRM first: keeps "2X" in Latin digits inside a right-to-left title bar
-            Text = Brand.Caption + (Brand.IsBeta ? " (Beta)" : "") + "  -  by " + Brand.Developer;
+            Text = Brand.Caption + (Brand.IsBeta ? " (Beta)" : "") + "  -  by " + Brand.Developer + (devMode ? "   [DEV]" : "");
             RightToLeft = Lang.Ar ? RightToLeft.Yes : RightToLeft.No;
             RightToLeftLayout = Lang.Ar;
         }
@@ -227,9 +245,9 @@ namespace PingBoost
         void BuildUi()
         {
             var header = new Panel { Dock = DockStyle.Top, Height = 64, BackColor = Panel1 };
-            header.Controls.Add(liveLabel = new Label
+            header.Controls.Add(liveLabel = new Chip
             {
-                Text = StatusOff, Font = Fonts.Semi(13f), ForeColor = Dim, Width = 420, AutoEllipsis = true,
+                Text = StatusOff, Font = Fonts.Semi(11f), ForeColor = Dim, Width = 430,
                 Dock = DockStyle.Right, TextAlign = ContentAlignment.MiddleRight, Padding = new Padding(0, 0, 14, 0)
             });
             header.Controls.Add(HeaderButton(T("Settings", "الإعدادات"), 120, TextC, OpenSettings));
@@ -251,7 +269,7 @@ namespace PingBoost
             {
                 logoClicks = DateTime.Now - lastClick < TimeSpan.FromSeconds(1) ? logoClicks + 1 : 1;
                 lastClick = DateTime.Now;
-                if (logoClicks >= 5) { logoClicks = 0; DevDashboard.Open(this); }
+                if (logoClicks >= 5) { logoClicks = 0; ToggleDevMode(); }
             };
             header.Controls.Add(logo);
             header.Controls.Add(new Label
@@ -264,6 +282,12 @@ namespace PingBoost
                 {
                     Text = "BETA", Font = Fonts.Bold(7.5f), ForeColor = Color.Black, BackColor = Warn,
                     AutoSize = false, Bounds = new Rectangle(178, 11, 42, 18), TextAlign = ContentAlignment.MiddleCenter
+                });
+            if (devMode)
+                header.Controls.Add(new Label
+                {
+                    Text = "DEV", Font = Fonts.Bold(7.5f), ForeColor = Color.Black, BackColor = DevAccent,
+                    AutoSize = false, Bounds = new Rectangle(226, 11, 38, 18), TextAlign = ContentAlignment.MiddleCenter
                 });
             header.Controls.Add(new Label
             {
@@ -291,6 +315,14 @@ namespace PingBoost
             };
             FillGames();
             gameList.DrawItem += DrawGameItem;
+            gameList.MouseMove += (s, e) =>
+            {
+                int i = gameList.IndexFromPoint(e.Location);
+                if (i == hotGame) return;
+                hotGame = i;
+                gameList.Invalidate();
+            };
+            gameList.MouseLeave += delegate { hotGame = -1; gameList.Invalidate(); };
             gameList.SelectedIndexChanged += delegate { OnGameChanged(); };
             left.Controls.Add(gameList);
             left.Controls.Add(new Label
@@ -299,15 +331,16 @@ namespace PingBoost
                 Font = Fonts.Semi(9.5f), TextAlign = ContentAlignment.MiddleLeft
             });
 
-            var center = centerPanel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(16, 12, 16, 12) };
+            var center = centerPanel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(20, 16, 20, 16) };
             var content = new Panel { Dock = DockStyle.Fill };
-            tabBar = new Panel { Dock = DockStyle.Top, Height = 46, Visible = !simple };
+            tabBar = new Panel { Dock = DockStyle.Top, Height = 46, Visible = !simple || devMode };
             center.Controls.Add(content);
             center.Controls.Add(tabBar);
 
-            string[] names = { T("Servers", "السيرفرات"), T("Relays", "سيرفرات الوسيط"), T("Tools && Log", "أدوات وسجل") };
-            tabButtons = new Button[names.Length];
-            for (int i = 0; i < names.Length; i++)
+            var names = new List<string> { T("Servers", "السيرفرات"), T("Relays", "سيرفرات الوسيط"), T("Tools & Log", "أدوات وسجل") };
+            if (devMode) names.Add(T("Developer", "المطوّر"));
+            tabButtons = new Button[names.Count];
+            for (int i = 0; i < names.Count; i++)
             {
                 var b = MakeButton(names[i], Panel2);
                 b.Bounds = new Rectangle(i * 156, 0, 148, 34);
@@ -317,7 +350,9 @@ namespace PingBoost
                 tabButtons[i] = b;
             }
 
-            pages = new[] { BuildServersPage(), BuildRelaysPage(), BuildToolsPage() };
+            var pageList = new List<Panel> { BuildServersPage(), BuildRelaysPage(), BuildToolsPage() };
+            if (devMode) pageList.Add(BuildDevPage());
+            pages = pageList.ToArray();
             foreach (var p in pages) { p.Dock = DockStyle.Fill; content.Controls.Add(p); }
 
             // "a new version is out" strip under the header (hidden until there is one)
@@ -335,10 +370,11 @@ namespace PingBoost
             Controls.Add(center);
             Controls.Add(left);
             Controls.Add(updateBar);
+            if (devMode) Controls.Add(BuildDevStrip());
             Controls.Add(header);
             Controls.Add(statusLabel);
             if (Lang.Ar) foreach (Control c in Controls) MirrorChildren(c);
-            ShowPage(simple ? 0 : currentPage);
+            ShowPage(simple && !devMode ? 0 : currentPage);
         }
 
         Panel HeaderButton(string text, int width, Color fore, Action onClick)
@@ -374,7 +410,7 @@ namespace PingBoost
         // "Your best server" card with a one-click "Play on it".
         Panel BuildHero()
         {
-            heroCard = new Panel { Dock = DockStyle.Top, Height = 92, BackColor = Panel2, Padding = new Padding(18, 12, 14, 12) };
+            heroCard = new Card { Dock = DockStyle.Top, Height = 96, Fill = Panel2, Radius = 14, Padding = new Padding(20, 14, 16, 14) };
             heroBtn = MakeButton(T("Play on it", "العب عليه"), Accent);
             heroBtn.ForeColor = Color.Black;
             heroBtn.Font = Fonts.Semi(11f);
@@ -398,7 +434,6 @@ namespace PingBoost
                 var testWrap = new Panel { Dock = DockStyle.Right, Width = 140, Padding = new Padding(0, 12, 0, 12) };
                 btnTest.Dock = DockStyle.Fill;
                 btnTest.BackColor = Bg; // darker than the card, so it reads as a button
-                btnTest.FlatAppearance.MouseOverBackColor = RowSel;
                 testWrap.Controls.Add(btnTest);
                 heroCard.Controls.Add(testWrap);
                 heroCard.Controls.Add(new Panel { Dock = DockStyle.Right, Width = 10 });
@@ -413,7 +448,7 @@ namespace PingBoost
             gameNote = new Label { Dock = DockStyle.Top, Height = 32, ForeColor = Dim, TextAlign = ContentAlignment.MiddleLeft, Visible = !simple };
 
             // region lock bar (Valve games)
-            pickBar = new Panel { Dock = DockStyle.Top, Height = 48, BackColor = Panel1, Padding = new Padding(8) };
+            pickBar = new Panel { Dock = DockStyle.Top, Height = 44, Padding = new Padding(4, 0, 4, 8) };
             btnLock = MakeButton(T("Lock my servers", "ثبّت سيرفراتي"), Accent);
             btnLock.ForeColor = Color.Black;
             btnLock.Font = Fonts.Semi(10f);
@@ -494,11 +529,14 @@ namespace PingBoost
             bottom.Controls.Add(graph);
             bottom.Controls.Add(controls);
 
-            p.Controls.Add(serverList);
-            p.Controls.Add(new Panel { Dock = DockStyle.Top, Height = 8 });
-            p.Controls.Add(pickBar);
+            // one card holds the lock bar and the server list: picking and locking read as one task
+            var listCard = new Card { Dock = DockStyle.Fill, Fill = Panel1, Radius = 14, Padding = new Padding(12, 12, 12, 12) };
+            listCard.Controls.Add(serverList);
+            listCard.Controls.Add(pickBar);
+            p.Controls.Add(listCard);
+            p.Controls.Add(new Panel { Dock = DockStyle.Top, Height = 12 });
             p.Controls.Add(BuildInfoBar());
-            p.Controls.Add(new Panel { Dock = DockStyle.Top, Height = 6 });
+            p.Controls.Add(new Panel { Dock = DockStyle.Top, Height = 12 });
             p.Controls.Add(BuildHero());
             p.Controls.Add(bottom);
             p.Controls.Add(gameNote);
@@ -563,17 +601,19 @@ namespace PingBoost
             return b;
         }
 
-        static Button MakeButton(string text, Color bg)
+        static RoundButton MakeButton(string text, Color bg)
         {
-            var b = new Button { Text = text, FlatStyle = FlatStyle.Flat, BackColor = bg, ForeColor = TextC, Cursor = Cursors.Hand };
-            b.FlatAppearance.BorderSize = 0;
-            b.FlatAppearance.MouseOverBackColor = ControlPaint.Light(bg, 0.25f);
-            return b;
+            return new RoundButton { Text = text, BackColor = bg, ForeColor = TextC };
         }
+
+        static readonly Color RowHover = Color.FromArgb(54, 42, 78);
+        static ListViewItem hotRow; // the row under the mouse
 
         static Color RowBack(ListViewItem item, int index)
         {
-            return item.Selected ? RowSel : (index % 2 == 0 ? Panel1 : RowAlt);
+            if (item.Selected) return RowSel;
+            if (item == hotRow) return RowHover;
+            return index % 2 == 0 ? Panel1 : RowAlt;
         }
 
         ListView MakeListView(string[] cols, int[] widths)
@@ -616,13 +656,34 @@ namespace PingBoost
                     TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | Align);
             };
             lv.DrawItem += (s, e) => { };
+            lv.MouseMove += (s, e) =>
+            {
+                var item = lv.GetItemAt(e.X, e.Y);
+                if (item == hotRow) return;
+                var old = hotRow;
+                hotRow = item;
+                if (old != null && old.ListView == lv) lv.Invalidate(old.Bounds);
+                if (item != null) lv.Invalidate(item.Bounds);
+            };
+            lv.MouseLeave += delegate { var old = hotRow; hotRow = null; if (old != null && old.ListView == lv) lv.Invalidate(old.Bounds); };
             lv.DrawSubItem += (s, e) =>
             {
                 if (lv == serverList && (e.ColumnIndex == 0 || e.Item.Tag is GroupHeader)) return; // drawn by DrawRegionCheck
                 var rc = e.ColumnIndex == 0 ? FirstCell(lv, e.Item, e.Bounds) : e.Bounds;
                 if (rc.Width <= 0) return;
                 using (var b = new SolidBrush(RowBack(e.Item, e.ItemIndex))) e.Graphics.FillRectangle(b, rc);
-                TextRenderer.DrawText(e.Graphics, e.SubItem.Text, Font, Rectangle.Inflate(rc, -8, 0), e.SubItem.ForeColor,
+                var textRc = Rectangle.Inflate(rc, -8, 0);
+                if (lv == serverList && e.ColumnIndex == ColPing && e.SubItem.Text.Contains("ms"))
+                {
+                    // a dot in the ping colour, on the reading side of the number
+                    const int d = 8;
+                    var size = TextRenderer.MeasureText(e.SubItem.Text, Font);
+                    int x = Lang.Ar ? textRc.Right - size.Width - d - 6 : textRc.X;
+                    e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                    using (var b = new SolidBrush(e.SubItem.ForeColor)) e.Graphics.FillEllipse(b, x, rc.Y + (rc.Height - d) / 2f, d, d);
+                    if (!Lang.Ar) textRc = new Rectangle(textRc.X + d + 6, textRc.Y, textRc.Width - d - 6, textRc.Height);
+                }
+                TextRenderer.DrawText(e.Graphics, e.SubItem.Text, Font, textRc, e.SubItem.ForeColor,
                     TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | Align);
             };
             return lv;
@@ -645,8 +706,8 @@ namespace PingBoost
 
         static Rectangle CheckBox(Rectangle cell)
         {
-            int x = Lang.Ar ? cell.Right - 9 - 16 : cell.X + 9;
-            return new Rectangle(x, cell.Y + (cell.Height - 16) / 2, 16, 16);
+            int x = Lang.Ar ? cell.Right - 8 - 18 : cell.X + 8;
+            return new Rectangle(x, cell.Y + (cell.Height - 18) / 2, 18, 18);
         }
 
         // First column of the server list: optional tick box + server name.
@@ -664,13 +725,18 @@ namespace PingBoost
                 var r = (Region)e.Item.Tag;
                 var box = CheckBox(rc);
                 e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                // the same round pink check as the game tiles
                 if (r.Picked)
                 {
-                    using (var b = new SolidBrush(Accent)) e.Graphics.FillRectangle(b, box);
-                    using (var pen = new Pen(Color.Black, 2f))
-                        e.Graphics.DrawLines(pen, new[] { new Point(box.X + 3, box.Y + 8), new Point(box.X + 7, box.Y + 12), new Point(box.X + 13, box.Y + 4) });
+                    using (var b = new SolidBrush(Accent)) e.Graphics.FillEllipse(b, box);
+                    using (var pen = new Pen(Color.Black, 2f) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round, LineJoin = System.Drawing.Drawing2D.LineJoin.Round })
+                        e.Graphics.DrawLines(pen, new[] { new PointF(box.X + 5f, box.Y + 9.5f), new PointF(box.X + 8f, box.Y + 12.4f), new PointF(box.X + 13.2f, box.Y + 6.3f) });
                 }
-                else using (var pen = new Pen(Dim, 1.5f)) e.Graphics.DrawRectangle(pen, box);
+                else
+                {
+                    using (var b = new SolidBrush(Panel2)) e.Graphics.FillEllipse(b, box);
+                    using (var pen = new Pen(Color.FromArgb(150, Lavender), 1.5f)) e.Graphics.DrawEllipse(pen, box.X + 0.75f, box.Y + 0.75f, box.Width - 1.5f, box.Height - 1.5f);
+                }
                 textRc = Lang.Ar ? new Rectangle(rc.X + 4, rc.Y, rc.Width - CheckArea - 4, rc.Height)
                                  : new Rectangle(rc.X + CheckArea, rc.Y, rc.Width - CheckArea - 4, rc.Height);
             }
@@ -692,6 +758,7 @@ namespace PingBoost
 
         void ShowPage(int idx)
         {
+            if (idx < 0 || idx >= pages.Length) idx = 0;
             currentPage = idx;
             for (int i = 0; i < pages.Length; i++)
             {
@@ -710,13 +777,24 @@ namespace PingBoost
             foreach (var g in shown.Count > 0 ? shown : games) gameList.Items.Add(g);
         }
 
+        int hotGame = -1; // the game under the mouse
+
         void DrawGameItem(object sender, DrawItemEventArgs e)
         {
             if (e.Index < 0) return;
             var g = (Game)gameList.Items[e.Index];
-            bool sel = (e.State & DrawItemState.Selected) != 0;
-            using (var b = new SolidBrush(sel ? Panel2 : Panel1)) e.Graphics.FillRectangle(b, e.Bounds);
-            if (sel) using (var b = new SolidBrush(Accent)) e.Graphics.FillRectangle(b, e.Bounds.X, e.Bounds.Y + 8, 3, e.Bounds.Height - 16);
+            bool sel = (e.State & DrawItemState.Selected) != 0, hot = e.Index == hotGame;
+            using (var b = new SolidBrush(Panel1)) e.Graphics.FillRectangle(b, e.Bounds);
+            if (sel || hot)
+            {
+                e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                var pill = new RectangleF(e.Bounds.X + 2, e.Bounds.Y + 3, e.Bounds.Width - 4, e.Bounds.Height - 6);
+                using (var path = Shapes.Round(pill, 10))
+                using (var b = new SolidBrush(sel ? Panel2 : Color.FromArgb(38, 30, 56))) e.Graphics.FillPath(b, path);
+                if (sel)
+                    using (var b = new SolidBrush(Accent))
+                        e.Graphics.FillRectangle(b, Lang.Ar ? e.Bounds.Right - 5 : e.Bounds.X + 2, e.Bounds.Y + 12, 3, e.Bounds.Height - 24);
+            }
             // icon on the leading side, then the name
             const int iconSize = 26;
             var icon = Brand.GameIcon(g.Icon);
@@ -728,6 +806,21 @@ namespace PingBoost
             }
             var textRc = Lang.Ar ? new Rectangle(e.Bounds.X + 6, e.Bounds.Y, e.Bounds.Width - iconSize - 30, e.Bounds.Height)
                                  : new Rectangle(e.Bounds.X + iconSize + 22, e.Bounds.Y, e.Bounds.Width - iconSize - 28, e.Bounds.Height);
+            if (!g.Released)
+            {
+                // developer mode only: a small "trial" tag on games that aren't in the public version yet
+                string tag = T("TRIAL", "تجريبي");
+                using (var f = Fonts.Semi(7.5f))
+                {
+                    var ts = TextRenderer.MeasureText(tag, f);
+                    var tagRc = new Rectangle(Lang.Ar ? textRc.X : textRc.Right - ts.Width - 8, e.Bounds.Y + (e.Bounds.Height - 18) / 2, ts.Width + 8, 18);
+                    using (var path = Shapes.Round(tagRc, 6))
+                    using (var b = new SolidBrush(Color.FromArgb(28, 70, 74))) e.Graphics.FillPath(b, path);
+                    TextRenderer.DrawText(e.Graphics, tag, f, tagRc, DevAccent, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+                    textRc = Lang.Ar ? new Rectangle(textRc.X + tagRc.Width + 6, textRc.Y, textRc.Width - tagRc.Width - 6, textRc.Height)
+                                     : new Rectangle(textRc.X, textRc.Y, textRc.Width - tagRc.Width - 6, textRc.Height);
+                }
+            }
             TextRenderer.DrawText(e.Graphics, g.Name, Font, textRc,
                 sel ? TextC : Color.FromArgb(206, 196, 226), TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | Align);
         }
@@ -753,6 +846,9 @@ namespace PingBoost
         void RebuildUi()
         {
             simple = Prefs.Simple;
+            devMode = DevModeSaved;
+            GameDb.ShowUnreleased = devMode;
+            games = GameDb.Available(allGames);
             var g = CurrentGame;
             SuspendLayout();
             var old = Controls.Cast<Control>().ToArray();
@@ -855,9 +951,16 @@ namespace PingBoost
             var g = CurrentGame;
             if (g == null) return;
             gameNote.Text = g.Note;
+            // the simple layout hides the note line, so the first visit to each game shows it as a chat line
+            if (simple && Storage.GetSetting("tip_" + g.Icon) != "1")
+            {
+                Storage.SetSetting("tip_" + g.Icon, "1");
+                Msg(g.Note);
+            }
             Telemetry.Game = g.Name;
             Telemetry.Server = null;
             Storage.SetSetting("last_game", g.Icon);
+            ResetDetectButton();
             pickBar.Visible = g.CanLock;
             UpdateLockBar();
             serverList.Items.Clear();
@@ -879,7 +982,7 @@ namespace PingBoost
                         SetStatus(T("Couldn't get the servers. Check your internet, then pick the game again.",
                                     "ما قدرت أجيب السيرفرات. شيّك على النت، وبعدين اختار اللعبة مرة ثانية."));
                         Log(g.Name + ": " + err);
-                        Telemetry.Send("error", null, -1, "load servers " + g.Name + ": " + err);
+                        Issues.Report("servers_load_failed", g.Name + ": " + err, null, g.Icon);
                         return;
                     }
                     // last time's results show up straight away; the new test then refreshes them
@@ -1015,7 +1118,7 @@ namespace PingBoost
 
             heroBtn.Tag = best;
             heroBtn.Visible = g.CanLock;
-            bool already = lockSummary != null && best.Picked && g.Regions.Count(r => r.Picked) == 1;
+            bool already = lockSummary != null && best.Picked;
             heroBtn.Enabled = !already;
             heroBtn.Text = already ? T("Locked ✓", "مثبّت ✓") : T("Play on it", "العب عليه");
         }
@@ -1026,8 +1129,11 @@ namespace PingBoost
             var g = CurrentGame;
             if (g == null || !g.CanLock) return;
             Telemetry.Send("use", region.NameEn, -1, "play on it");
-            foreach (var r in g.Regions) r.Picked = r == region;
-            Storage.SavePicks(g.AppId, new[] { region.Id });
+            // games with region groups (Overwatch): the best server's whole region, so queues stay short
+            string[] group;
+            var ids = g.LockGroups != null && g.LockGroups.TryGetValue(region.Id, out group) ? group : new[] { region.Id };
+            foreach (var r in g.Regions) r.Picked = ids.Contains(r.Id);
+            Storage.SavePicks(g.LockKey, ids);
             FillServers(g);
             UpdateLockBar();
             LockServers();
@@ -1038,7 +1144,8 @@ namespace PingBoost
             var r = item.Tag as Region;
             if (r == null) return;
             var g = CurrentGame;
-            item.SubItems[ColRegion].Text = (r.Here ? T("» ", "« ") : "") + r.Name + (r.Here ? T("  (you are here)", "  (إنت هنا)") : "");
+            item.SubItems[ColRegion].Text = (r.Here ? T("» ", "« ") : "") + r.Name + (r.Here ? T("  (you are here)", "  (إنت هنا)") : "") +
+                                            (devMode ? "   ·  ‎" + r.Cidrs.Count + " ranges‎" : "");
             item.SubItems[ColRegion].ForeColor = r.Here || r.Picked ? Accent : (r.Detected ? Warn : TextC);
 
             string mm;
@@ -1161,6 +1268,7 @@ namespace PingBoost
                     {
                         SetStatus(T("No server replied. Check your internet or firewall.", "ولا سيرفر رد، شيّك على النت أو جدار الحماية."));
                         Telemetry.Send("test", null, -1, "no reply, " + regions.Count + " regions", data);
+                        Issues.Report("all_down", g.Name + ": none of " + regions.Count + " regions answered", data, g.Icon);
                         return;
                     }
                     if (CurrentGame == g)
@@ -1171,6 +1279,10 @@ namespace PingBoost
                     }
                     SetStatus(T("Done. Your best region: ", "خلص الفحص. أحسن منطقة لك: ") + ShortName(top) + "  " + Ms(BestLatency(top)));
                     Telemetry.Send("test", top.NameEn, (int)Math.Round(BestLatency(top)), regions.Count + " regions, " + ms + " ms", data);
+                    var down = regions.Where(r => r.Direct != null && !r.Direct.Ok && !r.Detected).Select(r => r.Id).ToList();
+                    if (down.Count > 0)
+                        Issues.Report("region_down", g.Name + ": " + string.Join(", ", down),
+                            new Dictionary<string, object> { { "game", g.Name }, { "regions", down.ToArray() } }, g.Icon + string.Join(",", down));
                     Log(g.Name + ": " + T("best region ", "أحسن منطقة ") + top.Name + " " + Ms(BestLatency(top)));
                 });
             });
@@ -1259,10 +1371,10 @@ namespace PingBoost
 
         Panel BuildInfoBar()
         {
-            var bar = new Panel { Dock = DockStyle.Top, Height = 44, Padding = new Padding(0, 4, 0, 8) };
+            var bar = new Panel { Dock = DockStyle.Top, Height = 40 };
             btnDetect = MakeButton(T("Which server am I on?", "على أي سيرفر أنا؟"), Panel2);
             btnDetect.Dock = DockStyle.Right;
-            btnDetect.Width = 180;
+            btnDetect.Width = 240;
             btnDetect.Click += delegate { DetectServer(); };
             infoLabel = new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = TextC, AutoEllipsis = true };
             bar.Controls.Add(infoLabel);
@@ -1317,6 +1429,12 @@ namespace PingBoost
         {
             var g = CurrentGame;
             if (g == null || busy) return;
+            if (autoDetecting)
+            {
+                Msg(T("Checking your server right now, the answer shows on the button in a few seconds.",
+                      "أشيّك على سيرفرك دحين، والجواب يطلع على الزر بعد ثواني."));
+                return;
+            }
             if (g.Processes.Length > 0 && !Detector.IsRunning(g.Processes))
             {
                 Msg(T(g.Name + " isn't running. Open it, join a match, then press this again.",
@@ -1334,13 +1452,31 @@ namespace PingBoost
                 {
                     bool matched;
                     var hits = Detector.Capture(g.Processes, 15, out matched);
-                    if (g.Provider == Provider.Valve) Ui(() => ShowValveResult(g, hits));
+                    // a local record too (traffic.txt in the data folder), for diagnosing locks that block too much
+                    try
+                    {
+                        File.AppendAllLines(Path.Combine(Storage.Dir, "traffic.txt"), hits.Select(h =>
+                        {
+                            var dc = g.CanLock ? ValveRegionOf(g, h.Ip) : null;
+                            return string.Join("\t", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"), g.Name, h.Ip + ":" + h.Port,
+                                               h.Packets + " packets", dc != null ? dc.Id : "-", lockSummary != null ? "locked: " + lockSummary : "not locked");
+                        }));
+                    }
+                    catch { }
+                    // every address the game talked to, so the server lists can grow for games without official ones
+                    Telemetry.Send("traffic", null, -1, hits.Count + " addresses", new Dictionary<string, object>
+                    {
+                        { "hits", hits.Take(8).Select(h => h.Ip + ":" + h.Port + " x" + h.Packets).ToArray() }
+                    });
+                    // games with known datacenters (Valve, Overwatch): name the datacenter and check it against the lock
+                    if (g.Provider == Provider.Valve || (g.CanLock && hits.Any(h => ValveRegionOf(g, h.Ip) != null)))
+                        Ui(() => ShowValveResult(g, hits));
                     else ShowOtherResult(g, hits);
                 }
                 catch (Exception ex)
                 {
                     Log(T("Server check failed: ", "ما زبط الفحص: ") + ex.Message);
-                    Telemetry.Send("error", null, -1, "detect: " + ex);
+                    Issues.Report("detect_failed", "manual check: " + ex.Message);
                     Ui(() => { busy = false; btnDetect.Enabled = true; Msg(T("Server check failed: ", "ما زبط الفحص: ") + ex.Message, ToastKind.Bad); });
                 }
             });
@@ -1379,6 +1515,10 @@ namespace PingBoost
             Telemetry.Server = string.Join(", ", found.Select(r => r.NameEn));
             Telemetry.Send("detect", Telemetry.Server, -1,
                 lockSummary == null ? "no lock" : found.All(r => r.Picked) ? "lock OK" : "NOT on picked servers");
+            if (lockSummary != null && !found.All(r => r.Picked))
+                Issues.Report("lock_outside", g.Name + " on " + string.Join(", ", found.Select(r => r.Id)) + " while locked on " + lockSummary,
+                    new Dictionary<string, object> { { "game", g.Name }, { "ips", hits.Take(3).Select(h => h.Ip).ToArray() }, { "locked", lockSummary } },
+                    g.Icon + string.Join(",", found.Select(r => r.Id)));
 
             bool onPicked = lockSummary == null || found.All(r => r.Picked);
             Msg(T("You're playing on: ", "إنت تلعب دحين على: ") + names, onPicked ? ToastKind.Good : ToastKind.Warn);
@@ -1426,13 +1566,161 @@ namespace PingBoost
             });
         }
 
+        // ---------------------------------------------------------------- automatic "which server am I on?"
+
+        // While the selected game runs, a short look at its traffic puts the server on the button itself
+        // ("On: Dammam ✓"): every 30 s for 10 minutes after the lock changes, so the player sees whether it worked,
+        // then every 90 s. Problems found on the way are reported silently (see Issues).
+        System.Windows.Forms.Timer autoDetectTimer;
+        bool autoDetecting, matchSinceLock;
+        DateTime lastAutoDetect = DateTime.MinValue, lockChangedAt = DateTime.MinValue, lastRulesCheck = DateTime.MinValue;
+        string lastAutoServer;
+
+        bool Verifying { get { return DateTime.Now - lockChangedAt < TimeSpan.FromMinutes(10); } }
+
+        void StartAutoDetect()
+        {
+            if (autoDetectTimer != null) return;
+            autoDetectTimer = new System.Windows.Forms.Timer { Interval = 10000 };
+            autoDetectTimer.Tick += delegate { AutoDetectTick(); };
+            autoDetectTimer.Start();
+        }
+
+        void SetDetect(string text, Color dot)
+        {
+            btnDetect.Text = text;
+            btnDetect.ForeColor = TextC;
+            ((RoundButton)btnDetect).Dot = dot;
+        }
+
+        void ResetDetectButton()
+        {
+            if (btnDetect == null) return;
+            SetDetect(T("Which server am I on?", "على أي سيرفر أنا؟"), Color.Empty);
+            lastAutoDetect = DateTime.MinValue;
+            lastAutoServer = null;
+        }
+
+        // Called after locking or unlocking: check right away and keep checking often for a while.
+        void LockChanged(Game g)
+        {
+            lockChangedAt = DateTime.Now;
+            matchSinceLock = false;
+            lastAutoServer = null;
+            lastAutoDetect = DateTime.MinValue;
+            if (btnDetect == null) return;
+            if (lockSummary != null)
+            {
+                SetDetect(T("Checking at your next match...", "بنتأكد في مباراتك الجاية..."), Lavender);
+            }
+            else ResetDetectButton();
+        }
+
+        void AutoDetectTick()
+        {
+            var g = CurrentGame;
+            CheckLockRules();
+            if (g == null || busy || autoDetecting || g.Processes.Length == 0) return;
+            if (DateTime.Now - lastAutoDetect < TimeSpan.FromSeconds(Verifying ? 30 : 90)) return;
+            autoDetecting = true;
+            lastAutoDetect = DateTime.Now;
+            Task.Run(() =>
+            {
+                List<Detector.Hit> hits = null;
+                string where = null;
+                bool running = Detector.IsRunning(g.Processes);
+                if (running)
+                    try
+                    {
+                        bool matched;
+                        hits = Detector.Capture(g.Processes, 8, out matched);
+                        // games without a datacenter list: the main server's city
+                        if (hits.Count > 0 && !hits.Any(h => ValveRegionOf(g, h.Ip) != null)) where = Stats.Locate(hits[0].Ip);
+                    }
+                    catch (Exception ex)
+                    {
+                        hits = null;
+                        Issues.Report("detect_failed", "automatic check: " + ex.Message);
+                    }
+                Ui(() =>
+                {
+                    autoDetecting = false;
+                    if (CurrentGame != g) return;
+                    if (!running) { if (lastAutoServer != null) ResetDetectButton(); return; }
+                    if (hits != null) ShowAutoDetect(g, hits, where);
+                });
+            });
+        }
+
+        // The lock's firewall rules can vanish (antivirus, another tool, a firewall reset): check every 2 minutes.
+        void CheckLockRules()
+        {
+            if (lockSummary == null || DateTime.Now - lastRulesCheck < TimeSpan.FromMinutes(2)) return;
+            lastRulesCheck = DateTime.Now;
+            string locked = lockSummary;
+            Task.Run(() =>
+            {
+                if (ServerLock.Exists()) return;
+                Issues.Report("lock_rules_missing", "lock on " + locked + " but no firewall rules");
+                Ui(() =>
+                {
+                    if (lockSummary != locked) return;
+                    Msg(T("Your server lock was removed from Windows Firewall (maybe by a security app). Press Lock my servers again.",
+                          "تثبيت السيرفرات انشال من جدار حماية ويندوز (يمكن برنامج حماية). اضغط «ثبّت سيرفراتي» مرة ثانية."), ToastKind.Warn);
+                });
+            });
+        }
+
+        void ShowAutoDetect(Game g, List<Detector.Hit> hits, string where)
+        {
+            if (hits.Count == 0)
+            {
+                bool waiting = lockSummary != null && !matchSinceLock;
+                SetDetect(waiting ? T("Checking at your next match...", "بنتأكد في مباراتك الجاية...") : T("Not in a match", "مو داخل مباراة"),
+                          waiting ? Lavender : Dim);
+                // locked a while ago and still no match: the lock may be blocking more than it should
+                if (waiting && DateTime.Now - lockChangedAt > TimeSpan.FromMinutes(12))
+                    Issues.Report("queue_long", g.Name + ", locked on " + lockSummary + ", no match for " +
+                        (int)(DateTime.Now - lockChangedAt).TotalMinutes + " min (maybe just in the menu)",
+                        new Dictionary<string, object> { { "game", g.Name }, { "locked", lockSummary } }, lockChangedAt.Ticks.ToString());
+                return;
+            }
+            matchSinceLock = true;
+            var top = hits[0];
+            var dc = hits.Select(h => ValveRegionOf(g, h.Ip)).FirstOrDefault(r => r != null);
+            string name = dc != null ? ShortName(dc) : (where ?? top.Ip);
+            bool ok = dc == null ? lockSummary == null : (lockSummary == null || dc.Picked);
+            SetDetect(T("On: ", "إنت على: ") + name, ok ? Good : Warn);
+            if (dc != null && !dc.Here)
+            {
+                foreach (var r in g.Regions) r.Here = r == dc;
+                FillServers(g);
+            }
+            var data = new Dictionary<string, object>
+            {
+                { "game", g.Name }, { "ip", top.Ip + ":" + top.Port }, { "packets", top.Packets }, { "where", where },
+                { "datacenter", dc != null ? dc.Id : null }, { "locked", lockSummary }
+            };
+            string net24 = top.Ip.Substring(0, top.Ip.LastIndexOf('.'));
+            if (dc == null)
+                Issues.Report("unknown_server", g.Name + " on " + top.Ip + " (" + (where ?? "?") + ")", data, g.Icon + net24);
+            else if (!ok)
+                Issues.Report("lock_outside", g.Name + " on " + dc.Id + " (" + top.Ip + ") while locked on " + lockSummary, data, g.Icon + dc.Id);
+            if (!ok && dc != null && name != lastAutoServer)
+                Msg(T("You're on " + name + ", which isn't one of your picked servers. Restart the game and queue again.",
+                      "إنت على " + name + "، وهو مو من السيرفرات اللي اخترتها. اقفل اللعبة وافتحها من جديد، وبعدين دوّر مباراة."), ToastKind.Warn);
+            if (name != lastAutoServer)
+                Telemetry.Send("detect", dc != null ? dc.NameEn : top.Ip, -1, "auto, " + (ok ? "ok" : "outside lock"));
+            lastAutoServer = name;
+        }
+
         // ---------------------------------------------------------------- server lock (Valve)
 
         void TogglePick(Region r)
         {
             var g = CurrentGame;
             r.Picked = !r.Picked;
-            Storage.SavePicks(g.AppId, g.Regions.Where(x => x.Picked).Select(x => x.Id));
+            Storage.SavePicks(g.LockKey, g.Regions.Where(x => x.Picked).Select(x => x.Id));
             UpdateRegion(r);
             UpdateLockBar();
         }
@@ -1469,19 +1757,44 @@ namespace PingBoost
                       "اختار سيرفر واحد على الأقل (اضغط المربع اللي جنب اسمه)."), ToastKind.Warn);
                 return;
             }
-            var keep = new HashSet<string>(picked.SelectMany(r => r.Cidrs));
-            var block = g.Regions.Where(r => !r.Picked && !r.Detected).SelectMany(r => r.Cidrs).Where(c => !keep.Contains(c)).ToList();
             string names = string.Join("، ", picked.Select(ShortName));
+            // other games: only the game's own UDP (its match traffic) is blocked, so login, voice chat and the
+            // rest of the PC are untouched; the exe must be known for that
+            string exe = null;
+            if (g.LockSpace != null)
+            {
+                exe = SystemInfo.FindExe(g);
+                if (exe == null)
+                {
+                    Issues.Report("exe_not_found", g.Name, null, g.Icon);
+                    Msg(T("Open " + g.Name + " once (the main menu is enough) so 2X Ping can find it, then press Lock my servers again.",
+                          "افتح " + g.Name + " مرة وحدة (القائمة الرئيسية تكفي) عشان البرنامج يعرف مكانها، وبعدين اضغط «ثبّت سيرفراتي» مرة ثانية."), ToastKind.Warn);
+                    return;
+                }
+            }
             btnLock.Enabled = false;
             SetStatus(T("Locking your servers...", "أثبّت سيرفراتك..."));
             Task.Run(() =>
             {
                 try
                 {
-                    int n = ServerLock.Apply(block);
+                    List<string> block;
+                    if (g.LockSpace != null)
+                        // everything the game's servers can live on, except the picked datacenters (new servers included)
+                        block = IpLists.Subtract(IpLists.Resolve(g.LockSpace),
+                            picked.SelectMany(r => r.Cidrs).Concat(IpLists.Resolve(g.LockAllow ?? new string[0])));
+                    else
+                    {
+                        var keep = new HashSet<string>(picked.SelectMany(r => r.Cidrs));
+                        block = g.Regions.Where(r => !r.Picked && !r.Detected).SelectMany(r => r.Cidrs).Where(c => !keep.Contains(c)).ToList();
+                    }
+                    int n = ServerLock.Apply(block, exe, exe != null ? "UDP" : null, g.LockPorts);
+                    bool firewallOn = ServerLock.FirewallOn();
+                    if (!firewallOn) Issues.Report("firewall_off", "while locking " + g.Name);
                     Ui(() =>
                     {
                         lockSummary = names;
+                        LockChanged(g);
                         Telemetry.Server = string.Join(", ", picked.Select(r => r.NameEn));
                         Telemetry.Send("lock", Telemetry.Server, -1, n + " ranges blocked");
                         btnLock.Enabled = true;
@@ -1491,10 +1804,21 @@ namespace PingBoost
                         SetStatus(T("Locked: ", "مثبّت على: ") + names);
                         StartLockMonitor();
                         Msg(T("Locked. You'll only be matched on: ", "تم التثبيت. ما بتلعب إلا على: ") + names, ToastKind.Good);
+                        if (g.LockSpace != null)
+                            Msg(T("Try a casual match first (not ranked): if " + g.Name + " still picks a blocked server, the match won't load, and in ranked that counts as leaving.",
+                                  "جرّبه في مباراة عادية أول (مو رانكد): لو اللعبة اختارت سيرفر محجوب المباراة ما تفتح، وفي الرانكد تنحسب منسحب."), ToastKind.Warn);
                         Msg(T("If the game is open, restart it (or wait a minute) before you queue.",
                               "لو اللعبة مفتوحة، اقفلها وافتحها من جديد (أو استنى دقيقة) قبل ما تدوّر مباراة."));
-                        Msg(T("Minimize 2X Ping and it waits next to the clock; the lock stays on until you unlock or close it.",
-                              "لو صغّرت البرنامج يروح جنب الساعة، والتثبيت يبقى شغّال لين تفكّه أو تقفل البرنامج."));
+                        if (Storage.GetSetting("tip_tray") != "1")
+                        {
+                            Storage.SetSetting("tip_tray", "1");
+                            Msg(T("Minimize 2X Ping and it waits next to the clock; the lock stays on until you unlock or close it.",
+                                  "لو صغّرت البرنامج يروح جنب الساعة، والتثبيت يبقى شغّال لين تفكّه أو تقفل البرنامج."));
+                        }
+                        // the lock can't work with the firewall off: this one the player has to know
+                        if (!firewallOn)
+                            Msg(T("Windows Firewall is off, so the lock can't block anything. Turn it on in Windows Security > Firewall.",
+                                  "جدار حماية ويندوز مطفي، فالتثبيت ما يقدر يحجب شي. شغّله من أمان ويندوز ← جدار الحماية."), ToastKind.Bad);
                     });
                 }
                 catch (Exception ex)
@@ -1503,7 +1827,7 @@ namespace PingBoost
                     {
                         btnLock.Enabled = true;
                         Log(T("Lock failed: ", "ما زبط التثبيت: ") + ex.Message);
-                        Telemetry.Send("error", null, -1, "lock: " + ex);
+                        Issues.Report("lock_apply_failed", g.Name + ": " + ex.Message, null, g.Icon);
                         Msg(T("Lock failed: ", "ما زبط التثبيت: ") + ex.Message, ToastKind.Bad);
                     });
                 }
@@ -1517,6 +1841,7 @@ namespace PingBoost
             if (!boosting) StopMonitor();
             Telemetry.Server = null;
             Telemetry.Send("unlock", null, -1, null);
+            LockChanged(CurrentGame);
             UpdateLockBar();
             var g = CurrentGame;
             if (g != null) FillServers(g);
@@ -1668,11 +1993,28 @@ namespace PingBoost
                         SetTrayText(label + " · " + Ms(v));
                         Telemetry.Ping = v < 0 ? -1 : (int)Math.Round(v);
                         graph.Add(v);
+                        TrackLoss(label, v);
                     });
                     Thread.Sleep(1000);
                 }
             }) { IsBackground = true };
             t.Start();
+        }
+
+        // Packet loss to the locked/boosted server over the last minute: heavy loss is reported (once per server).
+        readonly Queue<bool> lossWindow = new Queue<bool>();
+        string lossLabel;
+
+        void TrackLoss(string label, double v)
+        {
+            if (label != lossLabel) { lossLabel = label; lossWindow.Clear(); }
+            lossWindow.Enqueue(v < 0);
+            if (lossWindow.Count > 60) lossWindow.Dequeue();
+            if (lossWindow.Count < 60) return;
+            int lost = lossWindow.Count(x => x);
+            if (lost * 100 / lossWindow.Count >= 15)
+                Issues.Report("connection_loss", label + ": " + lost + " of the last 60 pings lost",
+                    new Dictionary<string, object> { { "server", label }, { "lost", lost } }, label);
         }
 
         void StopMonitor()
@@ -1825,6 +2167,221 @@ namespace PingBoost
             }
         }
 
+        // ---------------------------------------------------------------- developer mode
+
+        // Five quick clicks on the logo turn the whole app into its developer version (with the secret key in dev.key):
+        // DEV badge and strip, a Developer tab with live statistics and tools, extra detail in the lists, and every
+        // problem the app detects shown right away. The same five clicks (or the strip's button) turn it off.
+        bool devMode;
+        TextBox devOut;
+
+        static bool DevModeSaved { get { return Storage.GetSetting("dev_mode") == "1" && !string.IsNullOrEmpty(Telemetry.DevKey); } }
+
+        void ToggleDevMode()
+        {
+            if (devMode) { SetDevMode(false); return; }
+            if (!Telemetry.Configured) { Msg("Statistics backend isn't configured (Telemetry.SupabaseUrl / SupabaseKey).", ToastKind.Bad); return; }
+            if (string.IsNullOrEmpty(Telemetry.DevKey))
+            {
+                var v = InputDialog.Show(this, "Developer key", new[] { "Supabase secret key (stays only on this PC, in dev.key)" }, new[] { "" });
+                if (v == null || v[0] == "") return;
+                Telemetry.DevKey = v[0];
+            }
+            SetDevMode(true);
+        }
+
+        void SetDevMode(bool on)
+        {
+            Storage.SetSetting("dev_mode", on ? "1" : "0");
+            if (on) currentPage = 3;
+            else if (currentPage == 3) currentPage = 0;
+            if (busy) pendingRebuild = true; else RebuildUi();
+            Msg(on ? "Developer mode ON" : "Developer mode off", on ? ToastKind.Good : ToastKind.Info);
+        }
+
+        // The strip under the header: always-visible quick tools, in a colour no player ever sees.
+        static readonly Color DevColor = Color.FromArgb(18, 48, 52), DevAccent = Color.FromArgb(104, 236, 204);
+
+        Panel BuildDevStrip()
+        {
+            var strip = new Panel { Dock = DockStyle.Top, Height = 42, BackColor = DevColor, Padding = new Padding(12, 6, 12, 6), RightToLeft = RightToLeft.No };
+            var flow = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, RightToLeft = RightToLeft.No };
+            flow.Controls.Add(new Label { Text = "DEVELOPER MODE", ForeColor = DevAccent, Font = Fonts.Bold(9f), AutoSize = true, Margin = new Padding(0, 7, 16, 0) });
+            Action<string, Action> add = (text, act) =>
+            {
+                var b = MakeButton(text, Color.FromArgb(28, 70, 74));
+                b.ForeColor = Color.White;
+                b.AutoSize = false;
+                b.Size = new Size(TextRenderer.MeasureText(text, Font).Width + 26, 30);
+                b.Margin = new Padding(0, 0, 8, 0);
+                b.Click += delegate { act(); };
+                flow.Controls.Add(b);
+            };
+            add("Developer tab", () => ShowPage(3));
+            add("Self-test", DevSelfTest);
+            add("Firewall rules", DevShowRules);
+            add("Test notices", DevTestToasts);
+            add("Data folder", () => Brand.Open(Storage.Dir));
+            add("Exit developer mode", () => SetDevMode(false));
+            strip.Controls.Add(flow);
+            return strip;
+        }
+
+        Panel BuildDevPage()
+        {
+            var p = new Panel { RightToLeft = RightToLeft.No };
+            var dash = new DevPanel { Dock = DockStyle.Fill };
+            dash.ForgetKey += () => SetDevMode(false);
+
+            var tools = new Card { Dock = DockStyle.Right, Width = 340, Fill = Panel1, Padding = new Padding(12), RightToLeft = RightToLeft.No };
+            var flow = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 330, FlowDirection = FlowDirection.LeftToRight, RightToLeft = RightToLeft.No };
+            Action<string, Action> add = (text, act) =>
+            {
+                var b = MakeButton(text, Panel2);
+                b.Size = new Size(150, 32);
+                b.Margin = new Padding(0, 0, 8, 8);
+                b.Click += delegate { try { act(); } catch (Exception ex) { DevOut("! " + ex.Message); } };
+                flow.Controls.Add(b);
+            };
+            add("Self-test", DevSelfTest);
+            add("Firewall rules", DevShowRules);
+            add("Refresh IP lists", DevRefreshLists);
+            add("Server ranges", DevShowRanges);
+            add("Test notices", DevTestToasts);
+            add("Fake update bar", DevFakeUpdateBar);
+            add("Forced update", () => UpdateDialog.Show(this, new Release { Tag = "v9.9.9-beta", Ver = new Version(9, 9, 9) }, true));
+            add("Send test problem", () => { Issues.Report("crash", "developer test problem " + DateTime.Now.ToString("HH:mm:ss")); DevOut("sent a test problem"); });
+            add("issues.txt", () => DevOpenFile("issues.txt"));
+            add("traffic.txt", () => DevOpenFile("traffic.txt"));
+            add("crash.log", () => DevOpenFile("crash.log"));
+            add("Copy diagnostics", () => { Clipboard.SetText(ContactDialog.Diagnostics(logBox.Text)); DevOut("diagnostics copied"); });
+            add("Reset first-run", DevResetFirstRun);
+            add("Exit dev mode", () => SetDevMode(false));
+            devOut = new TextBox
+            {
+                Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, BorderStyle = BorderStyle.None,
+                BackColor = Bg, ForeColor = DevAccent, Font = new Font("Consolas", 9f), RightToLeft = RightToLeft.No
+            };
+            tools.Controls.Add(devOut);
+            tools.Controls.Add(new Label { Text = "Output", Dock = DockStyle.Top, Height = 22, ForeColor = Dim });
+            tools.Controls.Add(flow);
+            tools.Controls.Add(new Label { Text = "TOOLS", Dock = DockStyle.Top, Height = 26, ForeColor = DevAccent, Font = Fonts.Bold(9f) });
+
+            p.Controls.Add(dash);
+            p.Controls.Add(new Panel { Dock = DockStyle.Right, Width = 12 });
+            p.Controls.Add(tools);
+            foreach (var r in Issues.Recent) DevOut(r.At.ToString("HH:mm:ss") + "  problem  " + r.Code + ": " + r.Detail);
+            return p;
+        }
+
+        void DevOut(string line)
+        {
+            Ui(() => { if (devOut != null && !devOut.IsDisposed) devOut.AppendText(DateTime.Now.ToString("HH:mm:ss") + "  " + line + Environment.NewLine); });
+        }
+
+        // Everything the app depends on, checked in one go.
+        void DevSelfTest()
+        {
+            ShowPage(3);
+            DevOut("---- self-test");
+            Task.Run(() =>
+            {
+                Action<string, Func<string>> check = (name, f) =>
+                {
+                    string r;
+                    try { r = f(); } catch (Exception ex) { r = "FAIL " + ex.Message; }
+                    DevOut(name.PadRight(22) + r);
+                };
+                check("Version", () => Brand.DisplayVersion + ", install " + Telemetry.InstallId.Substring(0, 8));
+                check("Windows Firewall", () => ServerLock.FirewallOn() ? "on" : "OFF (locks can't work)");
+                check("Lock rules", () => ServerLock.Exists() ? "present" : "none");
+                check("pktmon", () => File.Exists(Path.Combine(Environment.SystemDirectory, "pktmon.exe")) ? "available" : "MISSING");
+                check("WireGuard", () => Tunnel.Installed ? "installed" : "not installed");
+                check("GitHub", () => { Http.Get("https://api.github.com/repos/" + Brand.Repo, 8000); return "ok"; });
+                check("Statistics backend", () => { Telemetry.Query("installs?select=install_id&limit=1"); return "ok (secret key works)"; });
+                check("Google list", () => IpLists.Resolve("gcp:me-central2").Count + " Dammam ranges");
+                check("Amazon list", () => IpLists.Resolve("aws:eu-central-1").Count + " Frankfurt ranges");
+                check("Blizzard network", () => IpLists.Resolve("asn:57976").Count + " blocks");
+                foreach (var g in games.Where(x => x.LockSpace != null))
+                    check("Exe " + g.Name, () => SystemInfo.FindExe(g) ?? "not found");
+                check("Problems this session", () => Issues.Recent.Count.ToString());
+                DevOut("---- done");
+            });
+        }
+
+        void DevShowRules()
+        {
+            ShowPage(3);
+            Task.Run(() =>
+            {
+                var psi = new ProcessStartInfo("netsh", "advfirewall firewall show rule name=\"2XPing-RegionLock\" verbose")
+                { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true };
+                string text;
+                using (var proc = Process.Start(psi)) { text = proc.StandardOutput.ReadToEnd(); proc.WaitForExit(15000); }
+                var rules = text.Split(new[] { "Rule Name:" }, StringSplitOptions.RemoveEmptyEntries).Skip(1).ToList();
+                DevOut("---- firewall rules: " + rules.Count);
+                foreach (var r in rules)
+                {
+                    Func<string, string> field = k =>
+                    {
+                        var m = System.Text.RegularExpressions.Regex.Match(r, k + @":\s*(.+)");
+                        return m.Success ? m.Groups[1].Value.Trim() : "-";
+                    };
+                    string ips = field("RemoteIP");
+                    DevOut(field("Direction") + " " + field("Protocol") + " ports " + field("RemotePort") + "  " +
+                           (ips.Length > 0 ? ips.Split(',').Length + " ranges" : "") + "  " + Path.GetFileName(field("Program")));
+                }
+            });
+        }
+
+        void DevRefreshLists()
+        {
+            try { Directory.Delete(Path.Combine(Storage.Dir, "cache"), true); } catch { }
+            foreach (var g in games) g.Loaded = false;
+            DevOut("IP list cache cleared, reloading the current game");
+            OnGameChanged();
+        }
+
+        void DevShowRanges()
+        {
+            var g = CurrentGame;
+            if (g == null) return;
+            ShowPage(3);
+            DevOut("---- " + g.Name + " datacenters");
+            foreach (var r in g.Regions)
+                DevOut(r.Id.PadRight(16) + r.Cidrs.Count.ToString().PadLeft(4) + " ranges  ping " + (r.Target != null ? r.Target.ToString() : "-"));
+            if (g.LockSpace != null) DevOut("lock space: " + string.Join(", ", g.LockSpace.Take(6)) + (g.LockSpace.Length > 6 ? " ..." : ""));
+        }
+
+        void DevTestToasts()
+        {
+            Msg("Info notice: this is how a normal message looks.");
+            Msg("Good notice: locked on Dammam ✓", ToastKind.Good);
+            Msg("Warning notice: you're on a server outside your lock.", ToastKind.Warn);
+            Msg("Error notice: couldn't add the firewall rules.", ToastKind.Bad);
+        }
+
+        void DevFakeUpdateBar()
+        {
+            Storage.SetSetting("update_seen", "v9.9.9-beta|" + DateTime.UtcNow.AddDays(-1).Ticks);
+            pendingUpdate = new Release { Tag = "v9.9.9-beta", Ver = new Version(9, 9, 9) };
+            ShowUpdateBar();
+            DevOut("showing a fake 9.9.9 update bar (restart the app to clear it)");
+        }
+
+        void DevOpenFile(string name)
+        {
+            string path = Path.Combine(Storage.Dir, name);
+            if (File.Exists(path)) Brand.Open(path); else DevOut(name + " doesn't exist yet");
+        }
+
+        void DevResetFirstRun()
+        {
+            foreach (var k in new[] { "beta_ack", "tray_tip", "tip_tray" }) Storage.SetSetting(k, "");
+            foreach (var g in games) Storage.SetSetting("tip_" + g.Icon, "");
+            DevOut("first-run notices and tips will show again (the welcome screen needs consent=0 in settings.txt)");
+        }
+
     }
 
     static class InputDialog
@@ -1855,8 +2412,8 @@ namespace PingBoost
                     f.Controls.Add(boxes[i]);
                 }
                 int y = 24 + labels.Length * 62 + 8;
-                var ok = new Button { Text = Lang.T("OK", "تمام"), DialogResult = DialogResult.OK, Bounds = new Rectangle(Lang.Ar ? 112 : 320, y, 88, 34), FlatStyle = FlatStyle.Flat, BackColor = MainForm.Accent, ForeColor = Color.Black };
-                var cancel = new Button { Text = Lang.T("Cancel", "إلغاء"), DialogResult = DialogResult.Cancel, Bounds = new Rectangle(Lang.Ar ? 16 : 416, y, 88, 34), FlatStyle = FlatStyle.Flat, BackColor = MainForm.Panel2 };
+                var ok = new RoundButton { Text = Lang.T("OK", "تمام"), DialogResult = DialogResult.OK, Bounds = new Rectangle(Lang.Ar ? 112 : 320, y, 88, 34), FlatStyle = FlatStyle.Flat, BackColor = MainForm.Accent, ForeColor = Color.Black };
+                var cancel = new RoundButton { Text = Lang.T("Cancel", "إلغاء"), DialogResult = DialogResult.Cancel, Bounds = new Rectangle(Lang.Ar ? 16 : 416, y, 88, 34), FlatStyle = FlatStyle.Flat, BackColor = MainForm.Panel2 };
                 ok.FlatAppearance.BorderSize = cancel.FlatAppearance.BorderSize = 0;
                 f.Controls.Add(ok);
                 f.Controls.Add(cancel);

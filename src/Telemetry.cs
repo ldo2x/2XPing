@@ -61,6 +61,13 @@ namespace PingBoost
             if (heartbeat == null) heartbeat = new System.Threading.Timer(delegate { Send("heartbeat", null, -1, null); }, null, 60000, 60000);
         }
 
+        // Sent right away and waited for (a few seconds at most): for reports made just before the app dies.
+        public static void SendNow(string kind, string detail, Dictionary<string, object> data)
+        {
+            if (!Configured || !HasConsent) return;
+            try { Post(kind, null, -1, detail, data, null, 4000); } catch { }
+        }
+
         // Sent while the app closes, so it waits (briefly) instead of firing and forgetting.
         public static void Exit()
         {
@@ -188,100 +195,100 @@ namespace PingBoost
                     Text = Lang.T("Welcome to 2X Ping", "هلا فيك في 2X Ping"), Font = Fonts.Semi(15f),
                     ForeColor = MainForm.Accent, TextAlign = ContentAlignment.MiddleCenter, Bounds = new Rectangle(20, 82, W, 36)
                 });
-                f.Controls.Add(new Label
+                // a card with its title; content starts at y = 46 inside it
+                Func<int, int, string, Card> section = (cy, h, title) =>
                 {
-                    Text = Lang.T("What's your name?", "إيش اسمك؟"),
-                    Bounds = new Rectangle(20, 126, W, 24), ForeColor = MainForm.TextC
-                });
-                var name = new TextBox
-                {
-                    Bounds = new Rectangle(20, 152, W, 28), BackColor = MainForm.Panel2, ForeColor = MainForm.TextC,
-                    BorderStyle = BorderStyle.FixedSingle, MaxLength = 30, Text = Telemetry.Nickname
+                    var c = new Card { Bounds = new Rectangle(20, cy, W, h), Fill = MainForm.Panel1, Radius = 14 };
+                    c.Controls.Add(new Label
+                    {
+                        Text = title, Font = Fonts.Semi(10.5f), ForeColor = MainForm.Accent, Bounds = new Rectangle(16, 12, W - 32, 26)
+                    });
+                    f.Controls.Add(c);
+                    return c;
                 };
-                f.Controls.Add(name);
+
+                var nameCard = section(128, 104, Lang.T("What's your name?", "إيش اسمك؟"));
+                var name = new InputBox { Bounds = new Rectangle(16, 46, W - 32, 42) };
+                name.Text = Telemetry.Nickname;
+                name.Box.MaxLength = 30;
+                nameCard.Controls.Add(name);
 
                 // the games this player cares about, two per row, in reading order
-                f.Controls.Add(new Label
-                {
-                    Text = Lang.T("Which games do you play?", "إيش الألعاب اللي تلعبها؟"),
-                    Bounds = new Rectangle(20, 196, W, 24), ForeColor = MainForm.TextC
-                });
-                f.Controls.Add(new Label
+                var all = GameDb.Available(GameDb.All());
+                int gamesH = 70 + (all.Count + 1) / 2 * 54 + 8;
+                var gamesCard = section(244, gamesH, Lang.T("Which games do you play?", "إيش الألعاب اللي تلعبها؟"));
+                gamesCard.Controls.Add(new Label
                 {
                     Text = Lang.T("Only these show up in your list. You can change them later in Settings.",
                                   "اللي تختاره بس يطلع لك، وتقدر تغيّره بعدين من الإعدادات."),
-                    Bounds = new Rectangle(20, 220, W, 20), ForeColor = MainForm.Dim, Font = Fonts.Ui(8.5f)
+                    Bounds = new Rectangle(16, 40, W - 32, 22), ForeColor = MainForm.Dim, Font = Fonts.Ui(8.5f)
                 });
-                var picks = new List<KeyValuePair<string, CheckBox>>();
-                var all = GameDb.All();
-                const int colW = (W - 20) / 2;
+                var picks = new List<GameTile>();
+                const int tw = (W - 32 - 10) / 2;
                 for (int i = 0; i < all.Count; i++)
                 {
                     bool first = i % 2 == 0;
-                    int gx = first ^ Lang.Ar ? 20 : 20 + colW + 20;
-                    var cb = new CheckBox
+                    var tile = new GameTile
                     {
-                        Text = "  " + all[i].Name, ForeColor = MainForm.TextC, Cursor = Cursors.Hand,
-                        Bounds = new Rectangle(gx, 246 + i / 2 * 30, colW, 30),
-                        TextImageRelation = TextImageRelation.ImageBeforeText, ImageAlign = ContentAlignment.MiddleLeft
+                        Text = all[i].Name, Icon = Brand.GameIcon(all[i].Icon), Tag = all[i].Icon,
+                        Bounds = new Rectangle(first ^ Lang.Ar ? 16 : 16 + tw + 10, 70 + i / 2 * 54, tw, 46)
                     };
-                    var ic = Brand.GameIcon(all[i].Icon);
-                    if (ic != null) cb.Image = new Bitmap(ic, 20, 20);
-                    f.Controls.Add(cb);
-                    picks.Add(new KeyValuePair<string, CheckBox>(all[i].Icon, cb));
+                    gamesCard.Controls.Add(tile);
+                    picks.Add(tile);
                 }
-                int y = 246 + (all.Count + 1) / 2 * 30 + 12;
+                int y = 244 + gamesH + 12;
 
+                var noticeCard = new Card { Bounds = new Rectangle(20, y, W, 116), Fill = MainForm.Panel1, Radius = 14 };
+                f.Controls.Add(noticeCard);
                 var notice = new Label
                 {
-                    Bounds = new Rectangle(20, y, W, 88), BackColor = MainForm.Panel1, ForeColor = MainForm.Dim,
-                    Padding = new Padding(12), Font = Fonts.Ui(9.5f),
+                    Bounds = new Rectangle(14, 10, W - 28, 98), ForeColor = MainForm.Dim, Font = Fonts.Ui(9.5f),
                     Text = Lang.T(
                         "This is a beta: while it's open, 2X Ping sends usage statistics so we can improve it.\n" +
                         "New versions are required: you get a few days to update.\nYou need to agree to use the beta.",
                         "هادي نسخة تجريبية، والبرنامج يرسل إحصائيات استخدام وهو مفتوح عشان نطوّره.\n" +
                         "ولما تنزل نسخة جديدة لازم تحدّث، وعندك كم يوم.\nلازم توافق عشان تستخدمه.")
                 };
-                f.Controls.Add(notice);
+                noticeCard.Controls.Add(notice);
                 var details = new LinkLabel
                 {
-                    Text = Lang.T("Statistics details", "تفاصيل الإحصائيات"), Bounds = new Rectangle(20, y + 92, W, 24),
+                    Text = Lang.T("Statistics details", "تفاصيل الإحصائيات"), Bounds = new Rectangle(20, y + 120, W, 24),
                     LinkColor = MainForm.Lavender, ActiveLinkColor = Color.White, LinkBehavior = LinkBehavior.HoverUnderline
                 };
                 details.LinkClicked += delegate { Brand.Open(Brand.RepoUrl + "/blob/main/SECURITY.md#usage-statistics-beta"); };
                 f.Controls.Add(details);
 
-                var ok = new Button
+                var ok = new RoundButton
                 {
                     Text = Lang.T("Agree and start", "موافق وأبدأ"), DialogResult = DialogResult.OK,
-                    Bounds = new Rectangle(Lang.Ar ? 280 : 20, y + 130, 220, 40), FlatStyle = FlatStyle.Flat,
+                    Bounds = new Rectangle(Lang.Ar ? 280 : 20, y + 158, 220, 40), FlatStyle = FlatStyle.Flat,
                     BackColor = MainForm.Accent, ForeColor = Color.Black, Font = Fonts.Semi(10.5f), Enabled = false
                 };
-                var exit = new Button
+                var exit = new RoundButton
                 {
                     Text = Lang.T("Exit", "خروج"), DialogResult = DialogResult.Cancel,
-                    Bounds = new Rectangle(Lang.Ar ? 20 : 280, y + 130, 220, 40), FlatStyle = FlatStyle.Flat,
+                    Bounds = new Rectangle(Lang.Ar ? 20 : 280, y + 158, 220, 40), FlatStyle = FlatStyle.Flat,
                     BackColor = MainForm.Panel2, ForeColor = MainForm.TextC
                 };
                 ok.FlatAppearance.BorderSize = exit.FlatAppearance.BorderSize = 0;
                 // ready once there is a name and at least one game
                 EventHandler refresh = delegate
                 {
-                    ok.Enabled = name.Text.Trim().Length >= 2 && picks.Any(p => p.Value.Checked);
+                    ok.Enabled = name.Text.Trim().Length >= 2 && picks.Any(p => p.Checked);
                     ok.BackColor = ok.Enabled ? MainForm.Accent : MainForm.Panel2;
                 };
-                name.TextChanged += refresh;
-                foreach (var p in picks) p.Value.CheckedChanged += refresh;
+                name.Box.TextChanged += refresh;
+                foreach (var p in picks) p.CheckedChanged += refresh;
                 refresh(null, EventArgs.Empty);
                 f.Controls.Add(ok);
                 f.Controls.Add(exit);
                 f.AcceptButton = ok;
                 f.CancelButton = exit;
-                f.ClientSize = new Size(W + 40, y + 186);
+                f.ClientSize = new Size(W + 40, y + 214);
 
                 if (f.ShowDialog(owner) != DialogResult.OK) return false;
                 Telemetry.Nickname = name.Text;
-                Prefs.HiddenGames = new HashSet<string>(picks.Where(p => !p.Value.Checked).Select(p => p.Key));
+                Prefs.HiddenGames = new HashSet<string>(picks.Where(p => !p.Checked).Select(p => (string)p.Tag));
                 Storage.SetSetting("consent", "1");
                 return true;
             }
@@ -290,47 +297,33 @@ namespace PingBoost
 
     // Developer-only window: who is online now, usage stats and the event log.
     // Opened by clicking the logo 5 times; asks for the secret key once and keeps it in dev.key.
-    class DevDashboard : Form
+    // The developer's statistics (who is online, versions, devices, problems, the event log), shown as a page
+    // of the main window in developer mode. Reads with the secret key kept in dev.key on the developer's PC.
+    class DevPanel : Panel
     {
-        ListView online, stats, log, versions, devices;
+        ListView online, stats, log, versions, devices, issues;
         Label summary;
         CheckBox errorsOnly;
         System.Windows.Forms.Timer refresh;
-        object[] installs = new object[0], events = new object[0];
+        object[] installs = new object[0], events = new object[0], issueEvents = new object[0];
+        bool loadedOnce;
+        public event Action ForgetKey;
 
-        public static void Open(IWin32Window owner)
+        public DevPanel()
         {
-            if (!Telemetry.Configured)
-            {
-                MessageBox.Show(owner, "Statistics backend is not configured yet (Telemetry.SupabaseUrl / SupabaseKey).", Brand.Name);
-                return;
-            }
-            if (string.IsNullOrEmpty(Telemetry.DevKey))
-            {
-                var v = InputDialog.Show(owner, "Developer key", new[] { "Supabase secret key (stays only on this PC, in dev.key)" }, new[] { "" });
-                if (v == null || v[0] == "") return;
-                Telemetry.DevKey = v[0];
-            }
-            new DevDashboard().Show(owner);
-        }
-
-        DevDashboard()
-        {
-            Text = Brand.Caption + " - Developer";
-            ClientSize = new Size(1180, 720);
-            StartPosition = FormStartPosition.CenterScreen;
             BackColor = MainForm.Bg;
             ForeColor = MainForm.TextC;
             Font = Fonts.Ui(9.5f);
+            RightToLeft = RightToLeft.No; // developer tools stay in English, left to right
 
             var top = new Panel { Dock = DockStyle.Top, Height = 46, Padding = new Padding(10, 8, 10, 8) };
             summary = new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Font = Fonts.Semi(11f), ForeColor = MainForm.Accent };
-            var btn = new Button { Text = "Refresh", Dock = DockStyle.Right, Width = 100, FlatStyle = FlatStyle.Flat, BackColor = MainForm.Panel2 };
+            var btn = new RoundButton { Text = "Refresh", Dock = DockStyle.Right, Width = 100, FlatStyle = FlatStyle.Flat, BackColor = MainForm.Panel2 };
             btn.FlatAppearance.BorderSize = 0;
             btn.Click += delegate { Reload(); };
-            var forget = new Button { Text = "Forget key", Dock = DockStyle.Right, Width = 100, FlatStyle = FlatStyle.Flat, BackColor = MainForm.Panel2 };
+            var forget = new RoundButton { Text = "Forget key", Dock = DockStyle.Right, Width = 100, FlatStyle = FlatStyle.Flat, BackColor = MainForm.Panel2 };
             forget.FlatAppearance.BorderSize = 0;
-            forget.Click += delegate { Telemetry.DevKey = null; Close(); };
+            forget.Click += delegate { Telemetry.DevKey = null; var h = ForgetKey; if (h != null) h(); };
             top.Controls.Add(summary);
             top.Controls.Add(forget);
             top.Controls.Add(new Panel { Dock = DockStyle.Right, Width = 8 });
@@ -344,11 +337,13 @@ namespace PingBoost
             devices = List("Name", 120, "Windows", 200, "CPU", 220, "GPU", 200, "RAM", 55, "Screen", 110, "Net", 80, "ISP", 150,
                            "Games installed", 300, "Last seen", 110);
             log = List("Time", 120, "Name", 110, "Kind", 70, "Game", 110, "Server", 150, "Ping", 50, "Detail", 300, "Data", 400);
+            issues = List("Problem", 300, "Code", 150, "Times", 60, "Players", 65, "Versions", 140, "Last seen", 110, "Latest example", 520);
             errorsOnly = new CheckBox { Text = "Errors only", Dock = DockStyle.Top, Height = 28, ForeColor = MainForm.TextC };
             errorsOnly.CheckedChanged += delegate { FillLog(); };
             var logPage = new TabPage("Log") { BackColor = MainForm.Bg };
             logPage.Controls.Add(log);
             logPage.Controls.Add(errorsOnly);
+            tabs.TabPages.Add(Page("Problems", issues));
             tabs.TabPages.Add(Page("Online now", online));
             tabs.TabPages.Add(Page("Statistics", stats));
             tabs.TabPages.Add(Page("Versions", versions));
@@ -358,11 +353,12 @@ namespace PingBoost
             Controls.Add(tabs);
             Controls.Add(top);
 
+            // refreshes every 30 s while the page is on screen
             refresh = new System.Windows.Forms.Timer { Interval = 30000 };
-            refresh.Tick += delegate { Reload(); };
+            refresh.Tick += delegate { if (Visible) Reload(); };
             refresh.Start();
-            FormClosed += delegate { refresh.Stop(); };
-            Shown += delegate { Reload(); };
+            VisibleChanged += delegate { if (Visible && !loadedOnce) { loadedOnce = true; Reload(); } };
+            Disposed += delegate { refresh.Dispose(); };
         }
 
         static TabPage Page(string title, Control c)
@@ -434,7 +430,8 @@ namespace PingBoost
                 {
                     var i = Telemetry.Query("installs?select=*&order=last_seen.desc&limit=5000");
                     var e = Telemetry.Query("events?select=*&order=at.desc&limit=500");
-                    BeginInvoke((Action)(() => { installs = i; events = e; Fill(); }));
+                    var p = Telemetry.Query("events?select=*&kind=eq.issue&order=at.desc&limit=3000");
+                    BeginInvoke((Action)(() => { installs = i; events = e; issueEvents = p; Fill(); }));
                 }
                 catch (Exception ex)
                 {
@@ -517,6 +514,35 @@ namespace PingBoost
             stats.EndUpdate();
 
             FillLog();
+            FillIssues();
+        }
+
+        // Problems the apps found by themselves (Issues), grouped by kind: how often, how many players, latest example.
+        void FillIssues()
+        {
+            issues.BeginUpdate();
+            issues.Items.Clear();
+            Func<object, string> code = r =>
+            {
+                string c = Field(r, "data", "code");
+                if (c != "") return c;
+                string d = S(r, "detail");
+                int i = d.IndexOf(':');
+                return i > 0 ? d.Substring(0, i) : d;
+            };
+            foreach (var grp in issueEvents.GroupBy(code).OrderByDescending(g => g.Count()))
+            {
+                var latest = grp.OrderByDescending(r => T(r, "at")).First();
+                string what;
+                if (!Issues.Codes.TryGetValue(grp.Key, out what)) what = grp.Key;
+                var item = new ListViewItem(new[] { what, grp.Key, grp.Count().ToString(),
+                    grp.Select(r => S(r, "install_id")).Distinct().Count().ToString(),
+                    string.Join(", ", grp.Select(r => S(r, "app_version")).Distinct().Take(3)),
+                    T(latest, "at").ToString("MM-dd HH:mm"), S(latest, "detail").Replace("\r", " ").Replace("\n", " ") });
+                item.ForeColor = grp.Key == "crash" || grp.Key == "lock_outside" || grp.Key == "lock_rules_missing" ? MainForm.Bad : MainForm.Warn;
+                issues.Items.Add(item);
+            }
+            issues.EndUpdate();
         }
 
         void FillLog()
@@ -524,7 +550,7 @@ namespace PingBoost
             var names = installs.ToDictionary(r => S(r, "install_id"), r => S(r, "nickname"));
             log.BeginUpdate();
             log.Items.Clear();
-            foreach (var r in events.Where(r => !errorsOnly.Checked || S(r, "kind") == "error"))
+            foreach (var r in events.Where(r => !errorsOnly.Checked || S(r, "kind") == "error" || S(r, "kind") == "issue"))
             {
                 string n;
                 names.TryGetValue(S(r, "install_id"), out n);

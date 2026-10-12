@@ -26,7 +26,7 @@ namespace PingBoost
 
     static class SettingsDialog
     {
-        // Returns true when the language or the layout changed, so the main window must be rebuilt.
+        // Returns true when the language, the layout or the games changed, so the main window must be rebuilt.
         public static bool Show(IWin32Window owner, out bool resetAsked)
         {
             resetAsked = false;
@@ -42,152 +42,115 @@ namespace PingBoost
                 f.BackColor = MainForm.Bg;
                 f.ForeColor = MainForm.TextC;
                 f.Font = Fonts.Ui(10f);
-                // RTL text, no mirrored layout: every control spans the full width
                 f.RightToLeft = Lang.Ar ? RightToLeft.Yes : RightToLeft.No;
 
-                // two columns: settings on the reading side, games + actions on the other
-                const int W = 400;
-                int colA = Lang.Ar ? 440 : 20, colB = Lang.Ar ? 20 : 440;
-                int x = colA, y = 14;
-                Func<string, Label> heading = text =>
+                // two columns of cards: settings on the reading side, games and more on the other
+                const int W = 400, M = 18, Gap = 12;
+                int colA = Lang.Ar ? M + W + M : M, colB = Lang.Ar ? M : M + W + M;
+
+                // a card with its title; content starts at y = 46 inside it
+                Func<int, int, int, string, Card> section = (cx, cy, h, title) =>
                 {
-                    var l = new Label
+                    var c = new Card { Bounds = new Rectangle(cx, cy, W, h), Fill = MainForm.Panel1, Radius = 14 };
+                    c.Controls.Add(new Label
                     {
-                        Text = text, Font = Fonts.Semi(10.5f), ForeColor = MainForm.Accent,
-                        Bounds = new Rectangle(x, y, W, 26)
-                    };
-                    f.Controls.Add(l);
-                    y += 30;
-                    return l;
-                };
-                Func<string, string, bool, RadioButton> radio = (text, sub, on) =>
-                {
-                    var r = new RadioButton { Text = text, Checked = on, Bounds = new Rectangle(x, y, W, 26), ForeColor = MainForm.TextC };
-                    f.Controls.Add(r);
-                    y += 26;
-                    if (sub != null)
-                    {
-                        f.Controls.Add(new Label
-                        {
-                            Text = sub, ForeColor = MainForm.Dim, Font = Fonts.Ui(8.5f),
-                            Bounds = new Rectangle(x, y, W, 20)
-                        });
-                        y += 24;
-                    }
-                    return r;
-                };
-                Func<string, bool, CheckBox> check = (text, on) =>
-                {
-                    var c = new CheckBox { Text = text, Checked = on, Bounds = new Rectangle(x, y, W, 26), ForeColor = MainForm.TextC };
+                        Text = title, Font = Fonts.Semi(10.5f), ForeColor = MainForm.Accent, Bounds = new Rectangle(16, 12, W - 32, 26)
+                    });
                     f.Controls.Add(c);
-                    y += 30;
                     return c;
                 };
 
-                heading(Lang.T("Your name", "اسمك"));
-                var nick = new TextBox
-                {
-                    Text = Telemetry.Nickname, Bounds = new Rectangle(x, y, W, 28), MaxLength = 30,
-                    BackColor = MainForm.Panel2, ForeColor = MainForm.TextC, BorderStyle = BorderStyle.FixedSingle
-                };
-                f.Controls.Add(nick);
-                y += 40;
+                // ---- your name
+                int y = M;
+                var nameCard = section(colA, y, 104, Lang.T("Your name", "اسمك"));
+                var nick = new InputBox { Bounds = new Rectangle(16, 46, W - 32, 42) };
+                nick.Text = Telemetry.Nickname;
+                nick.Box.MaxLength = 30;
+                nameCard.Controls.Add(nick);
+                y += 104 + Gap;
 
-                heading(Lang.T("Language", "اللغة"));
-                var ar = radio("العربية", null, Lang.Ar);
-                var en = radio("English", null, !Lang.Ar);
-                y += 8;
+                // ---- language
+                var langCard = section(colA, y, 104, Lang.T("Language", "اللغة"));
+                var lang = new Segmented { Bounds = new Rectangle(16, 46, W - 32, 42), Items = new[] { "العربية", "English" }, Font = Fonts.Ui(10f) };
+                lang.SelectedIndex = Lang.Ar ? 0 : 1;
+                langCard.Controls.Add(lang);
+                y += 104 + Gap;
 
-                heading(Lang.T("Layout", "شكل البرنامج"));
-                var simple = radio(Lang.T("Simple", "بسيط"),
-                    Lang.T("Just what you need: pick a server, see your ping, play.",
-                           "الأشياء المهمة بس: اختار سيرفرك، شوف البنق، والعب."), Prefs.Simple);
-                var adv = radio(Lang.T("Advanced", "متقدم"),
-                    Lang.T("Everything: relays, jitter, packet loss, tools and the log.",
-                           "كل شي: سيرفرات الوسيط، التذبذب، الفقد، الأدوات والسجل."), !Prefs.Simple);
-                simple.CheckedChanged += delegate { if (simple.Checked) adv.Checked = false; };
-                adv.CheckedChanged += delegate { if (adv.Checked) simple.Checked = false; };
-                ar.CheckedChanged += delegate { if (ar.Checked) en.Checked = false; };
-                en.CheckedChanged += delegate { if (en.Checked) ar.Checked = false; };
-                // WinForms groups every radio on a form together; keep the two pairs independent
-                ar.AutoCheck = en.AutoCheck = simple.AutoCheck = adv.AutoCheck = false;
-                ar.Click += delegate { ar.Checked = true; };
-                en.Click += delegate { en.Checked = true; };
-                simple.Click += delegate { simple.Checked = true; };
-                adv.Click += delegate { adv.Checked = true; };
-                y += 8;
+                // ---- layout, with a line that says what the chosen one shows
+                var layoutCard = section(colA, y, 132, Lang.T("Layout", "شكل البرنامج"));
+                var layout = new Segmented { Bounds = new Rectangle(16, 46, W - 32, 42), Items = new[] { Lang.T("Simple", "بسيط"), Lang.T("Advanced", "متقدم") }, Font = Fonts.Ui(10f) };
+                layout.SelectedIndex = Prefs.Simple ? 0 : 1;
+                var layoutHint = new Label { Bounds = new Rectangle(16, 94, W - 32, 26), ForeColor = MainForm.Dim, Font = Fonts.Ui(9f) };
+                Action hint = () => layoutHint.Text = layout.SelectedIndex == 0
+                    ? Lang.T("Just what you need: pick a server, see your ping, play.", "الأشياء المهمة بس: اختار سيرفرك، شوف البنق، والعب.")
+                    : Lang.T("Everything: relays, jitter, packet loss, tools and the log.", "كل شي: سيرفرات الوسيط، التذبذب، الفقد، الأدوات والسجل.");
+                hint();
+                layout.SelectedIndexChanged += delegate { hint(); };
+                layoutCard.Controls.Add(layout);
+                layoutCard.Controls.Add(layoutHint);
+                y += 132 + Gap;
 
-                heading(Lang.T("Options", "خيارات"));
-                var auto = check(Lang.T("Test the ping when I pick a game", "افحص البنق لما أختار لعبة"), Prefs.AutoTest);
-                int bottomA = y;
+                // ---- options
+                var optCard = section(colA, y, 92, Lang.T("Options", "خيارات"));
+                var auto = new Toggle { Bounds = new Rectangle(16, 46, W - 32, 32), Text = Lang.T("Test the ping when I pick a game", "افحص البنق لما أختار لعبة") };
+                auto.SetInstant(Prefs.AutoTest);
+                optCard.Controls.Add(auto);
+                int bottomA = y + 92;
 
-                // ---- second column
-                x = colB;
-                y = 14;
-                heading(Lang.T("Games in your list", "الألعاب اللي تظهر لك"));
+                // ---- games: tiles, two per row, the first on the reading side
+                var list = GameDb.Available(GameDb.All());
                 var hiddenBefore = Prefs.HiddenGames;
-                var gameChecks = new List<KeyValuePair<string, CheckBox>>();
-                foreach (var g in GameDb.All())
+                int rows = (list.Count + 1) / 2;
+                int gamesH = 46 + rows * 54 + 8;
+                y = M;
+                var gamesCard = section(colB, y, gamesH, Lang.T("Games in your list", "الألعاب اللي تظهر لك"));
+                var tiles = new List<GameTile>();
+                const int tw = (W - 32 - 10) / 2;
+                for (int i = 0; i < list.Count; i++)
                 {
-                    var cb = new CheckBox
+                    bool first = i % 2 == 0;
+                    var t = new GameTile
                     {
-                        Text = "  " + g.Name, Checked = !hiddenBefore.Contains(g.Icon), ForeColor = MainForm.TextC,
-                        Bounds = new Rectangle(x, y, W, 28),
-                        TextImageRelation = TextImageRelation.ImageBeforeText, ImageAlign = ContentAlignment.MiddleLeft
+                        Text = list[i].Name, Icon = Brand.GameIcon(list[i].Icon), Tag = list[i].Icon,
+                        Bounds = new Rectangle(first ^ Lang.Ar ? 16 : 16 + tw + 10, 46 + i / 2 * 54, tw, 46)
                     };
-                    var ic = Brand.GameIcon(g.Icon);
-                    if (ic != null) cb.Image = new Bitmap(ic, 20, 20);
-                    f.Controls.Add(cb);
-                    gameChecks.Add(new KeyValuePair<string, CheckBox>(g.Icon, cb));
-                    y += 28;
+                    t.Checked = !hiddenBefore.Contains(list[i].Icon);
+                    gamesCard.Controls.Add(t);
+                    tiles.Add(t);
                 }
-                y += 12;
+                y += gamesH + Gap;
 
-                heading(Lang.T("More", "أكثر"));
-                // two calm buttons side by side, the first on the reading side
-                Func<string, int, Action, Button> small = (text, i, act) =>
-                {
-                    const int bw = (W - 8) / 2;
-                    int bx = (i == 0) ^ Lang.Ar ? x : x + bw + 8;
-                    var b = new Button
-                    {
-                        Text = text, Bounds = new Rectangle(bx, y, bw, 36), FlatStyle = FlatStyle.Flat,
-                        BackColor = MainForm.Panel2, ForeColor = MainForm.TextC, Cursor = Cursors.Hand
-                    };
-                    b.FlatAppearance.BorderSize = 0;
-                    b.Click += delegate { act(); };
-                    f.Controls.Add(b);
-                    return b;
-                };
-                small(Lang.T("About 2X Ping", "عن البرنامج"), 0, () => AboutDialog.Show(f));
-                small(Lang.T("Back to normal", "رجّع كل شي طبيعي"), 1,
-                    () => { wantReset = true; f.DialogResult = DialogResult.Cancel; f.Close(); });
-                y += 42;
-                f.Controls.Add(new Label
+                // ---- more
+                var moreCard = section(colB, y, 144, Lang.T("More", "أكثر"));
+                const int bw = (W - 32 - 10) / 2;
+                var about = new RoundButton { Text = Lang.T("About 2X Ping", "عن البرنامج"), BackColor = MainForm.Panel2, ForeColor = MainForm.TextC,
+                                              Bounds = new Rectangle(Lang.Ar ? 16 + bw + 10 : 16, 46, bw, 38) };
+                var reset = new RoundButton { Text = Lang.T("Back to normal", "رجّع كل شي طبيعي"), BackColor = MainForm.Panel2, ForeColor = MainForm.TextC,
+                                              Bounds = new Rectangle(Lang.Ar ? 16 : 16 + bw + 10, 46, bw, 38) };
+                about.Click += delegate { AboutDialog.Show(f); };
+                reset.Click += delegate { wantReset = true; f.DialogResult = DialogResult.Cancel; f.Close(); };
+                moreCard.Controls.Add(about);
+                moreCard.Controls.Add(reset);
+                moreCard.Controls.Add(new Label
                 {
                     Text = Lang.T("\"Back to normal\" unlocks your servers. Closing the app does it too.",
                                   "«رجّع كل شي طبيعي» يفك تثبيت السيرفرات، ونفس الشي يصير لما تقفل البرنامج."),
-                    ForeColor = MainForm.Dim, Font = Fonts.Ui(8.5f), Bounds = new Rectangle(x, y, W, 20)
+                    ForeColor = MainForm.Dim, Font = Fonts.Ui(8.5f), Bounds = new Rectangle(16, 94, W - 32, 40)
                 });
-                y = Math.Max(y + 36, bottomA + 20);
+                int bottomB = y + 144;
 
-                var save = new Button
-                {
-                    Text = Lang.T("Save", "حفظ"), DialogResult = DialogResult.OK, Bounds = new Rectangle(Lang.Ar ? 730 : 610, y, 110, 36),
-                    FlatStyle = FlatStyle.Flat, BackColor = MainForm.Accent, ForeColor = Color.Black,
-                    Font = Fonts.Semi(10f)
-                };
-                var cancel = new Button
-                {
-                    Text = Lang.T("Cancel", "إلغاء"), DialogResult = DialogResult.Cancel, Bounds = new Rectangle(Lang.Ar ? 610 : 730, y, 110, 36),
-                    FlatStyle = FlatStyle.Flat, BackColor = MainForm.Panel2, ForeColor = MainForm.TextC
-                };
-                save.FlatAppearance.BorderSize = cancel.FlatAppearance.BorderSize = 0;
+                // ---- save / cancel, on the reading side's far end
+                y = Math.Max(bottomA, bottomB) + 16;
+                int right = M + W + M + W;
+                var save = new RoundButton { Text = Lang.T("Save", "حفظ"), DialogResult = DialogResult.OK, BackColor = MainForm.Accent, ForeColor = Color.Black,
+                                             Font = Fonts.Semi(10f), Bounds = new Rectangle(Lang.Ar ? M : right - 120, y, 120, 40) };
+                var cancel = new RoundButton { Text = Lang.T("Cancel", "إلغاء"), DialogResult = DialogResult.Cancel, BackColor = MainForm.Panel2, ForeColor = MainForm.TextC,
+                                               Bounds = new Rectangle(Lang.Ar ? M + 130 : right - 250, y, 120, 40) };
                 f.Controls.Add(save);
                 f.Controls.Add(cancel);
                 f.AcceptButton = save;
                 f.CancelButton = cancel;
-                f.ClientSize = new Size(2 * W + 60, y + 52);
+                f.ClientSize = new Size(right + M, y + 40 + M);
 
                 if (f.ShowDialog(owner) != DialogResult.OK)
                 {
@@ -196,14 +159,17 @@ namespace PingBoost
                 }
 
                 if (nick.Text.Trim().Length >= 2) Telemetry.Nickname = nick.Text;
-                Storage.SaveArabic(ar.Checked);
-                Storage.SetSetting("mode", simple.Checked ? "simple" : "advanced");
+                bool ar = lang.SelectedIndex == 0;
+                Storage.SaveArabic(ar);
+                Storage.SetSetting("mode", layout.SelectedIndex == 0 ? "simple" : "advanced");
                 Storage.SetSetting("autotest", auto.Checked ? "1" : "0");
-                Lang.Ar = ar.Checked;
+                Lang.Ar = ar;
 
-                // nothing ticked = show every game, so the list is never empty
-                var hiddenNow = new HashSet<string>(gameChecks.Where(gc => !gc.Value.Checked).Select(gc => gc.Key));
-                if (hiddenNow.Count == gameChecks.Count) hiddenNow.Clear();
+                // nothing ticked = show every game, so the list is never empty (games hidden in the public
+                // version stay as they were)
+                var hiddenNow = new HashSet<string>(hiddenBefore.Where(k => !tiles.Any(t => (string)t.Tag == k)));
+                foreach (var t in tiles) if (!t.Checked) hiddenNow.Add((string)t.Tag);
+                if (tiles.All(t => !t.Checked)) foreach (var t in tiles) hiddenNow.Remove((string)t.Tag);
                 Prefs.HiddenGames = hiddenNow;
                 bool gamesChanged = !hiddenNow.SetEquals(hiddenBefore);
 

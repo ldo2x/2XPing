@@ -16,8 +16,10 @@ namespace PingBoost
         public const int Http = -1;
         public string Host;
         public int Port; // 0 = ICMP ping, Http (-1) = Host is a URL timed with a request, otherwise TCP connect time
+        public bool Udp; // UDP echo (e.g. Amazon GameLift ping beacons on port 7770): time until the reply comes back
 
         public Endpoint(string host, int port) { Host = host; Port = port; }
+        public Endpoint(string host, int port, bool udp) { Host = host; Port = port; Udp = udp; }
 
         public static Endpoint Parse(string s)
         {
@@ -85,6 +87,24 @@ namespace PingBoost
             if (ep.Port == Endpoint.Http) return HttpOnce(ep.Host, timeout);
             IPAddress ip = TryResolve(ep.Host);
             if (ip == null) return -1;
+
+            if (ep.Udp)
+            {
+                using (var u = new UdpClient(AddressFamily.InterNetwork))
+                {
+                    try
+                    {
+                        u.Client.ReceiveTimeout = timeout;
+                        var msg = new byte[] { (byte)'p', (byte)'i', (byte)'n', (byte)'g' };
+                        var sw = Stopwatch.StartNew();
+                        u.Send(msg, msg.Length, new IPEndPoint(ip, ep.Port));
+                        var from = new IPEndPoint(IPAddress.Any, 0);
+                        u.Receive(ref from);
+                        return Math.Max(sw.Elapsed.TotalMilliseconds, 1);
+                    }
+                    catch { return -1; }
+                }
+            }
 
             if (ep.Port == 0)
             {

@@ -221,12 +221,12 @@ namespace PingBoost
                 var status = new Label { ForeColor = MainForm.Dim, TextAlign = ContentAlignment.MiddleCenter, Bounds = new Rectangle(20, 198, W, 24), Font = Fonts.Ui(9f) };
                 f.Controls.Add(status);
 
-                var go = new Button
+                var go = new RoundButton
                 {
                     Text = Lang.T("Update now", "حدّث دحين"), Bounds = new Rectangle(Lang.Ar ? 240 : 20, 232, 220, 40),
                     FlatStyle = FlatStyle.Flat, BackColor = MainForm.Accent, ForeColor = Color.Black, Font = Fonts.Semi(10.5f), Cursor = Cursors.Hand
                 };
-                var later = new Button
+                var later = new RoundButton
                 {
                     Text = forced ? Lang.T("Close the app", "اقفل البرنامج") : Lang.T("Later", "بعدين"),
                     DialogResult = DialogResult.Cancel, Bounds = new Rectangle(Lang.Ar ? 20 : 240, 232, 200, 40),
@@ -258,6 +258,7 @@ namespace PingBoost
                             err = Updater.Install(r, p => f.BeginInvoke((Action)(() => { bar.Value = p; })));
                         }
                         catch (Exception ex) { err = ex.Message; }
+                        if (err != null) Issues.Report("update_failed", Brand.Version + " -> " + r.Ver.ToString(3) + ": " + err);
                         Telemetry.Send("update", null, -1, Brand.Version + " -> " + r.Ver.ToString(3) + (err == null ? " ok" : " failed: " + err),
                             new Dictionary<string, object> { { "from", Brand.Version }, { "to", r.Ver.ToString(3) }, { "ok", err == null },
                                                               { "seconds", Math.Round(sw.Elapsed.TotalSeconds, 1) }, { "forced", forced } });

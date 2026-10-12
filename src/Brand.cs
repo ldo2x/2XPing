@@ -11,9 +11,9 @@ using System.Windows.Forms;
 [assembly: AssemblyCopyright("Copyright © 2026 lDo2x. MIT License.")]
 [assembly: AssemblyTrademark("2X Ping by lDo2x")]
 // Release version: change it here (and tag the GitHub release v<version>-beta).
-[assembly: AssemblyVersion("0.10.0.0")]
-[assembly: AssemblyFileVersion("0.10.0.0")]
-[assembly: AssemblyInformationalVersion("0.10.0-beta")]
+[assembly: AssemblyVersion("0.11.0.0")]
+[assembly: AssemblyFileVersion("0.11.0.0")]
+[assembly: AssemblyInformationalVersion("0.11.0-beta")]
 
 namespace PingBoost
 {
@@ -161,7 +161,7 @@ namespace PingBoost
                 link(Lang.T("Report a problem", "بلّغ عن مشكلة"), Brand.IssuesUrl, Lang.Ar ? 30 : 220);
                 y += 30;
 
-                var ok = new Button
+                var ok = new RoundButton
                 {
                     Text = Lang.T("OK", "تمام"), DialogResult = DialogResult.OK, Bounds = new Rectangle(170, y + 8, 100, 34),
                     FlatStyle = FlatStyle.Flat, BackColor = MainForm.Accent, ForeColor = Color.Black
@@ -204,7 +204,7 @@ namespace PingBoost
 
                 Action<string, string, Action<Button>> row = (title, sub, act) =>
                 {
-                    var b = new Button
+                    var b = new RoundButton
                     {
                         Text = title, Bounds = new Rectangle(16, y, 448, 40), FlatStyle = FlatStyle.Flat,
                         BackColor = MainForm.Panel2, ForeColor = MainForm.TextC, Cursor = Cursors.Hand,
@@ -257,7 +257,7 @@ namespace PingBoost
                         copied(b, Lang.T("Copied ✓  paste it into your report", "نسخته ✓  الصقه في البلاغ"));
                     });
 
-                var ok = new Button
+                var ok = new RoundButton
                 {
                     Text = Lang.T("Close", "تمام"), DialogResult = DialogResult.OK, Bounds = new Rectangle(184, y + 4, 112, 34),
                     FlatStyle = FlatStyle.Flat, BackColor = MainForm.Accent, ForeColor = Color.Black
@@ -289,27 +289,24 @@ namespace PingBoost
         public static void Install()
         {
             Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
-            Application.ThreadException += (s, e) => Report(e.Exception);
-            AppDomain.CurrentDomain.UnhandledException += (s, e) => Report(e.ExceptionObject as Exception);
+            Application.ThreadException += (s, e) => Report(e.Exception, false);
+            AppDomain.CurrentDomain.UnhandledException += (s, e) => Report(e.ExceptionObject as Exception, e.IsTerminating);
         }
 
-        static void Report(Exception ex)
+        // Errors are reported to us by themselves (no popup asking the player to do it): saved in crash.log and sent
+        // as an issue. When the app is about to die, the report is sent right away instead of in the background.
+        static void Report(Exception ex, bool dying)
         {
-            Telemetry.Send("error", null, -1, "crash: " + ex);
-            string path = System.IO.Path.Combine(Storage.Dir, "crash.log");
             try
             {
-                System.IO.File.AppendAllText(path, "==== " + DateTime.Now.ToString("u") + "  " + Brand.Name + " " + Brand.DisplayVersion +
-                    "  " + Environment.OSVersion + Environment.NewLine + ex + Environment.NewLine);
+                System.IO.File.AppendAllText(System.IO.Path.Combine(Storage.Dir, "crash.log"), "==== " + DateTime.Now.ToString("u") + "  " +
+                    Brand.Name + " " + Brand.DisplayVersion + "  " + Environment.OSVersion + Environment.NewLine + ex + Environment.NewLine);
             }
             catch { }
-            var answer = MessageBox.Show(Lang.T(
-                    "Something went wrong:\n" + (ex != null ? ex.Message : "") + "\n\nDetails were saved to:\n" + path +
-                    "\n\nOpen the issue page to report it?",
-                    "صار خطأ ما توقعناه:\n" + (ex != null ? ex.Message : "") + "\n\nحفظت التفاصيل هنا:\n" + path +
-                    "\n\nتبغى تفتح صفحة البلاغات وترسله لنا؟"),
-                Brand.Caption, MessageBoxButtons.YesNo, MessageBoxIcon.Error);
-            if (answer == DialogResult.Yes) Brand.Open(Brand.IssuesUrl);
+            string detail = ex != null ? ex.GetType().Name + ": " + ex.Message : "unknown";
+            var data = new System.Collections.Generic.Dictionary<string, object> { { "stack", ex != null ? ex.ToString() : null }, { "fatal", dying } };
+            if (dying) Telemetry.SendNow("issue", "crash: " + detail, data);
+            else Issues.Report("crash", detail, data, ex != null ? ex.GetType().Name + ex.Message : null);
         }
     }
 }

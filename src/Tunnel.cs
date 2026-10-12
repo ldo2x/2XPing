@@ -11,14 +11,20 @@ namespace PingBoost
     static class ServerLock
     {
         const string Rule = "2XPing-RegionLock";
+        // 1.2.3.0/24, 1.2.3.4 or 1.2.3.4-1.2.3.9
         static readonly System.Text.RegularExpressions.Regex Cidr =
-            new System.Text.RegularExpressions.Regex(@"^\d{1,3}(\.\d{1,3}){3}(/\d{1,2})?$");
+            new System.Text.RegularExpressions.Regex(@"^\d{1,3}(\.\d{1,3}){3}(/\d{1,2}|-\d{1,3}(\.\d{1,3}){3})?$");
 
-        public static int Apply(IEnumerable<string> cidrs)
+        // Blocks the given addresses. With a program, only that program's traffic is blocked (nothing else on the PC);
+        // with a protocol (e.g. UDP), only that kind of traffic.
+        public static int Apply(IEnumerable<string> cidrs, string program = null, string protocol = null, string remotePorts = null)
         {
             Remove();
             var list = new List<string>();
-            foreach (var c in cidrs) if (Cidr.IsMatch(c) && !list.Contains(c)) list.Add(c);
+            var seen = new HashSet<string>();
+            foreach (var c in cidrs) if (Cidr.IsMatch(c) && seen.Add(c)) list.Add(c);
+            string scope = (program != null ? " program=\"" + program + "\"" : "") + (protocol != null ? " protocol=" + protocol : "") +
+                           (remotePorts != null && protocol != null ? " remoteport=" + remotePorts : "");
             for (int i = 0; i < list.Count; i += 100)
             {
                 string ips = string.Join(",", list.GetRange(i, Math.Min(100, list.Count - i)));
@@ -26,7 +32,7 @@ namespace PingBoost
                 {
                     string output;
                     int code = Netsh("advfirewall firewall add rule name=\"" + Rule + "\" dir=" + dir +
-                                     " action=block enable=yes remoteip=" + ips, out output);
+                                     " action=block enable=yes" + scope + " remoteip=" + ips, out output);
                     if (code != 0) { Remove(); throw new Exception("Windows Firewall: " + output); }
                 }
             }
@@ -38,6 +44,14 @@ namespace PingBoost
             string output;
             Netsh("advfirewall firewall delete rule name=\"" + Rule + "\"", out output);
             Netsh("advfirewall firewall delete rule name=\"PingBoost-RegionLock\"", out output); // pre-2X Ping name
+        }
+
+        // Is Windows Firewall on for the network in use? (When it's off, block rules do nothing.)
+        public static bool FirewallOn()
+        {
+            string output;
+            if (Netsh("advfirewall show currentprofile state", out output) != 0) return true; // can't tell: assume on
+            return !System.Text.RegularExpressions.Regex.IsMatch(output, @"State\s+OFF", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
         }
 
         // Any 2X Ping firewall rule still present?
