@@ -44,6 +44,15 @@ create index if not exists events_at_idx on public.events (at desc);
 create index if not exists events_install_idx on public.events (install_id);
 create index if not exists installs_last_seen_idx on public.installs (last_seen desc);
 
+-- 0.11: problems reported by the app by themselves (kind = 'issue', data->>'code' = the problem)
+-- the developer tab's Problems list reads the newest issues; this keeps it fast as the table grows
+create index if not exists events_kind_at_idx on public.events (kind, at desc);
+-- per-player flood guard (see checkin below)
+create index if not exists events_install_at_idx on public.events (install_id, at desc);
+-- the one-time setup check report (install id of zeros), if it is still there
+delete from public.events where install_id = '00000000-0000-0000-0000-000000000000';
+delete from public.installs where install_id = '00000000-0000-0000-0000-000000000000';
+
 -- No direct access for the public key: tables are locked, only the function below can write.
 alter table public.installs enable row level security;
 alter table public.events enable row level security;
@@ -62,7 +71,7 @@ declare
   k    text  := coalesce(left(p->>'kind', 20), 'heartbeat');
   -- size caps, so a broken client can't fill the database
   inf  jsonb := case when pg_column_size(p->'info') < 8000 then p->'info' end;
-  dat  jsonb := case when pg_column_size(p->'data') < 16000 then p->'data' end;
+  dat  jsonb := case when pg_column_size(p->'data') < 32000 then p->'data' end;
 begin
   insert into installs (install_id, nickname, device_name, app_version, os, lang, mode, country, city, isp, asn, info,
                         current_game, current_server, current_ping, last_seen)
@@ -87,7 +96,8 @@ begin
     current_ping   = excluded.current_ping,
     last_seen      = now();
 
-  if k <> 'heartbeat' then
+  -- a broken client stuck in a loop can't flood the table: at most 60 events a minute per install
+  if k <> 'heartbeat' and (select count(*) from events where install_id = iid and at > now() - interval '1 minute') < 60 then
     insert into events (install_id, kind, game, server, ping, detail, app_version, data, session)
     values (iid, k, left(p->>'game', 60), left(p->>'server', 80), nullif(p->>'ping', '')::int,
             left(p->>'detail', 4000), left(p->>'app_version', 20), dat, left(p->>'session', 20));
