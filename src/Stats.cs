@@ -221,7 +221,7 @@ namespace PingBoost
             return ports;
         }
 
-        static bool IsPublic(string ip)
+        public static bool IsPublic(string ip)
         {
             var b = ip.Split('.').Select(int.Parse).ToArray();
             if (b[0] == 10 || b[0] == 127 || b[0] == 0 || b[0] >= 224) return false;
@@ -316,7 +316,7 @@ namespace PingBoost
             try { Run("pktmon", "stop"); Run("pktmon", "filter remove"); } catch { }
         }
 
-        static string Run(string exe, string args)
+        public static string Run(string exe, string args)
         {
             var psi = new ProcessStartInfo(exe, args)
             {

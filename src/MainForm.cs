@@ -71,6 +71,7 @@ namespace PingBoost
         volatile bool tunnelActive;
         int monitorGen;
         string lockSummary; // null = no region lock
+        LockTest.LockInfo lockInfo; // how the current lock was applied (developer lock test)
         Dictionary<string, int> activity; // Deadlock matches/hour per matchmaking region
 
         Game CurrentGame { get { return gameList.SelectedItem as Game; } }
@@ -1722,6 +1723,7 @@ namespace PingBoost
         {
             var g = CurrentGame;
             if (g == null || busy) return;
+            if (lockTesting) { Msg(T("A lock test is recording, wait for it to finish.", "اختبار التثبيت يسجّل، استنى لين يخلص."), ToastKind.Warn); return; }
             if (autoDetecting)
             {
                 Msg(T("Checking your server right now, the answer shows on the button in a few seconds.",
@@ -1932,7 +1934,7 @@ namespace PingBoost
         {
             var g = CurrentGame;
             CheckLockRules();
-            if (g == null || busy || autoDetecting || !appActive || g.Processes.Length == 0) return;
+            if (g == null || busy || autoDetecting || lockTesting || !appActive || g.Processes.Length == 0) return;
             if (DateTime.Now - lastAutoDetect < TimeSpan.FromSeconds(Verifying ? 30 : 90)) return;
             autoDetecting = true;
             lastAutoDetect = DateTime.Now;
@@ -2102,7 +2104,9 @@ namespace PingBoost
             // other games: only the game's own UDP (its match traffic) is blocked, so login, voice chat and the
             // rest of the PC are untouched; the exe must be known for that
             string exe = null;
-            if (g.LockSpace != null)
+            // developer experiment: block like owMENA (every protocol, both directions, the whole PC, all ports)
+            bool full = g.LockSpace != null && FullBlock;
+            if (g.LockSpace != null && !full)
             {
                 exe = SystemInfo.FindExe(g);
                 if (exe == null)
@@ -2124,17 +2128,26 @@ namespace PingBoost
                 try
                 {
                     List<string> block;
+                    var allow = IpLists.Resolve(g.LockAllow ?? new string[0]);
                     if (g.LockSpace != null)
                         // everything the game's servers can live on, except the picked datacenters (new servers included)
-                        block = IpLists.Subtract(IpLists.Resolve(g.LockSpace),
-                            picked.SelectMany(r => r.Cidrs).Concat(IpLists.Resolve(g.LockAllow ?? new string[0])));
+                        block = IpLists.Subtract(IpLists.Resolve(g.LockSpace), picked.SelectMany(r => r.Cidrs).Concat(allow));
                     else
                     {
                         var keep = new HashSet<string>(picked.SelectMany(r => r.Cidrs));
                         // relay-only datacenters stay open: the game enters Valve's network through them
                         block = g.Regions.Where(r => !r.Picked && !r.Detected && g.Hosts(r)).SelectMany(r => r.Cidrs).Where(c => !keep.Contains(c)).ToList();
                     }
-                    int n = ServerLock.Apply(block, exe, exe != null ? "UDP" : null, g.LockPorts);
+                    var info = new LockTest.LockInfo
+                    {
+                        Active = true, Picked = picked.Select(r => r.Id).ToList(), Block = block,
+                        Allow = allow,
+                        Mode = full ? "full" : g.LockSpace != null ? "game-udp" : "valve-all",
+                        Program = full ? null : exe, Protocol = full || exe == null ? null : "UDP",
+                    };
+                    info.Ports = info.Protocol != null ? g.LockPorts : null;
+                    int n = full ? ServerLock.Apply(block) : ServerLock.Apply(block, exe, exe != null ? "UDP" : null, g.LockPorts);
+                    info.Scope = LockScope(info, n);
                     bool firewallOn = ServerLock.FirewallOn();
                     if (!firewallOn) Issues.Report("firewall_off", "while locking " + g.Name);
                     Ui(() =>
@@ -2143,9 +2156,11 @@ namespace PingBoost
                         lockSummary = names;
                         lockGame = g;
                         lockNames = cardNames;
+                        lockInfo = info;
                         LockChanged(g);
                         Telemetry.Server = string.Join(", ", picked.Select(r => r.NameEn));
-                        Telemetry.Send("lock", Telemetry.Server, -1, n + " ranges blocked");
+                        Telemetry.Send("lock", Telemetry.Server, -1, n + " ranges blocked, mode " + info.Mode);
+                        if (devMode) DevOut("lock mode " + info.Mode + ": " + info.Scope);
                         btnLock.Enabled = true;
                         UpdateLockBar();
                         FillServers(g);
@@ -2230,6 +2245,7 @@ namespace PingBoost
             lockSummary = null;
             lockGame = null;
             lockNames = null;
+            lockInfo = null;
             if (!boosting) StopMonitor();
             Telemetry.Server = null;
             Telemetry.Send("unlock", null, -1, null);
@@ -2257,6 +2273,7 @@ namespace PingBoost
             lockSummary = null;
             lockGame = null;
             lockNames = null;
+            lockInfo = null;
             ClearMatch();
             StopAll();
             foreach (var g in games) foreach (var r in g.Regions) { r.Picked = false; r.Here = false; }
@@ -2634,7 +2651,7 @@ namespace PingBoost
             dash.ForgetKey += () => SetDevMode(false);
 
             var tools = new Card { Dock = DockStyle.Right, Width = 340, Fill = Panel1, Padding = new Padding(12), RightToLeft = RightToLeft.No };
-            var flow = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 330, FlowDirection = FlowDirection.LeftToRight, RightToLeft = RightToLeft.No };
+            var flow = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 410, FlowDirection = FlowDirection.LeftToRight, RightToLeft = RightToLeft.No };
             Action<string, Action> add = (text, act) =>
             {
                 var b = MakeButton(text, Panel2);
@@ -2657,6 +2674,18 @@ namespace PingBoost
             add("Copy diagnostics", () => { Clipboard.SetText(ContactDialog.Diagnostics(logBox.Text)); DevOut("diagnostics copied"); });
             add("Reset first-run", DevResetFirstRun);
             add("Exit dev mode", () => SetDevMode(false));
+            // the two lock experiments take a whole row each
+            Func<string, Action, RoundButton> wide = (text, act) =>
+            {
+                var b = MakeButton(text, Panel2);
+                b.Size = new Size(308, 32);
+                b.Margin = new Padding(0, 0, 8, 8);
+                b.Click += delegate { try { act(); } catch (Exception ex) { DevOut("! " + ex.Message); } };
+                flow.Controls.Add(b);
+                return b;
+            };
+            devLockTestBtn = wide(LockTestIdleText, DevLockTest);
+            devFullBlockBtn = wide(FullBlockText, DevToggleFullBlock);
             devOut = new TextBox
             {
                 Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, BorderStyle = BorderStyle.None,
@@ -2672,6 +2701,90 @@ namespace PingBoost
             p.Controls.Add(tools);
             foreach (var r in Issues.Recent) DevOut(r.At.ToString("HH:mm:ss") + "  problem  " + r.Code + ": " + r.Detail);
             return p;
+        }
+
+        // ---- lock experiments (developer mode only)
+
+        bool lockTesting;
+        RoundButton devLockTestBtn, devFullBlockBtn;
+        const int LockTestSeconds = 60;
+
+        // «حجب كامل (تجربة)»: only while developer mode is on
+        bool FullBlock { get { return devMode && Storage.GetSetting("lock_full_block") == "1"; } }
+
+        string FullBlockText
+        {
+            get
+            {
+                bool on = Storage.GetSetting("lock_full_block") == "1";
+                return T("Full block (experiment): ", "حجب كامل (تجربة): ") + (on ? T("ON", "شغّال") : T("off", "طافي"));
+            }
+        }
+
+        string LockTestIdleText { get { return T("Record lock test (60 s)", "سجّل اختبار (60 ثانية)"); } }
+
+        static string LockScope(LockTest.LockInfo info, int n)
+        {
+            return (info.Protocol ?? "any protocol") + ", in+out, " +
+                   (info.Program != null ? "program " + info.Program : "whole PC (every program)") + ", " +
+                   (info.Ports != null ? "remote ports " + info.Ports : "all ports") + ", " + n + " ranges";
+        }
+
+        void DevToggleFullBlock()
+        {
+            bool on = Storage.GetSetting("lock_full_block") != "1";
+            Storage.SetSetting("lock_full_block", on ? "1" : "0");
+            if (devFullBlockBtn != null) devFullBlockBtn.Text = FullBlockText;
+            DevOut("full block (experiment) " + (on ? "ON: games with a lock space are blocked for every protocol, both directions, the whole PC, all ports"
+                                                    : "off: back to the game's own UDP only"));
+            if (lockSummary != null) DevOut("the current lock was applied as " + (lockInfo != null ? lockInfo.Mode : "?") + ": unlock and lock again to switch, then restart the game");
+        }
+
+        // «سجّل اختبار»: a minute of every packet while the player starts the game and queues.
+        void DevLockTest()
+        {
+            var g = CurrentGame;
+            if (g == null) return;
+            ShowPage(3);
+            if (lockTesting) { DevOut("lock test already recording"); return; }
+            if (busy || autoDetecting) { DevOut("another capture or test is running, try again in a few seconds"); return; }
+            lockTesting = true;
+            var info = lockInfo != null && lockGame == g ? lockInfo : new LockTest.LockInfo
+            {
+                Picked = g.Regions.Where(r => r.Picked).Select(r => r.Id).ToList(),
+                Mode = g.CanLock ? "none (not locked)" : "none (game can't be locked)",
+                Scope = "no lock rules", Allow = new List<string>(g.LockAllow ?? new string[0])
+            };
+            DevOut("---- lock test, " + g.Name + ", mode " + info.Mode + ": start the game now and queue (" + LockTestSeconds + " s)");
+            var at = DateTime.Now;
+            Task.Run(() =>
+            {
+                try
+                {
+                    var owners = new Dictionary<string, string>();
+                    var cap = LockTest.Record(LockTestSeconds, left => Ui(() =>
+                    {
+                        if (devLockTestBtn != null && !devLockTestBtn.IsDisposed)
+                            devLockTestBtn.Text = left > 0 ? T("Recording... ", "أسجّل... ") + left + T(" s", " ثانية") : T("Reading the capture...", "أقرأ التسجيل...");
+                    }), owners);
+                    var lines = LockTest.Classify(g, cap, info, owners);
+                    string text = LockTest.Report(g, cap, info, lines, LockTestSeconds, at);
+                    string path = Path.Combine(Storage.Dir, "locktest-" + at.ToString("yyyyMMdd-HHmmss") + ".txt");
+                    File.WriteAllText(path, text);
+                    foreach (var l in text.Split('\n')) DevOut(l.TrimEnd('\r'));
+                    DevOut("saved " + path);
+                    Telemetry.Send("locktest", g.Name, -1, LockTest.Summary(g, cap, info, lines), LockTest.Data(cap, info, lines, LockTestSeconds));
+                }
+                catch (Exception ex) { DevOut("! lock test failed: " + ex.Message); }
+                finally
+                {
+                    Ui(() =>
+                    {
+                        lockTesting = false;
+                        if (devLockTestBtn != null && !devLockTestBtn.IsDisposed) devLockTestBtn.Text = LockTestIdleText;
+                    });
+                }
+            });
         }
 
         void DevOut(string line)

@@ -264,6 +264,7 @@ namespace PingBoost
             Run("PickIdsSkipsNonHostingAndDuplicates", PickIdsSkipsNonHostingAndDuplicates);
             Run("ChosenOtherRegionIsNamedAndLocked", ChosenOtherRegionIsNamedAndLocked);
             RunCardTests();
+            RunLockTestTests();
             Console.WriteLine(failures == 0 ? "ALL PASS" : failures + " FAILED");
             return failures == 0 ? 0 : 1;
         }
