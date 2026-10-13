@@ -29,7 +29,20 @@ namespace PingBoost
         public string Flag;   // ISO country code for the flag image (assets/flags)
         public List<Endpoint> Endpoints = new List<Endpoint>();
         public List<string> Cidrs = new List<string>();
-        public PingResult Direct;
+        // the latest ping test; a good result is also kept apart (LastGood), so one lost round doesn't erase what the
+        // strict lock knows about a relay (StrictLock.Pings uses it for 30 minutes)
+        PingResult direct;
+        public PingResult Direct
+        {
+            get { return direct; }
+            set
+            {
+                direct = value;
+                if (value != null && value.Ok) { LastGood = value; LastGoodAt = DateTime.UtcNow; }
+            }
+        }
+        public PingResult LastGood;
+        public DateTime LastGoodAt;
         public Endpoint BestEndpoint;
         public Dictionary<string, double> ViaRelay = new Dictionary<string, double>();
 

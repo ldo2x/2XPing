@@ -117,27 +117,80 @@ namespace PingBoost
         // R3: an entry relay is closed exactly when it gives a route to a left-out datacenter within MarginMs of the best
         // picked route through what stays open. Closing one can make the picked route longer, which can bring another
         // entry within the margin, so the rule runs until nothing changes (the closed set only grows).
-        // G5: if that leaves no answering POP with a route to a picked datacenter, the cheapest closed entry to them
-        // stays open, and the plan says the lock may not hold.
+        // An entry without a ping can't be measured: when Valve's network has a path from it to a left-out datacenter it
+        // is closed anyway (a lost ping must never open the lock).
+        // G5: if that leaves no answering POP with a route to a picked datacenter, the cheapest closed entry to them is
+        // pinned open (a measured route first, else the shortest path), the plan says the lock may not hold, and the rule
+        // runs again from the start with it open: with a real picked route, entries closed while there was none (or a
+        // longer one) may stay open now, so the result is again an R3 fixpoint.
         public static LockPlan Plan(SdrRoutes net, IDictionary<string, double> ping, ICollection<string> picked,
                                     ICollection<string> blockedHosts, ICollection<string> leftOut, ICollection<string> entries, double margin)
         {
             var plan = new LockPlan();
             if (net == null || ping == null || picked == null || picked.Count == 0) return plan;
             plan.Blocked = new HashSet<string>(blockedHosts);
+            plan.Unlocked = Best(net, picked, ping, null);
+            var closed = Rule(net, ping, picked, blockedHosts, leftOut, entries, margin, null, plan);
+            plan.Locked = Best(net, picked, ping, id => !blockedHosts.Contains(id) && !closed.Contains(id));
+            if (!plan.Locked.Known && closed.Count > 0)
+            {
+                // G5: never leave the game without a way to the picked datacenters
+                var shut = closed;
+                string kept = Best(net, picked, ping, id => shut.Contains(id)).Entry;
+                if (kept == null)
+                {
+                    // no closed entry answered ping: the one closest to the picked datacenters over Valve's network
+                    int bestD = int.MaxValue;
+                    foreach (var e in plan.Close)
+                        foreach (var t in picked)
+                        {
+                            int d = net.Dist(e, t);
+                            if (d >= 0 && d < bestD) { bestD = d; kept = e; }
+                        }
+                }
+                if (kept != null)
+                {
+                    var why = plan.Reason[kept];
+                    plan.Kept = kept;
+                    plan.Close.Clear();
+                    plan.Reason.Clear();
+                    closed = Rule(net, ping, picked, blockedHosts, leftOut, entries, margin, kept, plan);
+                    plan.Reason[kept] = why;
+                    plan.Locked = Best(net, picked, ping, id => !blockedHosts.Contains(id) && !closed.Contains(id));
+                }
+            }
+            return plan;
+        }
+
+        // The best way from one entry to a left-out datacenter: its ping plus the path, or (no ping) the path alone with
+        // the ping unknown (To set, Ms unknown).
+        static Route Reach(SdrRoutes net, IDictionary<string, double> ping, ICollection<string> leftOut, string e)
+        {
+            double pe;
+            if (ping.TryGetValue(e, out pe) && pe < double.MaxValue)
+                return Best(net, leftOut, new Dictionary<string, double> { { e, pe } }, null);
+            var r = Best(net, leftOut, new Dictionary<string, double> { { e, 0 } }, null);
+            r.Ms = double.MaxValue;
+            return r;
+        }
+
+        // R3 until nothing changes, with pinned (if any) kept open; fills plan.Close and plan.Reason, returns the closed set.
+        static HashSet<string> Rule(SdrRoutes net, IDictionary<string, double> ping, ICollection<string> picked, ICollection<string> blockedHosts,
+                                    ICollection<string> leftOut, ICollection<string> entries, double margin, string pinned, LockPlan plan)
+        {
             var closed = new HashSet<string>();
             Func<string, bool> open = id => !blockedHosts.Contains(id) && !closed.Contains(id);
-            plan.Unlocked = Best(net, picked, ping, null);
             while (true)
             {
                 var p = Best(net, picked, ping, open);
                 bool changed = false;
                 foreach (var e in entries)
                 {
-                    double pe;
-                    if (closed.Contains(e) || picked.Contains(e) || !ping.TryGetValue(e, out pe) || pe >= double.MaxValue) continue;
-                    var reach = Best(net, leftOut, new Dictionary<string, double> { { e, pe } }, null);
-                    if (!reach.Known || reach.Ms > p.Ms + margin) continue;
+                    if (e == pinned || closed.Contains(e) || picked.Contains(e)) continue;
+                    var reach = Reach(net, ping, leftOut, e);
+                    if (reach.To == null) continue; // no path to anything left out
+                    // measured: closed within the margin; not measured: closed whenever such a path exists
+                    if (reach.Known && reach.Ms > p.Ms + margin) continue;
                     closed.Add(e);
                     plan.Close.Add(e);
                     plan.Reason[e] = reach;
@@ -145,20 +198,7 @@ namespace PingBoost
                 }
                 if (!changed) break;
             }
-            plan.Locked = Best(net, picked, ping, open);
-            if (!plan.Locked.Known && plan.Close.Count > 0)
-            {
-                // G5: never leave the game without a way to the picked datacenters
-                var back = Best(net, picked, ping, id => closed.Contains(id));
-                if (back.Known)
-                {
-                    closed.Remove(back.Entry);
-                    plan.Close.Remove(back.Entry);
-                    plan.Kept = back.Entry;
-                    plan.Locked = Best(net, picked, ping, open);
-                }
-            }
-            return plan;
+            return closed;
         }
 
         // The plan for a game's lock on the picked datacenters (Region.Id), from its measured pings (POP -> ms).
@@ -184,12 +224,29 @@ namespace PingBoost
             return Plan(g.Routes, ping, picked, blocked, leftOut, entries, MarginMs);
         }
 
-        // The measured pings of a game's datacenters (only the ones that answered).
+        // How long a good ping stands in for a test that failed.
+        public static readonly TimeSpan KeepGood = TimeSpan.FromMinutes(30);
+
+        // The measured pings of a game's datacenters: the latest test, or when it failed the last good one of the past
+        // 30 minutes (one lost round must not open the lock); datacenters with neither are left out.
         public static Dictionary<string, double> Pings(Game g)
+        {
+            return Pings(g, DateTime.UtcNow);
+        }
+
+        public static Dictionary<string, double> Pings(Game g, DateTime nowUtc)
         {
             var d = new Dictionary<string, double>();
             foreach (var r in g.Regions)
-                if (r.Direct != null && r.Direct.Ok) d[r.Id] = r.Direct.Avg;
+            {
+                var now = r.Direct; // read once: a test may replace it meanwhile
+                if (now != null && now.Ok) d[r.Id] = now.Avg;
+                else
+                {
+                    var last = r.LastGood;
+                    if (last != null && last.Ok && nowUtc - r.LastGoodAt <= KeepGood) d[r.Id] = last.Avg;
+                }
+            }
             return d;
         }
     }

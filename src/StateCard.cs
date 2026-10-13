@@ -416,14 +416,19 @@ namespace PingBoost
 
             bool known = choice.Ping < double.MaxValue;
             string ping = known ? Lang.T("Ping ", "بنق ") + (int)Math.Round(choice.Ping) : Lang.T("One moment...", "لحظة...");
-            TextRenderer.DrawText(g, ping, known ? pingFont : lineFont, Row(textX, y, textW, LineH), PingColor(choice.Ping), TextFlags);
-            // Valve: the route enters at a relay ("via Dubai"), after the number in the small font
+            // Valve: the route enters at a relay ("via Dubai"), right after the number in the small font. Both are drawn
+            // without padding (the number keeps its place: it starts where the padded text did), so no gap opens.
             if (known && choice.Via != null)
             {
-                int pw = TextRenderer.MeasureText(g, ping, pingFont, new Size(textW, LineH), TextFlags | TextFormatFlags.NoPadding).Width;
-                if (pw < textW)
-                    TextRenderer.DrawText(g, " · " + Lang.T("via ", "عن طريق ") + choice.Via, lineFont, Row(textX + pw, y, textW - pw, LineH), MainForm.Dim, TextFlags);
+                var nopad = TextFlags | TextFormatFlags.NoPadding;
+                var area = new Size(textW, LineH);
+                int pad = (TextRenderer.MeasureText(g, ping, pingFont, area, TextFlags).Width - TextRenderer.MeasureText(g, ping, pingFont, area, nopad).Width) / 2;
+                int pw = TextRenderer.MeasureText(g, ping, pingFont, area, nopad).Width;
+                TextRenderer.DrawText(g, ping, pingFont, Row(textX + pad, y, textW - pad, LineH), PingColor(choice.Ping), nopad);
+                if (pad + pw < textW)
+                    TextRenderer.DrawText(g, " · " + Lang.T("via ", "عن طريق ") + choice.Via, lineFont, Row(textX + pad + pw, y, textW - pad - pw, LineH), MainForm.Dim, nopad);
             }
+            else TextRenderer.DrawText(g, ping, known ? pingFont : lineFont, Row(textX, y, textW, LineH), PingColor(choice.Ping), TextFlags);
             y += LineH;
             if (HasQueue(choice))
             {

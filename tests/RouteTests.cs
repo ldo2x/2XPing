@@ -59,7 +59,9 @@ namespace PingBoost
         {
             var g = SavedDeadlock();
             var plan = StrictLock.For(g, RegionIds(g, "Europe"), RiyadhPings());
-            Check(plan.Close.Count == 0 && !plan.MayLeak, "Europe from Riyadh closes nothing: " + string.Join(",", plan.Close.ToArray()));
+            // only Guam, which the owner's list has no ping for (unmeasured, with a path to SE Asia: closed to be safe)
+            Check(plan.Close.SequenceEqual(new[] { "gum" }) && !plan.MayLeak, "Europe from Riyadh closes only unmeasured gum: " + string.Join(",", plan.Close.ToArray()));
+            Check(!plan.Close.Contains("dxb") && !plan.Close.Contains("dfjr") && !plan.Close.Contains("bom2"), "dxb, dfjr, bom2 open");
             Check(plan.Locked.Ms == 58 && plan.Locked.Entry == "dxb", "Europe stays 58 via dxb, got " + plan.Locked.Ms + " via " + plan.Locked.Entry);
             Check(MainForm.NoteOf(g, plan, "Europe") == null, "nothing to tell");
         }
@@ -97,16 +99,19 @@ namespace PingBoost
             // the owner's list has no US datacenter: the only ways there go through relays that reach Europe first
             var plan = StrictLock.For(g, na, RiyadhPings());
             Check(plan.MayLeak && plan.Kept == "dxb", "G5 keeps dxb open: kept " + plan.Kept + ", closed " + string.Join(",", plan.Close.ToArray()));
-            Check(!plan.Close.Contains("dxb") && plan.Close.Contains("dfjr"), "dxb open, dfjr closed");
+            // with dxb open the picked route is 154, and the rule ran again: dfjr (186), bom2 (207) and maa2 are over 174
+            Check(plan.Close.SequenceEqual(new[] { "gum" }) && !plan.Close.Contains("bom2") && !plan.Close.Contains("dfjr"),
+                  "after G5 the rule is a fixpoint again, only unmeasured gum closed: " + string.Join(",", plan.Close.ToArray()));
+            Check(plan.Reason["dxb"].To != null && plan.Reason["dxb"].Ms == 58, "dxb's reason is kept: Europe in 58");
             Check(Near(plan.Locked.Ms, 154) && plan.Locked.Entry == "dxb", "NA ~154 via dxb: " + plan.Locked.Ms);
             Lang.Ar = true;
             var note = MainForm.NoteOf(g, plan, "أمريكا الشمالية");
             Check(note.Kind == RouteNoteKind.MayLeak, "may-leak note");
-            Check(CardLogic.RouteText(note) == "لازم نخلي دبي مفتوحة، وإلا اللعبة ما بتوصل لأمريكا الشمالية أبداً. بس دبي توصل لأوروبا بعد، فالتثبيت ممكن ما يمسك.",
+            Check(CardLogic.RouteText(note) == "ما قدرنا نقيس طريق مباشر لأمريكا الشمالية، فبنخلي دبي مفتوحة. بس دبي توصل لأوروبا بعد، فالتثبيت ممكن ما يمسك.",
                   "Arabic: " + CardLogic.RouteText(note));
             Lang.Ar = false;
             note = MainForm.NoteOf(g, plan, "North America");
-            Check(CardLogic.RouteText(note) == "We have to keep Dubai open, or the game can't reach North America at all. Dubai also reaches Europe, so the lock may not hold.",
+            Check(CardLogic.RouteText(note) == "We couldn't measure a direct way to North America, so Dubai stays open. Dubai also reaches Europe, so the lock may not hold.",
                   "English: " + CardLogic.RouteText(note));
             Lang.Ar = true;
 
@@ -151,13 +156,18 @@ namespace PingBoost
             // G5: p doesn't answer, e is the only way and reaches x: kept open, the lock may not hold
             plan = Tiny(10, -1, 30, 15);
             Check(plan.MayLeak && plan.Kept == "e" && plan.Close.Count == 0 && plan.Locked.Ms == 25, "G5 keeps e: " + plan.Locked.Ms);
-            // an entry that doesn't answer is never closed (and never a route)
+            // an entry that doesn't answer but has a path to a left-out datacenter is closed (a lost ping never opens the lock)
             var net = SdrRoutes.Build(new Dictionary<string, int> { { "e x", 1 }, { "e p", 1 } });
             plan = StrictLock.Plan(net, new Dictionary<string, double> { { "p", 50 } }, new[] { "p" }, new HashSet<string> { "x" }, new HashSet<string> { "x" }, new[] { "e" }, 20);
-            Check(plan.Close.Count == 0 && plan.Locked.Ms == 50, "unanswered entry stays as it is");
-            // no pings at all: nothing closed, nothing claimed
+            Check(plan.Close.SequenceEqual(new[] { "e" }) && plan.Reason["e"].To == "x" && !plan.Reason["e"].Known && plan.Locked.Ms == 50 && !plan.MayLeak,
+                  "unanswered entry with a path out: closed");
+            // ...one without any path to a left-out datacenter stays open
+            var lone = SdrRoutes.Build(new Dictionary<string, int> { { "e p", 1 }, { "q x", 1 } });
+            plan = StrictLock.Plan(lone, new Dictionary<string, double> { { "p", 50 } }, new[] { "p" }, new HashSet<string> { "x" }, new HashSet<string> { "x" }, new[] { "e" }, 20);
+            Check(plan.Close.Count == 0, "no path out: open");
+            // no pings at all: the entry is closed, then kept by G5 (it is the only way in), and the plan says so
             plan = StrictLock.Plan(net, new Dictionary<string, double>(), new[] { "p" }, new HashSet<string> { "x" }, new HashSet<string> { "x" }, new[] { "e" }, 20);
-            Check(plan.Close.Count == 0 && !plan.MayLeak && !plan.Locked.Known, "no pings: no plan");
+            Check(plan.Close.Count == 0 && plan.MayLeak && plan.Kept == "e" && !plan.Locked.Known, "no pings: kept, may leak, never silent");
             // the saved config never closes every way to a picked region
             var g = SavedDeadlock();
             foreach (var def in g.RegionMap)
@@ -196,7 +206,7 @@ namespace PingBoost
             Check(v.Kind == CardKind.Locked && v.Sub.StartsWith("Open the game"), "locked, strict: the usual words: " + v.Sub);
             i.Route = new RouteNote { Kind = RouteNoteKind.MayLeak, Entry = "Dubai", Reaches = "Europe", Target = "North America", BeforeMs = 153, AfterMs = 154 };
             v = CardLogic.Decide(i);
-            Check(v.Sub.StartsWith("We have to keep Dubai open") && v.Sub.EndsWith("Try a normal match first."), "locked, may leak: " + v.Sub);
+            Check(v.Sub.StartsWith("We couldn't measure a direct way to North America") && v.Sub.EndsWith("Try a normal match first."), "locked, may leak: " + v.Sub);
             // "للشرق الأوسط": Arabic "to" before al-
             Lang.Ar = true;
             Check(CardLogic.RouteText(new RouteNote { Kind = RouteNoteKind.ClosedEntry, Entry = "دبي", Reaches = "الشرق الأوسط", Target = "أوروبا", BeforeMs = 1, AfterMs = 2 })
@@ -228,8 +238,51 @@ namespace PingBoost
             Check(RegionGroups.Build(g, null, null, latency).All(c => c.Via == null), "no via: no name");
         }
 
+        // Review fix 1: one lost ping round to Dubai must not make an SE Asia lock from Riyadh leaky again.
+        static void StrictLockLostPingStaysStrict()
+        {
+            var g = SavedDeadlock();
+            var ping = RiyadhPings();
+            ping.Remove("dxb");
+            var plan = StrictLock.For(g, RegionIds(g, "SEAsia"), ping);
+            Check(plan.Close.Contains("dxb") && plan.Close.Contains("dfjr") && !plan.MayLeak, "dxb closed without a ping: " + string.Join(",", plan.Close.ToArray()));
+            Check(plan.Locked.Ms == 197 && plan.Locked.Entry == "sgp", "still 197 direct");
+            Check(plan.Reason["dxb"].To != null && !plan.Reason["dxb"].Known, "the reason has a path, no number");
+
+            // the last good ping stands in for a failed test for 30 minutes
+            var dxb = g.Regions.First(r => r.Id == "dxb");
+            var sgp = g.Regions.First(r => r.Id == "sgp");
+            sgp.Direct = new PingResult { Avg = 197 };
+            dxb.Direct = new PingResult { Avg = 31 };
+            Check(dxb.LastGood != null && dxb.LastGood.Avg == 31, "a good result is kept");
+            dxb.Direct = new PingResult(); // the next round was lost
+            var now = DateTime.UtcNow;
+            var pings = StrictLock.Pings(g, now);
+            Check(pings.ContainsKey("dxb") && pings["dxb"] == 31 && pings["sgp"] == 197, "lost round: the last good 31 is used");
+            Check(!StrictLock.Pings(g, now.AddMinutes(31)).ContainsKey("dxb"), "after 30 minutes it is gone");
+            dxb.Direct = new PingResult { Avg = 40 };
+            Check(StrictLock.Pings(g, now)["dxb"] == 40, "a new good result wins");
+        }
+
+        // Review fix 4: a closed best entry is only told when it costs 10 ms or more.
+        static void ClosedEntryNoteNeedsTenMs()
+        {
+            var g = SavedDeadlock();
+            var plan = new LockPlan();
+            plan.Unlocked = new Route { Ms = 106, Entry = "dxb", To = "sgp" };
+            plan.Locked = new Route { Ms = 115, Entry = "sgp", To = "sgp" };
+            plan.Close.Add("dxb");
+            plan.Reason["dxb"] = new Route { Ms = 58, Entry = "dxb", To = "dvie" };
+            Check(MainForm.NoteOf(g, plan, "SE Asia") == null, "9 ms: nothing to tell");
+            plan.Locked.Ms = 116;
+            var note = MainForm.NoteOf(g, plan, "SE Asia");
+            Check(note != null && note.Kind == RouteNoteKind.ClosedEntry && note.AfterMs == 116, "10 ms: told");
+        }
+
         static void RunRouteTests()
         {
+            Run("StrictLockLostPingStaysStrict", StrictLockLostPingStaysStrict);
+            Run("ClosedEntryNoteNeedsTenMs", ClosedEntryNoteNeedsTenMs);
             Run("RoutesShortestPaths", RoutesShortestPaths);
             Run("StrictLockEuropeKeepsDubai", StrictLockEuropeKeepsDubai);
             Run("StrictLockSeAsiaClosesDubai", StrictLockSeAsiaClosesDubai);

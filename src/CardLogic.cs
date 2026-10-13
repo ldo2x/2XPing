@@ -174,7 +174,7 @@ namespace PingBoost
         // The trade-off of a strict lock, with the numbers:
         //   ClosedEntry: "We have to close Dubai because it reaches Europe. Your ping to SE Asia becomes about 197 instead of 106."
         //   BlockedHost: the shortest way goes through a datacenter of a region not picked (I3)
-        //   MayLeak:     the only way left goes through an entry that reaches a left-out region (G5)
+        //   MayLeak:     no measured way to the picked regions but through an entry that reaches a left-out region (G5)
         public static string RouteText(RouteNote n)
         {
             if (n == null) return null;
@@ -182,9 +182,9 @@ namespace PingBoost
             string en, ar;
             if (n.Kind == RouteNoteKind.MayLeak)
             {
-                en = "We have to keep " + n.Entry + " open, or the game can't reach " + n.Target + " at all. " + n.Entry +
-                     (n.Reaches != null ? " also reaches " + n.Reaches + ", so" : "") + " the lock may not hold.";
-                ar = "لازم نخلي " + n.Entry + " مفتوحة، وإلا اللعبة ما بتوصل " + To(n.Target) + " أبداً. " +
+                en = "We couldn't measure a direct way to " + n.Target + ", so " + n.Entry + " stays open. " +
+                     (n.Reaches != null ? n.Entry + " also reaches " + n.Reaches + ", so the lock may not hold." : "The lock may not hold.");
+                ar = "ما قدرنا نقيس طريق مباشر " + To(n.Target) + "، فبنخلي " + n.Entry + " مفتوحة. " +
                      (n.Reaches != null ? "بس " + n.Entry + " توصل " + To(n.Reaches) + " بعد، فالتثبيت ممكن ما يمسك." : "فالتثبيت ممكن ما يمسك.");
                 return Lang.T(en, ar);
             }

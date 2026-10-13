@@ -563,7 +563,7 @@ namespace PingBoost
             btnLock.Font = Fonts.Semi(10f);
             btnLock.Dock = DockStyle.Right;
             btnLock.Width = 150;
-            btnLock.Click += delegate { LockServers(); };
+            btnLock.Click += delegate { LockServers(false); };
             btnUnlock = MakeButton(T("Unlock", "فك التثبيت"), Panel2);
             btnUnlock.Dock = DockStyle.Right;
             btnUnlock.Width = 120;
@@ -1130,7 +1130,8 @@ namespace PingBoost
 
         static double BestLatency(Region r)
         {
-            double d = r.Direct != null && r.Direct.Ok ? r.Direct.Avg : double.MaxValue;
+            var direct = r.Direct; // read once: a test may replace it meanwhile
+            double d = direct != null && direct.Ok ? direct.Avg : double.MaxValue;
             var b = BestRelay(r);
             return b != null ? Math.Min(d, b.Value.Value) : d;
         }
@@ -1397,7 +1398,8 @@ namespace PingBoost
             }
             string entry = plan.Unlocked.Entry;
             if (entry == null) return null;
-            if (plan.Close.Contains(entry))
+            // the closed entry was the best way in: told when it costs 10 ms or more (or leaves no measured way)
+            if (plan.Close.Contains(entry) && (!plan.Locked.Known || plan.Locked.Ms - plan.Unlocked.Ms >= 10))
             {
                 note.Kind = RouteNoteKind.ClosedEntry;
                 note.Entry = PlaceName(pop(entry));
@@ -1650,7 +1652,7 @@ namespace PingBoost
             Storage.SavePicks(g.LockKey, ids);
             FillServers(g);
             UpdateLockBar();
-            LockServers();
+            LockServers(true); // the card showed what this lock costs before its button was pressed
         }
 
         void UpdateRow(ListViewItem item)
@@ -2456,7 +2458,8 @@ namespace PingBoost
             btnUnlock.Enabled = lockSummary != null && lockingGame == null; // never while a new lock is being applied
         }
 
-        void LockServers()
+        // fromCard: the lock of the card's chosen regions; the card already told its route cost (no toast again)
+        void LockServers(bool fromCard)
         {
             var g = CurrentGame;
             if (g == null || !g.CanLock) return;
@@ -2491,7 +2494,7 @@ namespace PingBoost
             {
                 plan = StrictLock.For(g, picked.Select(r => r.Id).ToList(), StrictLock.Pings(g));
                 route = NoteOf(g, plan, cardNames);
-                WarnLongerRoute(g, plan, route);
+                WarnLongerRoute(g, plan, route, fromCard);
             }
             var closed = new HashSet<string>(plan != null ? plan.Close : new List<string>());
             var closedCidrs = g.Regions.Where(r => closed.Contains(r.Id)).SelectMany(r => r.Cidrs).ToList();
@@ -2593,13 +2596,13 @@ namespace PingBoost
         // Valve games enter Valve's network at any relay they reach and ride it to the match server (shortest paths over
         // Valve's own pings, I3). When the lock makes that way longer (it closes the entry relay, or the best way in is
         // a datacenter of a region not picked) or can't be strict (G5), say so with the numbers before it is applied.
-        void WarnLongerRoute(Game g, LockPlan plan, RouteNote note)
+        void WarnLongerRoute(Game g, LockPlan plan, RouteNote note, bool cardShown)
         {
             if (note == null) return;
             string id = note.Kind == RouteNoteKind.MayLeak ? plan.Kept : plan.Unlocked.Entry;
             Telemetry.Send("use", id, note.AfterMs >= 0 && note.BeforeMs >= 0 ? note.AfterMs - note.BeforeMs : -1,
                            "longer route warning, " + note.Kind + ", " + string.Join(",", g.Regions.Where(r => r.Picked).Select(r => r.Id).ToArray()));
-            Msg(CardLogic.RouteText(note), ToastKind.Warn);
+            if (!cardShown) Msg(CardLogic.RouteText(note), ToastKind.Warn);
         }
 
         void UnlockServers()
