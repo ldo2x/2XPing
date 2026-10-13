@@ -91,6 +91,19 @@ namespace PingBoost
             return featured;
         }
 
+        // Every region in the order the card shows them after "Other regions": the featured ones first, then the rest by
+        // ping. The card decides its words and the lock from this whole list, shown or not, so a region picked from the
+        // other regions is named on the button and locked even after the list is folded again.
+        public static List<RegionChoice> FeaturedFirst(List<RegionChoice> all, List<RegionChoice> featured)
+        {
+            return featured.Concat(all.Where(c => !featured.Contains(c)).OrderBy(c => c.Ping)).ToList();
+        }
+
+        public static List<RegionChoice> Chosen(List<RegionChoice> every)
+        {
+            return every.Where(c => c.Selected).ToList();
+        }
+
         // The datacenters to lock for the chosen regions: hosting members only, each once, in the order chosen.
         public static List<string> PickIds(Game g, IEnumerable<RegionChoice> chosen)
         {

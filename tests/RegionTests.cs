@@ -214,6 +214,40 @@ namespace PingBoost
             Check(RegionGroups.PickIds(g, new RegionChoice[0]).Count == 0, "nothing chosen = nothing picked");
         }
 
+        // A region picked under "Other regions" (not one of the featured tiles) is named on the button and locked,
+        // whether the other regions are shown or folded away: the card decides from the whole list.
+        static void ChosenOtherRegionIsNamedAndLocked()
+        {
+            var g = new Game { Name = "Fake", RegionMap = new List<RegionDef>() };
+            foreach (var k in new[] { "Aa", "Bb", "Cc", "Dd", "Ee" })
+            {
+                g.Regions.Add(new Region { Id = k.ToLower(), NameEn = k, Direct = new PingResult { Avg = 10 * (g.Regions.Count + 1) } });
+                g.RegionMap.Add(RegionDef.Of(k, k, k, k.ToLower()));
+            }
+            var all = RegionGroups.Build(g, null, null, DirectLatency);
+            var featured = RegionGroups.Featured(all);
+            var every = RegionGroups.FeaturedFirst(all, featured);
+            Check(featured.Count == 3 && !featured.Any(c => c.Def.Key == "Ee"), "Ee is not featured");
+            Check(every.Count == 5 && every.Take(3).SequenceEqual(featured), "featured first, then the rest");
+            var ee = every.First(c => c.Def.Key == "Ee");
+
+            // the best (featured) one stays on and Ee is added
+            ee.Selected = true;
+            var input = new CardInput { Game = "Fake", Loaded = true, Tested = true, CanLock = true, Choices = every };
+            var v = CardLogic.Decide(input);
+            Check(v.Kind == CardKind.Choose && v.Button != null && v.Button.Contains("Aa") && v.Button.Contains("Ee"), "button names both: " + v.Button);
+            Check(v.Sub != null && v.Sub.Contains("10") && v.Sub.Contains("50"), "ping range covers Ee: " + v.Sub);
+            var ids = RegionGroups.PickIds(g, RegionGroups.Chosen(every));
+            Check(ids.Count == 2 && ids.Contains("aa") && ids.Contains("ee"), "locks aa and ee: " + string.Join(",", ids.ToArray()));
+
+            // only Ee: still a button, and only ee is locked
+            featured[0].Selected = false;
+            v = CardLogic.Decide(input);
+            Check(v.Kind == CardKind.Choose && v.Button != null && v.Button.Contains("Ee") && !v.Button.Contains("Aa"), "button names Ee alone: " + v.Button);
+            ids = RegionGroups.PickIds(g, RegionGroups.Chosen(every));
+            Check(ids.Count == 1 && ids[0] == "ee", "locks only ee: " + string.Join(",", ids.ToArray()));
+        }
+
         static int Main()
         {
             Run("OverwatchRegionsCoverEveryDatacenterOnce", OverwatchRegionsCoverEveryDatacenterOnce);
@@ -228,6 +262,7 @@ namespace PingBoost
             Run("BusyWords", BusyWords);
             Run("TwoRegionsLockExactlyTheirDatacenters", TwoRegionsLockExactlyTheirDatacenters);
             Run("PickIdsSkipsNonHostingAndDuplicates", PickIdsSkipsNonHostingAndDuplicates);
+            Run("ChosenOtherRegionIsNamedAndLocked", ChosenOtherRegionIsNamedAndLocked);
             RunCardTests();
             Console.WriteLine(failures == 0 ? "ALL PASS" : failures + " FAILED");
             return failures == 0 ? 0 : 1;

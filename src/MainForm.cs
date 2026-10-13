@@ -105,16 +105,7 @@ namespace PingBoost
             ApplyDirection();
             BuildUi();
             ResumeLayout(false);
-            // the advanced layout has the card, the list and the tools on one page: open it taller when the screen allows
-            Load += delegate
-            {
-                if (simple) return;
-                var area = Screen.FromControl(this).WorkingArea;
-                int h = Math.Min(Height + LogicalToDeviceUnits(140), area.Height);
-                if (h <= Height) return;
-                Height = h;
-                CenterToScreen();
-            };
+            Load += delegate { FitAdvancedHeight(true); };
 
             RefreshRelays();
             Task.Run(() =>
@@ -478,6 +469,7 @@ namespace PingBoost
                 ApplyCardLayout();
             };
             cardHost.Controls.Add(stateCard);
+            cardHost.Resize += delegate { FitCard(stateCard.PreferredHeight(cardHost.Width)); };
             choicesGame = null;
             return cardHost;
         }
@@ -887,8 +879,24 @@ namespace PingBoost
         }
 
         // Rebuilds the whole window after a language or layout change.
+        // The advanced layout has the card, the list and the live graph on one page: it needs a taller window than the
+        // simple one. Grows the window to that height when the screen allows (never shrinks it).
+        const int AdvancedClientHeight = 900;
+
+        void FitAdvancedHeight(bool center)
+        {
+            if (simple || WindowState != FormWindowState.Normal) return;
+            var area = Screen.FromControl(this).WorkingArea;
+            int h = Math.Min(Height - ClientSize.Height + LogicalToDeviceUnits(AdvancedClientHeight), area.Height);
+            if (h <= Height) return;
+            Height = h;
+            if (center) CenterToScreen();
+            else if (Bottom > area.Bottom || Top < area.Top) Top = Math.Max(area.Top, area.Bottom - Height);
+        }
+
         void RebuildUi()
         {
+            bool wasSimple = simple;
             simple = Prefs.Simple;
             devMode = DevModeSaved;
             GameDb.ShowUnreleased = devMode;
@@ -901,6 +909,7 @@ namespace PingBoost
             BuildUi();
             foreach (var c in old) c.Dispose();
             ResumeLayout(true);
+            if (wasSimple && !simple) FitAdvancedHeight(false);
             ShowUpdateBar();
             BuildTrayMenu();
             RefreshRelays();
@@ -1215,7 +1224,7 @@ namespace PingBoost
                 foreach (var c in all) c.Selected = keep.Contains(c.Def.Key);
             allChoices = all;
             featured = feat;
-            everyChoice = feat.Concat(all.Where(c => !feat.Contains(c)).OrderBy(c => c.Ping)).ToList();
+            everyChoice = RegionGroups.FeaturedFirst(all, feat);
             choicesGame = g;
             choicesSig = sig;
         }
@@ -1241,7 +1250,8 @@ namespace PingBoost
                 Testing = testGame == g || (testGame != null && !tested.Contains(g) && (Prefs.AutoTest || testNext == g)),
                 Tested = tested.Contains(g),
                 CanLock = g.CanLock,
-                Choices = featured,
+                // every region, shown or folded away: the button names and locks all the selected ones
+                Choices = everyChoice,
                 LockedNames = lockSummary != null && lockGame == g ? lockNames : null,
                 MatchRegion = matchRegion,
                 MatchOnPicked = matchOnPicked,
@@ -1265,40 +1275,59 @@ namespace PingBoost
         }
 
         // Simple layout: the card fills the middle, and "Pick by hand" puts the server list under it.
-        // Advanced: the card on top (as tall as it needs), the info bar and the list under it.
+        // Advanced: the card on top (as tall as it needs), the info bar, the list and the live graph under it. At the
+        // advanced window's default height the graph keeps its full height and the list at least ListMin; only a
+        // shorter window folds the graph away (its buttons stay). A card taller than its room scrolls.
         void ApplyCardLayout()
         {
             if (cardHost == null || listCard == null) return;
             bool showList = !simple || manualOpen;
             listCard.Visible = listGap.Visible = showList;
+            int want = stateCard.PreferredHeight(cardHost.Parent != null ? cardHost.Parent.ClientSize.Width : cardHost.Width);
             if (!showList)
             {
                 cardHost.Dock = DockStyle.Fill;
+                FitCard(want);
                 return;
             }
             cardHost.Dock = DockStyle.Top;
             var page = cardHost.Parent;
-            int want = stateCard.PreferredHeight(page != null ? page.ClientSize.Width : cardHost.Width);
+            int height = want;
             if (page != null)
             {
-                const int ListMin = 150, ListGood = 110, GraphFull = 200, GraphMin = 180, ControlsOnly = 56;
+                const int ListMin = 160, CardMin = 150, GraphFull = 200, GraphMin = 180, ControlsOnly = 56;
                 int others = 0;
                 foreach (Control c in page.Controls)
                     if (c != cardHost && c != bottomPanel && c.Visible && (c.Dock == DockStyle.Top || c.Dock == DockStyle.Bottom)) others += c.Height;
-                int room = page.ClientSize.Height - others - ListMin;
+                int avail = page.ClientSize.Height - others; // card + list + graph
                 if (bottomPanel.Visible)
                 {
-                    // advanced: the card and the list's rows come first; the live graph gets what is left
-                    // (all of it in a tall window, none in a short one: then only its buttons stay)
-                    int spare = room - want - ListGood;
-                    int bottom = spare >= GraphFull ? GraphFull : spare >= GraphMin ? spare : ControlsOnly;
+                    int bottom = avail - ListMin - CardMin >= GraphFull ? GraphFull
+                               : avail - ListMin - CardMin >= GraphMin ? avail - ListMin - CardMin : ControlsOnly;
                     if (bottomPanel.Height != bottom) bottomPanel.Height = bottom;
-                    room -= bottom;
+                    avail -= bottom;
                 }
-                want = Math.Min(want, room);
+                height = Math.Max(CardMin, Math.Min(want, avail - ListMin));
             }
-            want = Math.Max(150, want);
-            if (cardHost.Height != want) cardHost.Height = want;
+            if (cardHost.Height != height) cardHost.Height = height;
+            FitCard(want);
+        }
+
+        // The card fills its host; when the host is shorter than the card needs, the host scrolls instead of cutting tiles off.
+        void FitCard(int want)
+        {
+            bool scroll = cardHost.ClientSize.Height > 0 && want > cardHost.Height;
+            if (scroll)
+            {
+                cardHost.AutoScroll = true;
+                stateCard.Dock = DockStyle.Top;
+                if (stateCard.Height != want) stateCard.Height = want;
+            }
+            else if (stateCard.Dock != DockStyle.Fill)
+            {
+                cardHost.AutoScroll = false;
+                stateCard.Dock = DockStyle.Fill;
+            }
         }
 
         // The card's one button: what it does depends on what the card says.
@@ -1310,7 +1339,7 @@ namespace PingBoost
             switch (v.Kind)
             {
                 case CardKind.Choose:
-                    var chosen = allChoices.Where(c => c.Selected).ToList();
+                    var chosen = RegionGroups.Chosen(everyChoice);
                     if (chosen.Count == 0 || !btnLock.Enabled) return; // nothing chosen, or a lock is being applied
                     Telemetry.Send("use", string.Join(", ", chosen.Select(c => c.Def.En).ToArray()), -1, "play on regions");
                     LockRegions(chosen);
@@ -1328,6 +1357,7 @@ namespace PingBoost
                 case CardKind.Offline:
                     // the same as picking the game again, and test it once it's there
                     tested.Remove(g);
+                    loadedGames.Remove(g); // "Loading" until it's back, so no test runs on the old list
                     retestGame = g;
                     OnGameChanged();
                     break;
