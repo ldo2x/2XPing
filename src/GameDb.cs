@@ -55,8 +55,8 @@ namespace PingBoost
         public Dictionary<string, string[]> LockGroups; // "Play on it" picks the whole group, so matches are found quickly
         // Valve: the datacenters that host this game's matches (null = all). The others are only relays: the game
         // enters Valve's network through the closest one (e.g. Dubai for Saudi players) and rides it to the match
-        // server. The lock leaves them open today; an open relay can still carry a route to a blocked datacenter
-        // (Deadlock audit 2026-10-13, B1).
+        // server. An open relay can carry a route to a blocked datacenter, so the lock closes the ones that reach a
+        // left-out datacenter about as fast as the picked ones (StrictLock, ruling R3).
         public HashSet<string> HostPops;
         // Valve: hosting datacenters without relays (Deadlock: Helsinki, Falkenstein, US West): display-only rows
         public List<Region> NoRelayHosts = new List<Region>();
@@ -65,12 +65,8 @@ namespace PingBoost
         public bool Hosts(Region r) { return HostPops == null || HostPops.Contains(r.Id); }
         // Valve: the usual ping between two of its datacenters over its own network (GetSDRConfig "typical_pings")
         public Dictionary<string, int> Backbone = new Dictionary<string, int>();
-        public int Between(string a, string b)
-        {
-            if (a == b) return 0;
-            int ms;
-            return Backbone.TryGetValue(string.CompareOrdinal(a, b) < 0 ? a + " " + b : b + " " + a, out ms) ? ms : -1;
-        }
+        // ...and the shortest paths over them (built with Backbone at each config load; null = not loaded)
+        public SdrRoutes Routes;
         public bool CanLock { get { return Provider == Provider.Valve || LockSpace != null; } }
         public bool Ignored(string ip) { return DetectIgnore != null && DetectIgnore.Any(c => Detector.InCidr(ip, c)); }
         // The datacenter (or Valve relay) an address belongs to, or null; ignored addresses never belong to one.
@@ -403,6 +399,7 @@ namespace PingBoost
             else if (g.Provider == Provider.Valve)
             {
                 var cfg = ParseValve(Http.Get("https://api.steampowered.com/ISteamApps/GetSDRConfig/v1/?appid=" + g.AppId, 10000), g.Backbone);
+                g.Routes = SdrRoutes.Build(g.Backbone);
                 list = cfg.Regions;
                 var picks = Storage.LoadPicks(g.AppId);
                 foreach (var r in list) r.Picked = PickedAtLoad(g, r, picks);

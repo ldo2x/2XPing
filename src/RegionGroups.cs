@@ -157,6 +157,7 @@ namespace PingBoost
         public RegionDef Def;
         public List<Region> Members = new List<Region>();
         public double Ping = double.MaxValue; // best member's ping in ms; double.MaxValue = unknown
+        public string Via;                    // Valve: the relay that route enters at ("Dubai"), null = straight there
         public int Matches = -1;              // matches running there now (queue speed); -1 = no data
         public int Players = -1;              // players there now; -1 = no data
         public string Tag;                    // "best", "ping", "queue" or null
@@ -173,6 +174,14 @@ namespace PingBoost
         // latency: a datacenter's best ping in ms (double.MaxValue = unknown), so the tile agrees with the rest of the app.
         public static List<RegionChoice> Build(Game g, Dictionary<string, int> activity, Func<int, int> playersOf, Func<Region, double> latency)
         {
+            return Build(g, activity, playersOf, latency, null);
+        }
+
+        // via: the relay a datacenter's best route enters at, named for the tile (null = none); the tile takes the
+        // one of its best member.
+        public static List<RegionChoice> Build(Game g, Dictionary<string, int> activity, Func<int, int> playersOf, Func<Region, double> latency,
+                                               Func<Region, string> via)
+        {
             var result = new List<RegionChoice>();
             if (g.RegionMap == null) return result;
             foreach (var def in g.RegionMap)
@@ -184,7 +193,13 @@ namespace PingBoost
                     if (r != null && g.Hosts(r)) c.Members.Add(r);
                 }
                 if (c.Members.Count == 0) continue;
-                c.Ping = c.Members.Min(m => latency(m));
+                Region bestMember = null;
+                foreach (var m in c.Members)
+                {
+                    double ms = latency(m);
+                    if (bestMember == null || ms < c.Ping) { c.Ping = ms; bestMember = m; }
+                }
+                if (via != null && c.Ping < double.MaxValue) c.Via = via(bestMember);
                 int matches;
                 if (activity != null && activity.TryGetValue(def.Key, out matches))
                 {

@@ -31,6 +31,7 @@ namespace PingBoost
             g.Regions = cfg.Regions;
             g.NoRelayHosts = GameDb.NoRelayHostsOf(g, cfg);
             g.RegionMap = RegionGroups.DeadlockMap(g);
+            g.Routes = SdrRoutes.Build(g.Backbone);
             return g;
         }
 
@@ -232,6 +233,7 @@ namespace PingBoost
             Run("Ipv6AddressValidation", Ipv6AddressValidation);
             Run("Ipv6RelaysAreParsedAndBlocked", Ipv6RelaysAreParsedAndBlocked);
             Run("CardRussiaFootnote", CardRussiaFootnote);
+            RunRouteTests();
         }
     }
 }

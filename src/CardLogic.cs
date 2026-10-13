@@ -26,6 +26,20 @@ namespace PingBoost
         // Deadlock: Russia's own queue is explained under the region choices (it can't be a tile); its players, -1 = unknown
         public bool RussiaNote;
         public int RussiaPlayers = -1;
+        // Valve: what the strict lock on the chosen regions costs (StrictLock), told on the card; null = nothing to tell
+        public RouteNote Route;
+    }
+
+    enum RouteNoteKind { ClosedEntry, BlockedHost, MayLeak }
+
+    // The strict lock's trade-off in the card's words. Names are already in the app's language.
+    class RouteNote
+    {
+        public RouteNoteKind Kind;
+        public string Entry;    // where the game enters Valve's network ("Dubai"), or the region of that datacenter
+        public string Reaches;  // the left-out region that entry reaches ("Europe")
+        public string Target;   // the picked regions ("SE Asia")
+        public int BeforeMs = -1, AfterMs = -1; // the ping to them without the lock and with it; -1 = unknown
     }
 
     class CardView
@@ -66,6 +80,8 @@ namespace PingBoost
                 if (i.NoMatchYet)
                     find += Lang.T(" No match found? The region you picked may be outside your game's region.",
                                    " ما لقيت مباراة؟ يمكن المنطقة اللي اخترتها برا منطقة لعبتك.");
+                // a lock kept leaky on purpose (G5) says so: it may not keep the other regions away
+                if (i.Route != null && i.Route.Kind == RouteNoteKind.MayLeak) find = RouteText(i.Route) + " " + find;
                 return Good(Make(CardKind.Locked, Lang.T("✓ Locked to " + i.LockedNames, "✓ مثبّت على " + i.LockedNames), find, unlock));
             }
 
@@ -93,6 +109,8 @@ namespace PingBoost
             if (i.CanLock && choices.Any(c => c.Ping < double.MaxValue))
             {
                 var v = Choose(choices, i.Testing, i.ZoneWarning);
+                // the lock on these regions costs ping, or can't be strict: say it before the button is pressed
+                if (i.Route != null && i.ZoneWarning == null && v.Button != null) v.Sub = RouteText(i.Route);
                 if (i.RussiaNote) v.Note = RussiaNote(i.RussiaPlayers);
                 return v;
             }
@@ -151,6 +169,48 @@ namespace PingBoost
                 ar += " (تقريباً " + Stats.Approx(players) + " لاعب)";
             }
             return Lang.T(en + ".", ar + ".");
+        }
+
+        // The trade-off of a strict lock, with the numbers:
+        //   ClosedEntry: "We have to close Dubai because it reaches Europe. Your ping to SE Asia becomes about 197 instead of 106."
+        //   BlockedHost: the shortest way goes through a datacenter of a region not picked (I3)
+        //   MayLeak:     the only way left goes through an entry that reaches a left-out region (G5)
+        public static string RouteText(RouteNote n)
+        {
+            if (n == null) return null;
+            bool nums = n.AfterMs >= 0 && n.BeforeMs >= 0;
+            string en, ar;
+            if (n.Kind == RouteNoteKind.MayLeak)
+            {
+                en = "We have to keep " + n.Entry + " open, or the game can't reach " + n.Target + " at all. " + n.Entry +
+                     (n.Reaches != null ? " also reaches " + n.Reaches + ", so" : "") + " the lock may not hold.";
+                ar = "لازم نخلي " + n.Entry + " مفتوحة، وإلا اللعبة ما بتوصل " + To(n.Target) + " أبداً. " +
+                     (n.Reaches != null ? "بس " + n.Entry + " توصل " + To(n.Reaches) + " بعد، فالتثبيت ممكن ما يمسك." : "فالتثبيت ممكن ما يمسك.");
+                return Lang.T(en, ar);
+            }
+            if (n.Kind == RouteNoteKind.ClosedEntry)
+            {
+                en = "We have to close " + n.Entry + " because it reaches " + n.Reaches + ".";
+                ar = "لازم نقفل " + n.Entry + " لأنها توصل " + To(n.Reaches) + ".";
+                if (nums)
+                {
+                    en += " Your ping to " + n.Target + " becomes about " + n.AfterMs + " instead of " + n.BeforeMs + ".";
+                    ar += " بنقك " + To(n.Target) + " بيصير تقريباً " + n.AfterMs + " بدل " + n.BeforeMs + ".";
+                }
+                return Lang.T(en, ar);
+            }
+            en = "Your shortest way to " + n.Target + " goes through " + n.Entry + ", and the lock closes it" +
+                 (nums ? ": your ping becomes about " + n.AfterMs + " instead of " + n.BeforeMs : "") + ". Pick " + n.Entry + " too to keep it.";
+            ar = "أقصر طريق لك " + To(n.Target) + " يمر من " + n.Entry + "، والتثبيت يقفله" +
+                 (nums ? ": بنقك بيصير تقريباً " + n.AfterMs + " بدل " + n.BeforeMs : "") + ". اختار " + n.Entry + " بعد عشان يبقى مفتوح.";
+            return Lang.T(en, ar);
+        }
+
+        // Arabic "to": "لأوروبا", "لجنوب شرق آسيا", "للشرق الأوسط".
+        static string To(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return "ل";
+            return name.StartsWith("ال") ? "ل" + name.Substring(1) : "ل" + name;
         }
 
         // Arabic: "A وB وC"; English: "A, B and C".

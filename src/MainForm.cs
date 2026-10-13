@@ -73,10 +73,16 @@ namespace PingBoost
         int boostGen;       // bumped by Stop: a relay route still being built then goes away instead of starting
         string lockSummary; // null = no region lock
         LockTest.LockInfo lockInfo; // how the current lock was applied (developer lock test)
+        HashSet<string> lockClosed; // Valve: the entry relays the current lock closes too (StrictLock, ruling R3)
+        RouteNote lockRoute;        // ...and what it costs, as the card tells it (null = nothing to tell)
         Dictionary<string, int> activity; // Deadlock matches/hour per matchmaking region
 
         Game CurrentGame { get { return gameList.SelectedItem as Game; } }
-        bool LockedOut(Game g, Region r) { return lockSummary != null && g != null && g.CanLock && !r.Picked && !r.NoRelay && g.Hosts(r); }
+        bool LockedOut(Game g, Region r)
+        {
+            if (lockSummary == null || g == null || !g.CanLock || r.Picked || r.NoRelay) return false;
+            return g.Hosts(r) || (g == lockGame && lockClosed != null && lockClosed.Contains(r.Id));
+        }
 
         public MainForm()
         {
@@ -1346,10 +1352,99 @@ namespace PingBoost
 
         static string Short(string name) { return name.Split(new[] { "  [", "  (" }, StringSplitOptions.None)[0]; }
 
+        // A Valve relay's place in a word or two, for "via Dubai" / «عن طريق دبي».
+        static string PlaceName(Region r)
+        {
+            string n = ShortName(r);
+            foreach (var cut in new[] { " (", " - " })
+            {
+                int i = n.IndexOf(cut, StringComparison.Ordinal);
+                if (i > 0) n = n.Substring(0, i);
+            }
+            return n;
+        }
+
+        // The region a Valve datacenter's matches belong to, in the player's words (hosts without a relay included).
+        static string RegionOfPop(Game g, string id)
+        {
+            string mm;
+            if (g.HostPops != null && DeadlockData.Hosting.TryGetValue(id, out mm) && Stats.MmRegions.ContainsKey(mm))
+                return Lang.T(Stats.MmRegions[mm][0], Stats.MmRegions[mm][1]);
+            var r = g.Regions.FirstOrDefault(x => x.Id == id) ?? g.NoRelayHosts.FirstOrDefault(x => x.Id == id);
+            return r != null ? RegionNameOf(g, r) : id;
+        }
+
+        // What a strict lock plan costs, in the card's terms (null = nothing worth telling): the entry relay it closes
+        // was the best way in (R3), the best way in is a datacenter of a region not picked (I3, 10 ms or more), or an
+        // entry that reaches a left-out region has to stay open (G5). target: the picked regions' names.
+        internal static RouteNote NoteOf(Game g, LockPlan plan, string target)
+        {
+            if (plan == null) return null;
+            var note = new RouteNote
+            {
+                Target = target,
+                BeforeMs = plan.Unlocked.Known ? (int)Math.Round(plan.Unlocked.Ms) : -1,
+                AfterMs = plan.Locked.Known ? (int)Math.Round(plan.Locked.Ms) : -1,
+            };
+            Func<string, Region> pop = id => g.Regions.FirstOrDefault(r => r.Id == id);
+            Route why;
+            if (plan.MayLeak)
+            {
+                note.Kind = RouteNoteKind.MayLeak;
+                note.Entry = PlaceName(pop(plan.Kept));
+                note.Reaches = plan.Reason.TryGetValue(plan.Kept, out why) ? RegionOfPop(g, why.To) : null;
+                return note;
+            }
+            string entry = plan.Unlocked.Entry;
+            if (entry == null) return null;
+            if (plan.Close.Contains(entry))
+            {
+                note.Kind = RouteNoteKind.ClosedEntry;
+                note.Entry = PlaceName(pop(entry));
+                note.Reaches = RegionOfPop(g, plan.Reason[entry].To);
+                return note;
+            }
+            if (plan.Blocked.Contains(entry) && (!plan.Locked.Known || plan.Locked.Ms - plan.Unlocked.Ms >= 10))
+            {
+                note.Kind = RouteNoteKind.BlockedHost;
+                note.Entry = RegionOfPop(g, entry);
+                return note;
+            }
+            return null;
+        }
+
         // The regions to choose from. Games without a region table (developer mode only) get one per datacenter.
         List<RegionChoice> BuildChoices(Game g)
         {
             if (g == null || !g.CanLock || !loadedGames.Contains(g)) return new List<RegionChoice>();
+            if (g.RegionMap != null && g.Provider == Provider.Valve && g.Routes != null)
+            {
+                // a tile's ping is the game's: the best route through what is open now (the lock's open relays, or all
+                // of them), "via Dubai" when it enters at a relay (I5)
+                var pings = StrictLock.Pings(g);
+                var byId = new Dictionary<string, Region>();
+                foreach (var r in g.Regions) byId[r.Id] = r;
+                Func<string, bool> open = id => { Region x; return !byId.TryGetValue(id, out x) || !LockedOut(g, x); };
+                var routes = new Dictionary<Region, Route>();
+                Func<Region, Route> route = r =>
+                {
+                    Route rt;
+                    if (!routes.TryGetValue(r, out rt)) routes[r] = rt = StrictLock.Best(g.Routes, new[] { r.Id }, pings, open);
+                    return rt;
+                };
+                Func<Region, double> latency = r =>
+                {
+                    var relay = BestRelay(r); // the player's own relay, as on the rest of the screen
+                    return relay != null ? Math.Min(route(r).Ms, relay.Value.Value) : route(r).Ms;
+                };
+                Func<Region, string> via = r =>
+                {
+                    var rt = route(r);
+                    Region e;
+                    return rt.Known && rt.Entry != r.Id && latency(r) >= rt.Ms && byId.TryGetValue(rt.Entry, out e) && !g.Hosts(e) ? PlaceName(e) : null;
+                };
+                return RegionGroups.Build(g, g.AppId == "1422450" ? activity : null, PlayersOf, latency, via);
+            }
             if (g.RegionMap != null)
                 return RegionGroups.Build(g, g.AppId == "1422450" ? activity : null, PlayersOf, BestLatency);
             return g.Regions.Where(r => g.Hosts(r) && !r.Detected).Select(r => new RegionChoice
@@ -1368,7 +1463,7 @@ namespace PingBoost
             if (g == null) return;
             var all = BuildChoices(g);
             string sig = string.Join("|", all.Select(c => c.Def.Key + ":" + (c.Ping < double.MaxValue ? Math.Round(c.Ping).ToString() : "-") +
-                                                          ":" + c.Matches + ":" + c.Players).ToArray());
+                                                          ":" + c.Via + ":" + c.Matches + ":" + c.Players).ToArray());
             if (g == choicesGame && sig == choicesSig) return;
             var keep = g == choicesGame && userPicked ? allChoices.Where(c => c.Selected).Select(c => c.Def.Key).ToList() : null;
             var feat = RegionGroups.Featured(all);
@@ -1418,6 +1513,18 @@ namespace PingBoost
             if (input.RussiaNote && activity != null && activity.TryGetValue(DeadlockData.Russia, out russia)) input.RussiaPlayers = PlayersOf(russia);
             // Overwatch: the picked regions are all outside the game regions the player's matches were on
             if (g.CanLock && HasZones(g)) input.ZoneWarning = Zones.Warning(RegionGroups.Chosen(everyChoice), SeenZones(g));
+            // Valve: what the strict lock on the chosen regions costs, before it is applied; the lock that is on keeps its own
+            if (g.CanLock && g.Provider == Provider.Valve && g.Routes != null)
+            {
+                if (input.LockedNames != null) input.Route = lockRoute;
+                else
+                {
+                    var chosen = RegionGroups.Chosen(everyChoice);
+                    if (chosen.Count > 0)
+                        input.Route = NoteOf(g, StrictLock.For(g, RegionGroups.PickIds(g, chosen), StrictLock.Pings(g)),
+                                             CardLogic.JoinNames(chosen.Select(c => c.Name).ToList()));
+                }
+            }
             if (!g.CanLock)
             {
                 var best = CardBest(g);
@@ -2376,8 +2483,18 @@ namespace PingBoost
                     return;
                 }
             }
-            WarnLongerRoute(g, picked);
             string cardNames = CardLockNames(g, picked);
+            // Valve: the strict lock (R3) also closes the entry relays that reach the other regions about as fast
+            LockPlan plan = null;
+            RouteNote route = null;
+            if (g.Provider == Provider.Valve && g.Routes != null)
+            {
+                plan = StrictLock.For(g, picked.Select(r => r.Id).ToList(), StrictLock.Pings(g));
+                route = NoteOf(g, plan, cardNames);
+                WarnLongerRoute(g, plan, route);
+            }
+            var closed = new HashSet<string>(plan != null ? plan.Close : new List<string>());
+            var closedCidrs = g.Regions.Where(r => closed.Contains(r.Id)).SelectMany(r => r.Cidrs).ToList();
             btnLock.Enabled = false;
             lockingGame = g; // the status bar is hidden in the simple layout: the card says it too
             UpdateLockBar();
@@ -2405,8 +2522,10 @@ namespace PingBoost
                     else
                     {
                         var keep = new HashSet<string>(picked.SelectMany(r => r.Cidrs));
-                        // relay-only datacenters stay open: the game enters Valve's network through them
-                        block = g.Regions.Where(r => !r.Picked && !r.Detected && g.Hosts(r)).SelectMany(r => r.Cidrs).Where(c => !keep.Contains(c)).ToList();
+                        // the other regions' datacenters, and the entry relays the strict lock closes; the other relays
+                        // stay open: the game enters Valve's network through them
+                        block = g.Regions.Where(r => !r.Picked && !r.Detected && g.Hosts(r)).SelectMany(r => r.Cidrs).Concat(closedCidrs)
+                                         .Where(c => !keep.Contains(c)).ToList();
                     }
                     var info = new LockTest.LockInfo
                     {
@@ -2433,10 +2552,14 @@ namespace PingBoost
                             lockGame = g;
                             lockNames = cardNames;
                             lockInfo = info;
+                            lockClosed = closed;
+                            lockRoute = route;
                             LockChanged(g);
                             Telemetry.Server = string.Join(", ", picked.Select(r => r.NameEn));
                             Telemetry.Send("lock", Telemetry.Server, -1, n + " ranges blocked, mode " + info.Mode +
-                                           (skipped > 0 ? ", " + skipped + " bad entries skipped" : ""));
+                                           (skipped > 0 ? ", " + skipped + " bad entries skipped" : "") +
+                                           (closed.Count > 0 ? ", relays closed " + string.Join(",", closed.ToArray()) : "") +
+                                           (plan != null && plan.MayLeak ? ", kept open " + plan.Kept : ""));
                             if (devMode) DevOut("lock mode " + info.Mode + ": " + info.Scope);
                             btnLock.Enabled = true;
                             UpdateLockBar();
@@ -2467,43 +2590,16 @@ namespace PingBoost
             });
         }
 
-        // Valve games enter Valve's network through the closest datacenter and ride it to the match server.
-        // If that closest one hosts matches too, the lock has to block it, and the route gets longer: say so,
-        // with the ping it costs and the fix (tick it as well), from the player's own pings and Valve's.
-        void WarnLongerRoute(Game g, List<Region> picked)
+        // Valve games enter Valve's network at any relay they reach and ride it to the match server (shortest paths over
+        // Valve's own pings, I3). When the lock makes that way longer (it closes the entry relay, or the best way in is
+        // a datacenter of a region not picked) or can't be strict (G5), say so with the numbers before it is applied.
+        void WarnLongerRoute(Game g, LockPlan plan, RouteNote note)
         {
-            if (g.Provider != Provider.Valve || g.Backbone.Count == 0) return;
-            Func<Region, double> ping = r => r.Direct != null && r.Direct.Ok ? r.Direct.Avg : double.MaxValue;
-            var open = g.Regions.Where(r => r.Picked || !g.Hosts(r)).ToList();
-            Region worstX = null, worstP = null;
-            double worstGain = 0;
-            foreach (var p in picked)
-            {
-                // the best way to this server that stays open
-                double best = double.MaxValue;
-                foreach (var o in open)
-                {
-                    int hop = g.Between(o.Id, p.Id);
-                    if (hop >= 0 && ping(o) < double.MaxValue) best = Math.Min(best, ping(o) + hop);
-                }
-                if (best == double.MaxValue) continue;
-                // ...and through each datacenter the lock blocks
-                foreach (var x in g.Regions.Where(r => !r.Picked && g.Hosts(r)))
-                {
-                    int hop = g.Between(x.Id, p.Id);
-                    if (hop < 0 || ping(x) == double.MaxValue) continue;
-                    double gain = best - (ping(x) + hop);
-                    if (gain > worstGain) { worstGain = gain; worstX = x; worstP = p; }
-                }
-            }
-            if (worstX == null || worstGain < 10) return;
-            int ms = (int)Math.Round(worstGain);
-            Telemetry.Send("use", worstX.NameEn, ms, "longer route warning, " + worstP.Id);
-            Msg(T("Heads up: " + ShortName(worstX) + " is your shortest way into Valve's network to " + ShortName(worstP) +
-                  ", so blocking it can add about " + ms + " ms. Tick " + ShortName(worstX) + " too to keep it.",
-                  "تنبيه: " + ShortName(worstX) + " هي أقصر طريق لك لشبكة Valve عشان توصل " + ShortName(worstP) +
-                  "، وحجبها ممكن يزيد بنقك حوالي " + ms + " ms. علّم على " + ShortName(worstX) + " بعد عشان تبقى مفتوحة."),
-                ToastKind.Warn);
+            if (note == null) return;
+            string id = note.Kind == RouteNoteKind.MayLeak ? plan.Kept : plan.Unlocked.Entry;
+            Telemetry.Send("use", id, note.AfterMs >= 0 && note.BeforeMs >= 0 ? note.AfterMs - note.BeforeMs : -1,
+                           "longer route warning, " + note.Kind + ", " + string.Join(",", g.Regions.Where(r => r.Picked).Select(r => r.Id).ToArray()));
+            Msg(CardLogic.RouteText(note), ToastKind.Warn);
         }
 
         void UnlockServers()
@@ -2514,6 +2610,8 @@ namespace PingBoost
             lockGame = null;
             lockNames = null;
             lockInfo = null;
+            lockClosed = null;
+            lockRoute = null;
             if (!boosting) StopMonitor();
             Telemetry.Server = null;
             Telemetry.Send("unlock", null, -1, null);
@@ -2550,6 +2648,8 @@ namespace PingBoost
             lockGame = null;
             lockNames = null;
             lockInfo = null;
+            lockClosed = null;
+            lockRoute = null;
             ClearMatch();
             StopAll();
             foreach (var g in games) foreach (var r in g.Regions) { r.Picked = false; r.Here = false; }

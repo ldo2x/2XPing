@@ -417,6 +417,13 @@ namespace PingBoost
             bool known = choice.Ping < double.MaxValue;
             string ping = known ? Lang.T("Ping ", "بنق ") + (int)Math.Round(choice.Ping) : Lang.T("One moment...", "لحظة...");
             TextRenderer.DrawText(g, ping, known ? pingFont : lineFont, Row(textX, y, textW, LineH), PingColor(choice.Ping), TextFlags);
+            // Valve: the route enters at a relay ("via Dubai"), after the number in the small font
+            if (known && choice.Via != null)
+            {
+                int pw = TextRenderer.MeasureText(g, ping, pingFont, new Size(textW, LineH), TextFlags | TextFormatFlags.NoPadding).Width;
+                if (pw < textW)
+                    TextRenderer.DrawText(g, " · " + Lang.T("via ", "عن طريق ") + choice.Via, lineFont, Row(textX + pw, y, textW - pw, LineH), MainForm.Dim, TextFlags);
+            }
             y += LineH;
             if (HasQueue(choice))
             {
