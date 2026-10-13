@@ -266,8 +266,8 @@ namespace PingBoost
                     return c;
                 };
 
-                var nameCard = section(128, 104, Lang.T("What's your name?", "إيش اسمك؟"));
-                var name = new InputBox { Bounds = new Rectangle(16, 46, W - 32, 42) };
+                var nameCard = section(128, 104, Lang.T("What's your name?", "وش اسمك؟"));
+                var name = new InputBox { Bounds = new Rectangle(16, 46, W - 32, 42), Placeholder = Lang.T("Your name", "اسمك") };
                 name.Text = Telemetry.Nickname;
                 name.Box.MaxLength = 30;
                 nameCard.Controls.Add(name);
@@ -275,7 +275,7 @@ namespace PingBoost
                 // the games this player cares about, two per row, in reading order
                 var all = GameDb.Available(GameDb.All());
                 int gamesH = 70 + (all.Count + 1) / 2 * 54 + 8;
-                var gamesCard = section(244, gamesH, Lang.T("Which games do you play?", "إيش الألعاب اللي تلعبها؟"));
+                var gamesCard = section(244, gamesH, Lang.T("Which games do you play?", "وش الألعاب اللي تلعبها؟"));
                 gamesCard.Controls.Add(new Label
                 {
                     Text = Lang.T("Only these show up in your list. You can change them later in Settings.",
@@ -297,44 +297,61 @@ namespace PingBoost
                 }
                 int y = 244 + gamesH + 12;
 
-                var noticeCard = new Card { Bounds = new Rectangle(20, y, W, 116), Fill = MainForm.Panel1, Radius = 14 };
+                // what is sent, in the words of SECURITY.md's table; the details link sits inside the same card
+                const int NoticeH = 150;
+                var noticeCard = new Card { Bounds = new Rectangle(20, y, W, NoticeH), Fill = MainForm.Panel1, Radius = 14 };
                 f.Controls.Add(noticeCard);
                 var notice = new Label
                 {
-                    Bounds = new Rectangle(14, 10, W - 28, 98), ForeColor = MainForm.Dim, Font = Fonts.Ui(9.5f),
+                    Bounds = new Rectangle(14, 10, W - 28, NoticeH - 44), ForeColor = MainForm.Dim, Font = Fonts.Ui(9.5f),
                     Text = Lang.T(
-                        "This is a beta: while it's open, 2X Ping sends usage statistics so we can improve it.\n" +
-                        "New versions are required: you get a few days to update.\nYou need to agree to use the beta.",
-                        "هادي نسخة تجريبية، والبرنامج يرسل إحصائيات استخدام وهو مفتوح عشان نطوّره.\n" +
-                        "ولما تنزل نسخة جديدة لازم تحدّث، وعندك كم يوم.\nلازم توافق عشان تستخدمه.")
+                        "This is a beta. While it's open, 2X Ping sends your name and PC name, PC info, location (city and internet provider), " +
+                        "the game and ping, and error logs, so we can improve it.\n" +
+                        "Updates are required: you get " + Updater.GraceDays + " days.\nYou need to agree to use the beta.",
+                        "هادي نسخة تجريبية، والبرنامج وهو مفتوح يرسل لنا اسمك واسم جهازك ومعلومات جهازك ومدينتك وشركة النت " +
+                        "واللعبة والبنق وسجل الأخطاء عشان نطوّره.\n" +
+                        "التحديثات إجبارية، وعندك " + Updater.GraceDays + " أيام.\nلازم توافق عشان تستخدمه.")
                 };
                 noticeCard.Controls.Add(notice);
                 var details = new LinkLabel
                 {
-                    Text = Lang.T("Statistics details", "تفاصيل الإحصائيات"), Bounds = new Rectangle(20, y + 120, W, 24),
+                    Text = Lang.T("Statistics details", "تفاصيل الإحصائيات"), Bounds = new Rectangle(14, NoticeH - 32, W - 28, 24),
+                    BackColor = MainForm.Panel1, TextAlign = Lang.Ar ? ContentAlignment.MiddleRight : ContentAlignment.MiddleLeft,
                     LinkColor = MainForm.Lavender, ActiveLinkColor = Color.White, LinkBehavior = LinkBehavior.HoverUnderline
                 };
                 details.LinkClicked += delegate { Brand.Open(Brand.RepoUrl + "/blob/main/SECURITY.md#usage-statistics-beta"); };
-                f.Controls.Add(details);
+                noticeCard.Controls.Add(details);
+                y += NoticeH + 8;
 
+                // why "Agree and start" can't be pressed yet
+                var why = new Label
+                {
+                    Text = Lang.T("Write your name and pick at least one game", "اكتب اسمك واختار لعبة وحدة على الأقل"),
+                    Bounds = new Rectangle(20, y, W, 22), ForeColor = MainForm.Warn, Font = Fonts.Ui(9f),
+                    TextAlign = ContentAlignment.MiddleCenter
+                };
+                f.Controls.Add(why);
+                y += 26;
                 var ok = new RoundButton
                 {
                     Text = Lang.T("Agree and start", "موافق وأبدأ"), DialogResult = DialogResult.OK,
-                    Bounds = new Rectangle(Lang.Ar ? 280 : 20, y + 158, 220, 40), FlatStyle = FlatStyle.Flat,
+                    Bounds = new Rectangle(Lang.Ar ? 280 : 20, y, 220, 40), FlatStyle = FlatStyle.Flat,
                     BackColor = MainForm.Accent, ForeColor = Color.Black, Font = Fonts.Semi(10.5f), Enabled = false
                 };
                 var exit = new RoundButton
                 {
                     Text = Lang.T("Exit", "خروج"), DialogResult = DialogResult.Cancel,
-                    Bounds = new Rectangle(Lang.Ar ? 20 : 280, y + 158, 220, 40), FlatStyle = FlatStyle.Flat,
+                    Bounds = new Rectangle(Lang.Ar ? 20 : 280, y, 220, 40), FlatStyle = FlatStyle.Flat,
                     BackColor = MainForm.Panel2, ForeColor = MainForm.TextC
                 };
                 ok.FlatAppearance.BorderSize = exit.FlatAppearance.BorderSize = 0;
-                // ready once there is a name and at least one game
+                // ready once there is a name and at least one game; until then quiet but readable, with the reason above it
                 EventHandler refresh = delegate
                 {
                     ok.Enabled = name.Text.Trim().Length >= 2 && picks.Any(p => p.Checked);
                     ok.BackColor = ok.Enabled ? MainForm.Accent : MainForm.Panel2;
+                    ok.ForeColor = ok.Enabled ? Color.Black : MainForm.TextC;
+                    why.Visible = !ok.Enabled;
                 };
                 name.Box.TextChanged += refresh;
                 foreach (var p in picks) p.CheckedChanged += refresh;
@@ -343,7 +360,7 @@ namespace PingBoost
                 f.Controls.Add(exit);
                 f.AcceptButton = ok;
                 f.CancelButton = exit;
-                f.ClientSize = new Size(W + 40, y + 214);
+                f.ClientSize = new Size(W + 40, y + 56);
 
                 if (f.ShowDialog(owner) != DialogResult.OK) return false;
                 Telemetry.Nickname = name.Text;
@@ -494,7 +511,15 @@ namespace PingBoost
                 }
                 catch (Exception ex)
                 {
-                    try { BeginInvoke((Action)(() => summary.Text = "Error: " + ex.Message)); } catch { }
+                    try
+                    {
+                        BeginInvoke((Action)(() =>
+                        {
+                            summary.Text = "Error: " + ex.Message;
+                            if (issues.Items.Count == 0) NoData(issues, "No data (couldn't load)");
+                        }));
+                    }
+                    catch { }
                 }
             });
         }
@@ -601,7 +626,14 @@ namespace PingBoost
                 item.ForeColor = grp.Key == "crash" || grp.Key == "lock_outside" || grp.Key == "lock_rules_missing" ? MainForm.Bad : MainForm.Warn;
                 issues.Items.Add(item);
             }
+            if (issues.Items.Count == 0) NoData(issues, "No problems reported");
             issues.EndUpdate();
+        }
+
+        // An empty grid says why it is empty, in one dim row.
+        static void NoData(ListView lv, string text)
+        {
+            lv.Items.Add(new ListViewItem(text) { ForeColor = MainForm.Dim });
         }
 
         void FillLog()

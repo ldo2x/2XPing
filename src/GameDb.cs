@@ -320,8 +320,8 @@ namespace PingBoost
                     NoteAr = "اللعبة تحدد منطقتك من حسابك. ادخل رايد واضغط «على أي سيرفر أنا؟» عشان تعرف سيرفرك الحقيقي." },
                 new Game { Name = "Overwatch 2", Icon = "overwatch", Released = true, InDevelopment = true, Provider = Provider.Blizzard, SteamAppId = "2357570", Processes = new[] {"Overwatch"}, LockSpace = OwSpace, LockAllow = OwAllow, DetectIgnore = OwIgnore, LockGroups = OwGroups, RegionMap = OwRegionMap,
                     LockPorts = "1-3723,3725-65535", // 3724 is Blizzard's own port: never block it
-                    NoteEn = "Tick the datacenters you want and press Lock my servers. Try it in Quick Play first: if the game still picks a blocked one, the match won't load.",
-                    NoteAr = "علّم على المراكز اللي تبغاها واضغط «ثبّت سيرفراتي». جرّبه في الكويك أول: لو اللعبة اختارت مركز محجوب، المباراة ما تفتح." },
+                    NoteEn = "Pick the regions you want and lock them. Try a normal match first: if the game still picks a blocked region, the match won't load.",
+                    NoteAr = "علّم على المناطق اللي تبغاها واضغط «ثبّت سيرفراتي». جرّبه في مباراة عادية أول: لو اللعبة اختارت منطقة محجوبة، المباراة ما تفتح." },
                 new Game { Name = "Valorant", Icon = "valorant", Provider = Provider.Aws, AwsRegions = aws, Processes = new[] {"VALORANT-Win64-Shipping"}, LockSpace = awsLock,
                     NoteEn = "Valorant runs on Amazon: tick the regions you want and press Lock my servers. Try it in Unrated first: if the game still picks a blocked one, the match won't load.",
                     NoteAr = "Valorant على Amazon: علّم على المناطق اللي تبغاها واضغط «ثبّت سيرفراتي». جرّبه في Unrated أول: لو اللعبة اختارت منطقة محجوبة، المباراة ما تفتح." },

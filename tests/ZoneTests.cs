@@ -63,22 +63,22 @@ namespace PingBoost
             var sg = ZoneChoice("sg", "Singapore", "سنغافورة", Zones.Asia, true);
             var am = new List<string> { Zones.Americas };
             string w = Zones.Warning(new List<RegionChoice> { sg }, am);
-            Check(w == "سنغافورة في منطقة آسيا، وإنت تلعب على أمريكا. ما بتلقى مباراة إلا لو كانت لعبتك على منطقة آسيا.", "Arabic: " + w);
+            Check(w == "سنغافورة في منطقة آسيا، وإنت تلعب على أمريكا. ما بتلقى مباراة إلا لو كانت منطقة لعبتك آسيا.", "Arabic: " + w);
             Lang.Ar = false;
             w = Zones.Warning(new List<RegionChoice> { sg }, am);
-            Check(w == "Singapore is in Asia, but you play on Americas. You'll only find a match if your game is set to Asia.", "English: " + w);
+            Check(w == "Singapore is in Asia, but you play on Americas. You'll only find a match if the game's own region is Asia.", "English: " + w);
 
             // two regions, two zones, two zones seen
             var eu = ZoneChoice("eu", "Europe", "أوروبا", Zones.Europe, true);
             var ea = ZoneChoice("ea", "East Asia", "شرق آسيا", Zones.Asia, true);
             w = Zones.Warning(new List<RegionChoice> { ea, sg }, am);
-            Check(w == "East Asia and Singapore are in Asia, but you play on Americas. You'll only find a match if your game is set to Asia.", "English two in one zone: " + w);
+            Check(w == "East Asia and Singapore are in Asia, but you play on Americas. You'll only find a match if the game's own region is Asia.", "English two in one zone: " + w);
             Lang.Ar = true;
             var na = ZoneChoice("na", "North America", "أمريكا الشمالية", Zones.Americas, true);
             w = Zones.Warning(new List<RegionChoice> { na, sg }, new List<string> { Zones.Europe });
-            Check(w == "أمريكا الشمالية في منطقة أمريكا وسنغافورة في منطقة آسيا، وإنت تلعب على أوروبا. ما بتلقى مباراة إلا لو كانت لعبتك على منطقة أمريكا أو آسيا.", "Arabic two zones: " + w);
+            Check(w == "أمريكا الشمالية في منطقة أمريكا وسنغافورة في منطقة آسيا، وإنت تلعب على أوروبا. ما بتلقى مباراة إلا لو كانت منطقة لعبتك أمريكا أو آسيا.", "Arabic two zones: " + w);
             w = Zones.Warning(new List<RegionChoice> { sg }, new List<string> { Zones.Americas, Zones.Europe });
-            Check(w == "سنغافورة في منطقة آسيا، وإنت تلعب على أمريكا وأوروبا. ما بتلقى مباراة إلا لو كانت لعبتك على منطقة آسيا.", "Arabic two seen: " + w);
+            Check(w == "سنغافورة في منطقة آسيا، وإنت تلعب على أمريكا وأوروبا. ما بتلقى مباراة إلا لو كانت منطقة لعبتك آسيا.", "Arabic two seen: " + w);
 
             // no warning: nothing seen yet, one picked region in a seen zone, nothing picked, or a game without zones
             Check(Zones.Warning(new List<RegionChoice> { sg }, new List<string>()) == null, "nothing seen: no warning");
@@ -117,7 +117,7 @@ namespace PingBoost
             Check(v.Kind == CardKind.Locked && !v.Sub.Contains("ما لقيت مباراة"), "no hint before 3 minutes");
             i.NoMatchYet = true;
             v = CardLogic.Decide(i);
-            Check(v.Kind == CardKind.Locked && v.Sub == "افتح اللعبة ودوّر مباراة. جرّب مباراة عادية أول. ما لقيت مباراة؟ يمكن المنطقة اللي اخترتها برا منطقة لعبتك.", "Arabic: " + v.Sub);
+            Check(v.Kind == CardKind.Locked && v.Sub == "افتح اللعبة ودوّر مباراة. جرّب مباراة عادية أول. ما لقيت مباراة؟ يمكن المنطقة اللي اخترتها مو من مناطق لعبتك.", "Arabic: " + v.Sub);
             Lang.Ar = false;
             v = CardLogic.Decide(i);
             Check(v.Sub.EndsWith(" No match found? The region you picked may be outside your game's region."), "English: " + v.Sub);

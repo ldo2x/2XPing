@@ -423,7 +423,7 @@ namespace PingBoost
         {
             if (choice.Tag == "best") return Lang.T("Best choice", "أحسن خيار");
             if (choice.Tag == "ping") return Lang.T("Lowest ping", "أقل بنق");
-            if (choice.Tag == "queue") return Lang.T("Fastest queue", "أسرع قيم");
+            if (choice.Tag == "queue") return Lang.T("Shortest wait", "أقصر انتظار");
             return null;
         }
 

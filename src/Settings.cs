@@ -63,7 +63,7 @@ namespace PingBoost
                 // ---- your name
                 int y = M;
                 var nameCard = section(colA, y, 104, Lang.T("Your name", "اسمك"));
-                var nick = new InputBox { Bounds = new Rectangle(16, 46, W - 32, 42) };
+                var nick = new InputBox { Bounds = new Rectangle(16, 46, W - 32, 42), Placeholder = Lang.T("Your name", "اسمك") };
                 nick.Text = Telemetry.Nickname;
                 nick.Box.MaxLength = 30;
                 nameCard.Controls.Add(nick);
@@ -82,7 +82,7 @@ namespace PingBoost
                 layout.SelectedIndex = Prefs.Simple ? 0 : 1;
                 var layoutHint = new Label { Bounds = new Rectangle(16, 94, W - 32, 26), ForeColor = MainForm.Dim, Font = Fonts.Ui(9f) };
                 Action hint = () => layoutHint.Text = layout.SelectedIndex == 0
-                    ? Lang.T("Just what you need: pick a server, see your ping, play.", "الأشياء المهمة بس: اختار سيرفرك، شوف البنق، والعب.")
+                    ? Lang.T("Just what you need: pick a region, see your ping, play.", "الأشياء المهمة بس: اختار منطقتك، شوف البنق، والعب.")
                     : Lang.T("Everything: relays, jitter, packet loss, tools and the log.", "كل شي: سيرفرات الوسيط، التذبذب، الفقد، الأدوات والسجل.");
                 hint();
                 layout.SelectedIndexChanged += delegate { hint(); };
@@ -101,7 +101,10 @@ namespace PingBoost
                 var list = GameDb.Available(GameDb.All());
                 var hiddenBefore = Prefs.HiddenGames;
                 int rows = (list.Count + 1) / 2;
-                int gamesH = 46 + rows * 54 + 8;
+                // the games whose server lock is still in development say so under the tiles (the game list's tag)
+                var dev = list.Where(g => g.InDevelopment).Select(g => g.Name).ToList();
+                const int DevNoteH = 40;
+                int gamesH = 46 + rows * 54 + 8 + (dev.Count > 0 ? DevNoteH : 0);
                 y = M;
                 var gamesCard = section(colB, y, gamesH, Lang.T("Games in your list", "الألعاب اللي تظهر لك"));
                 var tiles = new List<GameTile>();
@@ -118,6 +121,13 @@ namespace PingBoost
                     gamesCard.Controls.Add(t);
                     tiles.Add(t);
                 }
+                if (dev.Count > 0)
+                    gamesCard.Controls.Add(new Label
+                    {
+                        Text = Lang.T("The server lock for " + CardLogic.JoinNames(dev) + " is still in development.",
+                                      "تثبيت السيرفرات في " + CardLogic.JoinNames(dev) + " لسا قيد التطوير."),
+                        ForeColor = MainForm.Warn, Font = Fonts.Ui(8.5f), Bounds = new Rectangle(16, 46 + rows * 54, W - 32, DevNoteH)
+                    });
                 y += gamesH + Gap;
 
                 // ---- more

@@ -146,8 +146,8 @@ namespace PingBoost
             }).ToList());
             string played = CardLogic.JoinNames(seen.Select(Name).ToList());
             string need = Lang.Ar ? string.Join(" أو ", zones.Select(Name).ToArray()) : string.Join(" or ", zones.Select(Name).ToArray());
-            return Lang.T(where + ", but you play on " + played + ". You'll only find a match if your game is set to " + need + ".",
-                          where + "، وإنت تلعب على " + played + ". ما بتلقى مباراة إلا لو كانت لعبتك على منطقة " + need + ".");
+            return Lang.T(where + ", but you play on " + played + ". You'll only find a match if the game's own region is " + need + ".",
+                          where + "، وإنت تلعب على " + played + ". ما بتلقى مباراة إلا لو كانت منطقة لعبتك " + need + ".");
         }
     }
 

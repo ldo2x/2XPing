@@ -270,7 +270,7 @@ namespace PingBoost
             Check(v.Kind == CardKind.InMatchRelay, "relay-only kind");
             Check(v.Title == "داخل شبكة Valve من دبي، وسيرفر المباراة ما يبان من هنا", "title: " + v.Title);
             Check(!v.Title.Contains("✓") && !v.Sub.Contains("✓") && !v.Sub.Contains("شغّال"), "no ✓, no 'working'");
-            Check(v.Sub == "مثبّت على أوروبا. البنق داخل اللعبة هو الأدق.", "sub: " + v.Sub);
+            Check(v.Sub == "مثبّت على أوروبا. وبنقك الحقيقي تشوفه داخل اللعبة.", "sub: " + v.Sub);
             Check(v.Accent == MainForm.Accent && v.Button == "فك التثبيت", "neutral accent, unlock");
             Check(v.HintLink == null && v.HintSteps == null, "no hint without one asked for");
             i.MatchEntry = null;
@@ -279,7 +279,7 @@ namespace PingBoost
             i.LockedNames = "Europe"; i.MatchEntry = "Dubai";
             v = CardLogic.Decide(i);
             Check(v.Title == "Entering Valve's network at Dubai; the match server can't be seen from here", "english title: " + v.Title);
-            Check(v.Sub == "Locked to Europe. The ping inside the game is the most accurate.", "english sub: " + v.Sub);
+            Check(v.Sub == "Locked to Europe. The ping shown in the game is the real one.", "english sub: " + v.Sub);
             Lang.Ar = true;
         }
 

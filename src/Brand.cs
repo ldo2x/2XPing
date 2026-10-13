@@ -136,8 +136,8 @@ namespace PingBoost
                 if (Brand.IsBeta)
                     line(Lang.T("BETA - early test version", "نسخة تجريبية (Beta)"), Fonts.Semi(9.5f), MainForm.Warn, 24);
                 line(Lang.T("Made by ", "من تطوير ") + Brand.Developer, Fonts.Semi(12f), MainForm.TextC, 34);
-                line(Lang.T("Finds you the best server and route, and shows your ping live.",
-                            "يلقى لك أحسن سيرفر وأحسن طريق، ويوريك البنق أول بأول."), f.Font, MainForm.Dim, 44);
+                line(Lang.T("Pick the best region for your game, lock it, and see your ping.",
+                            "تختار أحسن منطقة للعبتك، وتثبّتها، وتشوف بنقك."), f.Font, MainForm.Dim, 44);
                 // separate lines so Arabic and Latin text never get reordered together
                 line(Brand.Copyright, Fonts.Ui(9f), MainForm.Dim, 20).RightToLeft = RightToLeft.No;
                 line(Lang.T("Free and open source (MIT License)", "مجاني ومفتوح المصدر (رخصة MIT)"), Fonts.Ui(9f), MainForm.Dim, 22);
@@ -197,7 +197,7 @@ namespace PingBoost
                 f.Controls.Add(new Label
                 {
                     Text = Lang.T("You're using a beta. Your feedback decides what we fix and add next.",
-                                  "إنت تجرّب نسخة بيتا، ورأيك هو اللي يحدد إيش نصلّح ونضيف بعدين."),
+                                  "إنت تجرّب نسخة بيتا، ورأيك هو اللي يحدد وش نصلّح ونضيف بعدين."),
                     ForeColor = MainForm.Warn, Bounds = new Rectangle(16, y, 448, 44)
                 });
                 y += 52;
@@ -247,19 +247,19 @@ namespace PingBoost
                     {
                         if (!string.IsNullOrEmpty(Brand.DiscordInvite)) { Brand.Open(Brand.DiscordInvite); return; }
                         try { Clipboard.SetText(Brand.DiscordUser); } catch { }
-                        copied(b, Lang.T("Copied ✓  ", "نسخته ✓  ") + Brand.DiscordUser);
+                        copied(b, Lang.T("Copied ✓  ", "انتسخ ✓  ") + Brand.DiscordUser);
                     });
                 row(Lang.T("Copy diagnostic info", "انسخ معلومات التشخيص"),
                     Lang.T("Version, Windows and the recent log - no personal data", "الإصدار والويندوز وآخر السجل، بدون أي بيانات شخصية"),
                     b =>
                     {
                         try { Clipboard.SetText(Diagnostics(log)); } catch { }
-                        copied(b, Lang.T("Copied ✓  paste it into your report", "نسخته ✓  الصقه في البلاغ"));
+                        copied(b, Lang.T("Copied ✓  paste it into your report", "انتسخ ✓  الصقه في البلاغ"));
                     });
 
                 var ok = new RoundButton
                 {
-                    Text = Lang.T("Close", "تمام"), DialogResult = DialogResult.OK, Bounds = new Rectangle(184, y + 4, 112, 34),
+                    Text = Lang.T("Close", "إغلاق"), DialogResult = DialogResult.OK, Bounds = new Rectangle(184, y + 4, 112, 34),
                     FlatStyle = FlatStyle.Flat, BackColor = MainForm.Accent, ForeColor = Color.Black
                 };
                 ok.FlatAppearance.BorderSize = 0;

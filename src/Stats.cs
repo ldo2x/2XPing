@@ -127,12 +127,13 @@ namespace PingBoost
         // so the old 100 / 40 / 10 became 40 / 15 / 4.
         public const int FastQueue = 40, MediumQueue = 15, SlowQueue = 4;
 
-        // Rough queue-time bucket from a region's matches in the live sample (DeadlockActivity).
+        // Rough queue-time bucket from a region's matches in the live sample (DeadlockActivity). Arabic says the range in
+        // words ("1 إلى 3"): a "1-3" range is turned around ("3-1") when drawn right to left.
         public static string EstimateWait(int matchesPerHour)
         {
-            if (matchesPerHour >= FastQueue) return Lang.T("~1-3 min", "‎1-3‎ دقايق");
-            if (matchesPerHour >= MediumQueue) return Lang.T("~3-6 min", "‎3-6‎ دقايق");
-            if (matchesPerHour >= SlowQueue) return Lang.T("~6-12 min", "‎6-12‎ دقيقة");
+            if (matchesPerHour >= FastQueue) return Lang.T("~1-3 min", "1 إلى 3 دقايق");
+            if (matchesPerHour >= MediumQueue) return Lang.T("~3-6 min", "3 إلى 6 دقايق");
+            if (matchesPerHour >= SlowQueue) return Lang.T("~6-12 min", "6 إلى 12 دقيقة");
             if (matchesPerHour > 0) return Lang.T("12+ min", "فوق 12 دقيقة");
             return Lang.T("very slow", "بطيء مرة");
         }

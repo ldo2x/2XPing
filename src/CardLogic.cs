@@ -13,6 +13,9 @@ namespace PingBoost
         public string Game;
         public bool Loaded, LoadFailed, Testing, Tested, CanLock;
         public bool Locking;                  // a lock is being applied right now
+        public string LockingNames;           // what that lock is for, in the card's words ("Europe"); null = not known
+        // Overwatch 2 and Dead by Daylight: the lock works but is still being checked, so the card says so
+        public bool InDevelopment;
         public List<RegionChoice> Choices;
         public string LockedNames;            // null = not locked
         public string MatchRegion;            // where the running match is, null = not in a match
@@ -70,11 +73,13 @@ namespace PingBoost
         {
             // a lock being applied, or one that is on, always shows: never hidden behind "Offline" or "Loading"
             if (i.CanLock && i.Locking)
-                return Make(CardKind.Locking, Lang.T("Locking your servers...", "أثبّت سيرفراتك..."), null, null);
+                return Make(CardKind.Locking, i.LockingNames != null
+                    ? Lang.T("Setting up " + i.LockingNames + "...", "نجهّز لك " + i.LockingNames + "...")
+                    : Lang.T("Locking your servers...", "نثبّت لك السيرفرات..."), null, null);
             if (i.CanLock && i.LockedNames != null)
             {
                 string unlock = Lang.T("Unlock", "فك التثبيت");
-                string working = Lang.T("The lock is working. The ping inside the game is the most accurate.", "التثبيت شغّال. البنق داخل اللعبة هو الأدق.");
+                string working = Lang.T("The lock is working. The ping shown in the game is the real one.", "التثبيت شغّال. وبنقك الحقيقي تشوفه داخل اللعبة.");
                 string place = i.MatchPlace != null ? " (" + i.MatchPlace + ")" : "";
                 if (i.MatchRegion != null && !i.MatchOnPicked)
                 {
@@ -96,20 +101,20 @@ namespace PingBoost
                         : Lang.T("Entering Valve's network through a relay; the match server can't be seen from here",
                                  "داخل شبكة Valve من وسيط، وسيرفر المباراة ما يبان من هنا");
                     return WithHint(Make(CardKind.InMatchRelay, title,
-                        Lang.T("Locked to " + i.LockedNames + ". The ping inside the game is the most accurate.",
-                               "مثبّت على " + i.LockedNames + ". البنق داخل اللعبة هو الأدق."), unlock), i.Hint);
+                        Lang.T("Locked to " + i.LockedNames + ". The ping shown in the game is the real one.",
+                               "مثبّت على " + i.LockedNames + ". وبنقك الحقيقي تشوفه داخل اللعبة."), unlock), i.Hint);
                 }
                 string find = Lang.T("Open the game and find a match. Try a normal match first.", "افتح اللعبة ودوّر مباراة. جرّب مباراة عادية أول.");
                 if (i.NoMatchYet)
                     find += Lang.T(" No match found? The region you picked may be outside your game's region.",
-                                   " ما لقيت مباراة؟ يمكن المنطقة اللي اخترتها برا منطقة لعبتك.");
+                                   " ما لقيت مباراة؟ يمكن المنطقة اللي اخترتها مو من مناطق لعبتك.");
                 // a lock kept leaky on purpose (G5) says so: it may not keep the other regions away
                 if (i.Route != null && i.Route.Kind == RouteNoteKind.MayLeak) find = RouteText(i.Route) + " " + find;
                 return WithHint(Good(Make(CardKind.Locked, Lang.T("✓ Locked to " + i.LockedNames, "✓ مثبّت على " + i.LockedNames), find, unlock)), i.Hint);
             }
 
             if (i.LoadFailed) return Offline();
-            if (!i.Loaded) return Make(CardKind.Loading, Lang.T("Getting " + i.Game + " servers...", "أجيب سيرفرات " + i.Game + "..."), null, null);
+            if (!i.Loaded) return Make(CardKind.Loading, Lang.T("Getting " + i.Game + " servers...", "نجيب سيرفرات " + i.Game + "..."), null, null);
 
             if (!i.CanLock)
             {
@@ -135,6 +140,7 @@ namespace PingBoost
                 // the lock on these regions costs ping, or can't be strict: say it before the button is pressed
                 if (i.Route != null && i.ZoneWarning == null && v.Button != null) v.Sub = RouteText(i.Route);
                 if (i.RussiaNote) v.Note = RussiaNote(i.RussiaPlayers);
+                else if (i.InDevelopment) v.Note = InDevelopmentNote();
                 return v;
             }
 
@@ -172,10 +178,10 @@ namespace PingBoost
             {
                 var known = picked.Where(c => c.Ping < double.MaxValue).Select(c => (int)Math.Round(c.Ping)).ToList();
                 if (known.Count > 0 && known.Min() == known.Max())
-                    v.Sub = Lang.T("Ping " + known.Min() + ", and a faster queue", "البنق " + known.Min() + "، والبحث أسرع");
+                    v.Sub = Lang.T("Ping " + known.Min() + ", and a shorter wait", "البنق " + known.Min() + "، والانتظار أقصر");
                 else if (known.Count > 0)
-                    v.Sub = Lang.T("Ping between " + known.Min() + " and " + known.Max() + ", and a faster queue",
-                                   "البنق بين " + known.Min() + " و" + known.Max() + "، والبحث أسرع");
+                    v.Sub = Lang.T("Ping between " + known.Min() + " and " + known.Max() + ", and a shorter wait",
+                                   "البنق بين " + known.Min() + " و" + known.Max() + "، والانتظار أقصر");
             }
             return v;
         }
@@ -210,6 +216,13 @@ namespace PingBoost
                 ar += " (تقريباً " + Stats.Approx(players) + " لاعب)";
             }
             return Lang.T(en + ".", ar + ".");
+        }
+
+        // Overwatch 2 and Dead by Daylight ("in development" in the game list): said under the tiles before locking.
+        public static string InDevelopmentNote()
+        {
+            return Lang.T("Server lock for this game is still in development. Try a normal match first.",
+                          "تثبيت السيرفرات لهادي اللعبة لسا قيد التطوير. جرّب مباراة عادية أول.");
         }
 
         // The trade-off of a strict lock, with the numbers:
@@ -271,13 +284,13 @@ namespace PingBoost
 
         static CardView Searching()
         {
-            return Make(CardKind.Testing, Lang.T("Looking for your best region...", "أدوّر لك أحسن منطقة..."), null, null);
+            return Make(CardKind.Testing, Lang.T("Looking for your best region...", "ندوّر لك أحسن منطقة..."), null, null);
         }
 
         static CardView Offline()
         {
             return Make(CardKind.Offline,
-                Lang.T("Couldn't reach the servers. Check your internet.", "ما قدرت أوصل للسيرفرات. شيّك على النت."), null,
+                Lang.T("Couldn't reach the servers. Check your internet.", "ما قدرنا نوصل للسيرفرات. شيّك على النت."), null,
                 Lang.T("Try again", "جرّب مرة ثانية"));
         }
 

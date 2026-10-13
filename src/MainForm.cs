@@ -32,7 +32,7 @@ namespace PingBoost
 
         // server list columns
         const int ColRegion = 0, ColPing = 1, ColJitter = 2, ColLoss = 3, ColPlayers = 4, ColWait = 5, ColVia = 6, ColRoute = 7;
-        static readonly int[] AdvancedWidths = { 250, 84, 80, 66, 96, 110, 96, 150 };
+        static readonly int[] AdvancedWidths = { 230, 84, 76, 62, 92, 104, 92, 124 };
         static readonly int[] SimpleWidths = { 420, 140, 0, 0, 0, 0, 0, 0 };
 
         // A region heading row in the server list (Deadlock matchmaking region + its activity).
@@ -159,14 +159,12 @@ namespace PingBoost
                 SelectStartGame();
                 StartAutoDetect();
                 StartGameLogTimer();
-                // first launch only: two short lines about the beta
+                // first launch only: one short line about the beta
                 if (string.IsNullOrEmpty(Storage.GetSetting("beta_ack")))
                 {
                     Storage.SetSetting("beta_ack", Brand.Version);
                     Msg(T("This is a beta, so you may run into small bugs. Found one, or have an idea? Press Feedback at the top.",
                           "هادي نسخة بيتا، فممكن تطلع لك أخطاء بسيطة. لقيت شي أو عندك فكرة؟ اضغط «تواصل معنا» فوق."));
-                    Msg(T("Player numbers and wait times are estimates, and 2X Ping never touches game files.",
-                          "عدد اللاعبين ووقت الانتظار تقريبية، والبرنامج ما يلمس ملفات اللعبة."));
                 }
                 if (Updater.JustUpdated) ShowUpdatedNote();
                 CheckForUpdate(true);
@@ -315,6 +313,8 @@ namespace PingBoost
         [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
         struct FlashInfo { public uint Size; public IntPtr Hwnd; public uint Flags, Count, Timeout; }
         [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool FlashWindowEx(ref FlashInfo info);
+        [System.Runtime.InteropServices.DllImport("uxtheme.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+        static extern int SetWindowTheme(IntPtr hWnd, string app, string idList);
 
         // Flash the taskbar button until the window comes to the front.
         void FlashTaskbar()
@@ -364,7 +364,9 @@ namespace PingBoost
             {
                 Text = StatusOff, Font = Fonts.Semi(11f), ForeColor = Dim, Width = 430,
                 Dock = DockStyle.Right, TextAlign = ContentAlignment.MiddleRight, Padding = new Padding(0, 0, 14, 0),
-                Visible = !simple // the simple layout's card says the state
+                // advanced layout only (the simple layout's card says the state), and only with a live ping to show:
+                // otherwise the status bar at the bottom says the same
+                Visible = !simple && graphLive
             });
             header.Controls.Add(HeaderButton(T("Settings", "الإعدادات"), 120, TextC, OpenSettings));
             header.Controls.Add(HeaderButton(T("Feedback", "تواصل معنا"), 120, Warn, () =>
@@ -428,7 +430,7 @@ namespace PingBoost
             gameList = new ListBox
             {
                 Dock = DockStyle.Fill, BorderStyle = BorderStyle.None, BackColor = Panel1, ForeColor = TextC,
-                DrawMode = DrawMode.OwnerDrawFixed, ItemHeight = 40, IntegralHeight = false
+                DrawMode = DrawMode.OwnerDrawFixed, ItemHeight = 48, IntegralHeight = false
             };
             FillGames();
             gameList.DrawItem += DrawGameItem;
@@ -625,7 +627,7 @@ namespace PingBoost
                     Rectangle.Inflate(e.Bounds, -4, 0), TextC, TextFormatFlags.VerticalCenter | TextFormatFlags.Left | Lang.Flags);
             };
             int bx = simple ? 154 : 438;
-            btnBoost = MakeButton(T("BOOST", "شغّل البوست"), Accent);
+            btnBoost = MakeButton(T("Speed up", "شغّل التسريع"), Accent);
             btnBoost.ForeColor = Color.Black;
             btnBoost.Font = Fonts.Semi(11f);
             btnBoost.Bounds = new Rectangle(bx, 12, 160, 40);
@@ -667,7 +669,7 @@ namespace PingBoost
                 Text = T("A relay is a VPS of yours running WireGuard (set it up with setup-relay.sh). When the route through it is faster, " +
                          "ONLY the game's traffic goes through it; browsing, downloads and Discord stay on your normal connection.",
                          "الوسيط سيرفر VPS حقك عليه WireGuard (تجهّزه بسكربت setup-relay.sh). لو طلع الطريق عن طريقه أسرع، " +
-                         "ترافيك اللعبة بس هو اللي يمشي منه، والباقي (المتصفح، التحميل، ديسكورد) يمشي على نتك العادي.")
+                         "اتصال اللعبة بس هو اللي يمشي منه، والباقي (المتصفح، التحميل، ديسكورد) يمشي على نتك العادي.")
             };
             relayList = MakeListView(new[] { T("Name", "الاسم"), T("Server", "السيرفر"), T("Ping", "البنق"), T("Agent", "أداة القياس") },
                                      new[] { 180, 220, 90, 300 });
@@ -760,8 +762,11 @@ namespace PingBoost
             {
                 int used = 0;
                 for (int i = 1; i < lv.Columns.Count; i++) used += lv.Columns[i].Width;
-                lv.Columns[0].Width = Math.Max(widths[0], lv.ClientSize.Width - used);
+                // room for the vertical scrollbar even before it shows, so the list never scrolls sideways
+                lv.Columns[0].Width = Math.Max(widths[0], lv.ClientSize.Width - used - (lv.ClientSize.Width < lv.Width ? 0 : SystemInformation.VerticalScrollBarWidth));
             };
+            // dark scrollbars on the dark list (Windows 10 1809 and later; older ones keep the light ones)
+            lv.HandleCreated += delegate { try { SetWindowTheme(lv.Handle, "DarkMode_Explorer", null); } catch { } };
 
             lv.DrawColumnHeader += (s, e) =>
             {
@@ -921,25 +926,34 @@ namespace PingBoost
             }
             var textRc = Lang.Ar ? new Rectangle(e.Bounds.X + 6, e.Bounds.Y, e.Bounds.Width - iconSize - 30, e.Bounds.Height)
                                  : new Rectangle(e.Bounds.X + iconSize + 22, e.Bounds.Y, e.Bounds.Width - iconSize - 28, e.Bounds.Height);
+            // game names are Latin: aligned to the reading side, never reordered (right-to-left puts the "..." in front)
+            var nameFlags = TextFormatFlags.EndEllipsis | TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix |
+                            (Lang.Ar ? TextFormatFlags.Right : TextFormatFlags.Left);
+            var nameColor = sel ? TextC : Color.FromArgb(206, 196, 226);
             if (!g.Released || g.InDevelopment)
             {
-                // a small tag: "trial" (developer mode only, not in the public version yet) or
-                // "in development" (public, but its server lock is still being worked on)
+                // a small tag under the name, so the name keeps the whole width: "trial" (developer mode only, not in
+                // the public version yet) or "in development" (public, but its server lock is still being worked on)
                 bool trial = !g.Released;
                 string tag = trial ? T("TRIAL", "تجريبي") : T("IN DEVELOPMENT", "قيد التطوير");
-                using (var f = Fonts.Semi(7.5f))
+                using (var f = Fonts.Semi(7f))
                 {
-                    var ts = TextRenderer.MeasureText(tag, f);
-                    var tagRc = new Rectangle(Lang.Ar ? textRc.X : textRc.Right - ts.Width - 8, e.Bounds.Y + (e.Bounds.Height - 18) / 2, ts.Width + 8, 18);
+                    const int tagH = 16, gap = 1;
+                    int nameH = TextRenderer.MeasureText(e.Graphics, g.Name, Font, Size.Empty, nameFlags).Height;
+                    int top = e.Bounds.Y + (e.Bounds.Height - nameH - gap - tagH) / 2;
+                    TextRenderer.DrawText(e.Graphics, g.Name, Font, new Rectangle(textRc.X, top, textRc.Width, nameH), nameColor, nameFlags);
+                    int tw = TextRenderer.MeasureText(e.Graphics, tag, f, Size.Empty, TextFormatFlags.NoPadding).Width + 12;
+                    var tagRc = new Rectangle(Lang.Ar ? textRc.Right - tw - 2 : textRc.X + 2, top + nameH + gap, tw, tagH);
+                    e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
                     using (var path = Shapes.Round(tagRc, 6))
                     using (var b = new SolidBrush(trial ? Color.FromArgb(28, 70, 74) : Color.FromArgb(66, 52, 28))) e.Graphics.FillPath(b, path);
-                    TextRenderer.DrawText(e.Graphics, tag, f, tagRc, trial ? DevAccent : Warn, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
-                    textRc = Lang.Ar ? new Rectangle(textRc.X + tagRc.Width + 6, textRc.Y, textRc.Width - tagRc.Width - 6, textRc.Height)
-                                     : new Rectangle(textRc.X, textRc.Y, textRc.Width - tagRc.Width - 6, textRc.Height);
+                    TextRenderer.DrawText(e.Graphics, tag, f, tagRc, trial ? DevAccent : Warn,
+                        TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding |
+                        (Lang.Ar ? TextFormatFlags.RightToLeft : 0));
                 }
+                return;
             }
-            TextRenderer.DrawText(e.Graphics, g.Name, Font, textRc,
-                sel ? TextC : Color.FromArgb(206, 196, 226), TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | Align);
+            TextRenderer.DrawText(e.Graphics, g.Name, Font, textRc, nameColor, nameFlags | TextFormatFlags.VerticalCenter);
         }
 
         bool pendingRebuild; // settings changed while a test, a server check or a reset was running: rebuild when it ends
@@ -1157,10 +1171,12 @@ namespace PingBoost
             userPicked = expanded = false;
             if (loadFailed == g) loadFailed = null;
             pickBar.Visible = g.CanLock;
+            // the lock bar tells lockable games what to do: the note above the card would say it a second time
+            gameNote.Visible = !simple && !g.CanLock;
             UpdateLockBar();
             serverList.Items.Clear();
             UpdateCard();
-            SetStatus(T("Getting the servers of ", "أجيب سيرفرات ") + g.Name + "...");
+            SetStatus(T("Getting the servers of ", "نجيب سيرفرات ") + g.Name + "...");
             Task.Run(() =>
             {
                 string err = null;
@@ -1178,7 +1194,7 @@ namespace PingBoost
                         loadFailed = g;
                         UpdateCard();
                         SetStatus(T("Couldn't get the servers. Check your internet, then pick the game again.",
-                                    "ما قدرت أجيب السيرفرات. شيّك على النت، وبعدين اختار اللعبة مرة ثانية."));
+                                    "ما قدرنا نجيب السيرفرات. شيّك على النت، وبعدين اختار اللعبة مرة ثانية."));
                         Log(g.Name + ": " + err);
                         Issues.Report("servers_load_failed", g.Name + ": " + err, null, g.Icon);
                         return;
@@ -1196,7 +1212,7 @@ namespace PingBoost
                     UpdateLockBar();
                     LoadStats(g);
                     if (g.Regions.Count == 0)
-                        SetStatus(T("No servers for this game right now. Try again in a bit.", "ما لقيت سيرفرات لهادي اللعبة دحين، جرّب بعد شوي."));
+                        SetStatus(T("No servers for this game right now. Try again in a bit.", "ما لقينا سيرفرات لهادي اللعبة دحين، جرّب بعد شوي."));
                     else if ((Prefs.AutoTest && !tested.Contains(g)) || retestGame == g)
                     {
                         retestGame = null;
@@ -1324,6 +1340,7 @@ namespace PingBoost
         Game lockingGame;   // a lock for this game is being applied right now (the card says so)
         readonly HashSet<Game> loadedGames = new HashSet<Game>();
         string lockNames;   // the lock in the card's words: region names, or the picked server names
+        string lockingNames; // the same for the lock being applied right now
         // what the automatic check saw: the region of the running match, or (games that can't be locked) the server
         string matchRegion, currentServer;
         bool matchOnPicked, matchViaRelay;
@@ -1684,6 +1701,8 @@ namespace PingBoost
                 Tested = tested.Contains(g),
                 CanLock = g.CanLock,
                 Locking = lockingGame == g,
+                LockingNames = lockingGame == g ? lockingNames : null,
+                InDevelopment = g.InDevelopment,
                 // every region, shown or folded away: the button names and locks all the selected ones
                 Choices = everyChoice,
                 LockedNames = lockSummary != null && lockGame == g ? lockNames : null,
@@ -1758,7 +1777,9 @@ namespace PingBoost
                 int avail = page.ClientSize.Height - others; // card + list + graph
                 if (bottomPanel.Visible)
                 {
-                    int bottom = avail - ListMin - CardMin >= GraphFull ? GraphFull
+                    // the live graph only while something is followed (Speed up or a lock): until then the list has the room
+                    int bottom = !graphLive ? ControlsOnly
+                               : avail - ListMin - CardMin >= GraphFull ? GraphFull
                                : avail - ListMin - CardMin >= GraphMin ? avail - ListMin - CardMin : ControlsOnly;
                     if (bottomPanel.Height != bottom) bottomPanel.Height = bottom;
                     avail -= bottom;
@@ -1918,14 +1939,14 @@ namespace PingBoost
                 if (testGame != null && testGame != g) { testNext = g; UpdateCard(); }
                 return;
             }
-            if (g.Regions.Count == 0) { SetStatus(T("No servers to test.", "ما في سيرفرات أفحصها.")); return; }
+            if (g.Regions.Count == 0) { SetStatus(T("No servers to test.", "ما في سيرفرات نفحصها.")); return; }
             busy = true;
             testGame = g;
             btnTest.Enabled = false;
             // regions blocked by the lock can't answer anyway, so skip them
             var regions = g.Regions.Where(r => !LockedOut(g, r)).ToList();
             var rels = relays.ToList();
-            SetStatus(rels.Count > 0 ? T("Testing relays...", "أفحص سيرفرات الوسيط...") : T("Testing...", "أفحص..."));
+            SetStatus(rels.Count > 0 ? T("Testing relays...", "نفحص سيرفرات الوسيط...") : T("Testing...", "نفحص..."));
             UpdateCard();
             var watch = Stopwatch.StartNew();
 
@@ -1962,7 +1983,7 @@ namespace PingBoost
                         r.ViaRelay = via;
 
                         int n = Interlocked.Increment(ref done);
-                        Ui(() => { UpdateRegion(r); SetStatus(T("Testing... ", "أفحص... ") + n + "/" + regions.Count); });
+                        Ui(() => { UpdateRegion(r); SetStatus(T("Testing... ", "نفحص... ") + n + "/" + regions.Count); });
                     });
 
                     long ms = watch.ElapsedMilliseconds;
@@ -2087,7 +2108,7 @@ namespace PingBoost
                 : Updater.Forced(r)
                     ? T("This version is too old. Update to keep using 2X Ping.", "هالنسخة قديمة، حدّث عشان تكمل تستخدم البرنامج.")
                     : T("A new version is out (" + v + "). Update within " + Updater.LeftText(r) + " to keep using 2X Ping.",
-                        "في نسخة جديدة (" + v + "). حدّث خلال " + Updater.LeftText(r) + " عشان يكمل البرنامج يشتغل.");
+                        "في نسخة جديدة (" + v + "). حدّث خلال " + Updater.LeftText(r) + " عشان البرنامج يكمّل شغله.");
         }
 
         // Right after a self-update: a short green note in the update strip.
@@ -2137,7 +2158,7 @@ namespace PingBoost
             statsAt = DateTime.Now;
             if (!quiet)
             {
-                infoLabel.Text = T("Getting player numbers...", "لحظة، أجيب عدد اللاعبين...");
+                infoLabel.Text = T("Getting player numbers...", "لحظة، نجيب عدد اللاعبين...");
                 infoLabel.ForeColor = Dim;
             }
             Task.Run(() =>
@@ -2259,7 +2280,7 @@ namespace PingBoost
             if (autoDetecting)
             {
                 Msg(T("Checking your server right now, the answer shows on the button in a few seconds.",
-                      "أشيّك على سيرفرك دحين، والجواب يطلع على الزر بعد ثواني."));
+                      "نشيّك على سيرفرك دحين، والجواب يطلع على الزر بعد ثواني."));
                 return;
             }
             if (g.Processes.Length > 0 && !Detector.IsRunning(g.Processes))
@@ -2268,11 +2289,11 @@ namespace PingBoost
                       g.Name + " مو مفتوحة. افتحها وادخل مباراة، وبعدين اضغط الزر مرة ثانية."), ToastKind.Warn);
                 return;
             }
-            Msg(T("Watching the game's traffic for 15 seconds. Stay in a real match (not the menu or practice).",
-                  "أراقب ترافيك اللعبة 15 ثانية. خلّك داخل مباراة حقيقية (مو القائمة ولا التدريب)."));
+            Msg(T("Watching the game's connection for 15 seconds. Stay in a real match (not the menu or practice).",
+                  "نراقب اتصال اللعبة 15 ثانية. خلّك داخل مباراة حقيقية (مو القائمة ولا التدريب)."));
             busy = true;
             btnDetect.Enabled = false;
-            SetStatus(T("Watching the game's traffic... (15 s)", "أراقب ترافيك اللعبة... (15 ثانية)"));
+            SetStatus(T("Watching the game's connection... (15 s)", "نراقب اتصال اللعبة... (15 ثانية)"));
             Task.Run(() =>
             {
                 try
@@ -2308,7 +2329,7 @@ namespace PingBoost
                         Ui(() =>
                         {
                             foreach (var h in hits)
-                                Log(T("Game traffic: ", "ترافيك اللعبة: ") + h.Ip + ":" + h.Port + "  (" + h.Packets + ", " + (int)Math.Round(h.Share * 100) + "%)");
+                                Log(T("Game connection: ", "اتصال اللعبة: ") + h.Ip + ":" + h.Port + "  (" + h.Packets + ", " + (int)Math.Round(h.Share * 100) + "%)");
                             if (hits.Count == 0) NoMatchSeen(capturedAt, readAt);
                             var fresh = hits.Count > 0 ? FreshLogDc(logDc, gameStart) : null;
                             if (fresh != null && ShowLogResult(g, fresh, true)) { SetIdle(); btnDetect.Enabled = true; return; }
@@ -2327,9 +2348,9 @@ namespace PingBoost
 
         void NothingFound()
         {
-            SetStatus(T("No game traffic found.", "ما لقيت ترافيك لعبة."));
-            Msg(T("I didn't see any game server traffic. Make sure you're inside a real match (not the menu or practice) and try again.",
-                  "ما شفت ترافيك من سيرفر لعبة. تأكد إنك داخل مباراة حقيقية (مو القائمة ولا التدريب) وجرّب مرة ثانية."), ToastKind.Warn);
+            SetStatus(T("No game connection found.", "ما لقينا اتصال للعبة."));
+            Msg(T("We found no connection to a game server. Make sure you're inside a real match (not the menu or practice) and try again.",
+                  "ما لقينا أي اتصال بسيرفر اللعبة. تأكد إنك داخل مباراة حقيقية (مو القائمة ولا التدريب) وجرّب مرة ثانية."), ToastKind.Warn);
         }
 
         // Valve: the address is one of Valve's relays/servers, so we can name the region and check it against the lock.
@@ -2427,7 +2448,7 @@ namespace PingBoost
                 AdvancedMsg(T("You're playing on: ", "إنت تلعب دحين على: ") + top.Name, ToastKind.Good);
                 AdvancedMsg((top.Direct.Ok ? T("Ping: ", "البنق: ") + Ms(top.Direct.Avg) + T(". ", "، ")
                                    : T("It doesn't answer ping (normal for some games). ", "ما يرد على البنق (عادي في بعض الألعاب)، ")) +
-                    T("It's saved at the top of the list.", "وحفظته فوق في القائمة."));
+                    T("It's saved at the top of the list.", "وحفظناه فوق في القائمة."));
             });
         }
 
@@ -2559,8 +2580,8 @@ namespace PingBoost
                 Ui(() =>
                 {
                     if (lockSummary != locked) return;
-                    Msg(T("Your server lock was removed from Windows Firewall (maybe by a security app). Press Lock my servers again.",
-                          "تثبيت السيرفرات انشال من جدار حماية ويندوز (يمكن برنامج حماية). اضغط «ثبّت سيرفراتي» مرة ثانية."), ToastKind.Warn);
+                    Msg(T("Your server lock was removed from Windows Firewall (maybe by a security app). Press " + LockButtonName() + " again.",
+                          "تثبيت السيرفرات انشال من جدار حماية ويندوز (يمكن برنامج حماية). اضغط «" + LockButtonName() + "» مرة ثانية."), ToastKind.Warn);
                 });
             });
         }
@@ -2681,6 +2702,20 @@ namespace PingBoost
             btnUnlock.Enabled = lockSummary != null && lockingGame == null; // never while a new lock is being applied
         }
 
+        // The button a notice tells the player to press for a lock: the simple screen has only the card's "Play in ..."
+        // (named after the lock that was on, or the regions chosen now), the advanced one has "Lock my servers" too.
+        string LockButtonName()
+        {
+            if (!simple) return T("Lock my servers", "ثبّت سيرفراتي");
+            string names = lockSummary != null ? lockNames : null;
+            if (names == null)
+            {
+                var chosen = RegionGroups.Chosen(everyChoice);
+                if (chosen.Count > 0) names = CardLogic.JoinNames(chosen.Select(c => c.Name).ToList());
+            }
+            return names != null ? T("Play in ", "العب على ") + names : T("Play", "العب");
+        }
+
         // fromCard: the lock of the card's chosen regions; the card already told its route cost (no toast again)
         void LockServers(bool fromCard)
         {
@@ -2704,8 +2739,8 @@ namespace PingBoost
                 if (exe == null)
                 {
                     Issues.Report("exe_not_found", g.Name, null, g.Icon);
-                    Msg(T("Open " + g.Name + " once (the main menu is enough) so 2X Ping can find it, then press Lock my servers again.",
-                          "افتح " + g.Name + " مرة وحدة (القائمة الرئيسية تكفي) عشان البرنامج يعرف مكانها، وبعدين اضغط «ثبّت سيرفراتي» مرة ثانية."), ToastKind.Warn);
+                    Msg(T("Open " + g.Name + " once (the main menu is enough) so 2X Ping can find it, then press " + LockButtonName() + " again.",
+                          "افتح " + g.Name + " مرة وحدة (القائمة الرئيسية تكفي) عشان البرنامج يعرف مكانها، وبعدين اضغط «" + LockButtonName() + "» مرة ثانية."), ToastKind.Warn);
                     return;
                 }
             }
@@ -2723,8 +2758,9 @@ namespace PingBoost
             var closedCidrs = g.Regions.Where(r => closed.Contains(r.Id)).SelectMany(r => r.Cidrs).ToList();
             btnLock.Enabled = false;
             lockingGame = g; // the status bar is hidden in the simple layout: the card says it too
+            lockingNames = cardNames;
             UpdateLockBar();
-            SetStatus(T("Locking your servers...", "أثبّت سيرفراتك..."));
+            SetStatus(T("Locking your servers...", "نثبّت لك السيرفرات..."));
             UpdateCard();
             Action<Exception> failed = ex => Ui(() =>
             {
@@ -2802,8 +2838,8 @@ namespace PingBoost
                             if (Storage.GetSetting("tip_tray") != "1")
                             {
                                 Storage.SetSetting("tip_tray", "1");
-                                Msg(T("You can minimize 2X Ping: the lock stays on until you unlock or close it.",
-                                      "تقدر تصغّر البرنامج، والتثبيت يبقى شغّال لين تفكّه أو تقفل البرنامج."));
+                                Msg(T("You can minimize 2X Ping. It stays in the taskbar, hovering it shows your ping, and the lock stays on until you unlock or close it.",
+                                      "تقدر تصغّر البرنامج، يبقى في شريط المهام وتشوف بنقك لما تحط الماوس عليه، والتثبيت يبقى شغّال لين تفكّه أو تقفل البرنامج."));
                             }
                             // the lock can't work with the firewall off: this one the player has to know
                             if (!firewallOn)
@@ -2854,7 +2890,7 @@ namespace PingBoost
                     return;
                 }
                 Issues.Report("unlock_failed", "firewall rules still there after unlock");
-                Log(T("Some firewall rules could not be removed.", "في قواعد بجدار الحماية ما قدرت أشيلها."));
+                Log(T("Some firewall rules could not be removed.", "في قواعد بجدار الحماية ما قدرنا نشيلها."));
                 Ui(() => Msg(T("The lock is off, but some firewall rules are still there. Press Unlock again, or close 2X Ping and open it again, it cleans them on start.",
                                "فكّينا التثبيت، بس في قواعد بجدار الحماية لسا موجودة. اضغط «فك التثبيت» مرة ثانية، أو اقفل البرنامج وافتحه، وهو ينظفها أول ما يفتح."), ToastKind.Warn));
             });
@@ -2884,7 +2920,7 @@ namespace PingBoost
             Telemetry.Server = null;
             Telemetry.Send("reset", null, -1, null);
             busy = true;
-            SetStatus(T("Putting everything back...", "أرجّع كل شي زي ما كان..."));
+            SetStatus(T("Putting everything back...", "نرجّع كل شي زي ما كان..."));
             FirewallWorker.Run(() =>
             {
                 bool left = true;
@@ -2907,7 +2943,7 @@ namespace PingBoost
                     UpdateLockBar();
                     if (left)
                     {
-                        Log(T("Some firewall rules could not be removed.", "في قواعد بجدار الحماية ما قدرت أشيلها."));
+                        Log(T("Some firewall rules could not be removed.", "في قواعد بجدار الحماية ما قدرنا نشيلها."));
                         Msg(T("Almost done, but some firewall rules are still there. Close 2X Ping and open it again, it cleans them on start.",
                               "تقريباً خلصنا، بس في قواعد بجدار الحماية لسا موجودة. اقفل البرنامج وافتحه مرة ثانية، وهو ينظفها أول ما يفتح."), ToastKind.Warn);
                     }
@@ -2950,7 +2986,7 @@ namespace PingBoost
                 Log(region.Name + ": " + T("direct route", "طريق مباشر") +
                     (simple || routeBox.SelectedIndex == 0 ? T(" (already the fastest)", " (هو الأسرع أصلاً)") : ""));
                 RaisePriority(g);
-                StartMonitor(target, T("BOOST · ", "بوست · ") + ShortName(region));
+                StartMonitor(target, T("Speed up · ", "تسريع · ") + ShortName(region));
                 Telemetry.Send("boost", region.NameEn, -1, "direct");
                 return;
             }
@@ -2963,19 +2999,19 @@ namespace PingBoost
                 return;
             }
 
-            SetStatus(T("Building the route through ", "أجهّز الطريق عن طريق ") + relay.Name + "...");
+            SetStatus(T("Building the route through ", "نجهّز الطريق عن طريق ") + relay.Name + "...");
             // set before the tunnel exists: a Stop (or closing the app) from now on always removes it, even half-made
             tunnelActive = true;
             int gen = Interlocked.Increment(ref boostGen);
             Action<Exception> boostFailed = ex =>
             {
-                Log(T("Boost failed: ", "ما زبط البوست: ") + ex.Message);
+                Log(T("Speed-up failed: ", "ما زبط التسريع: ") + ex.Message);
                 Telemetry.Send("error", region.NameEn, -1, "boost via " + relay.Name + ": " + ex.GetType().Name + ": " + ex.Message);
                 Ui(() =>
                 {
                     if (gen != Volatile.Read(ref boostGen)) return;
                     StopAll(); // removes the half-made tunnel too
-                    Msg(T("Boost failed: ", "ما زبط البوست: ") + ex.Message, ToastKind.Bad);
+                    Msg(T("Speed-up failed: ", "ما زبط التسريع: ") + ex.Message, ToastKind.Bad);
                 });
             };
             // the address lists and DNS take network time: done first, so the firewall queue only holds the tunnel step
@@ -3010,19 +3046,31 @@ namespace PingBoost
                     {
                         if (gen != Volatile.Read(ref boostGen)) return;
                         RaisePriority(g);
-                        StartMonitor(target, T("BOOST · ", "بوست · ") + ShortName(region) + T(" via ", " عن طريق ") + relay.Name);
+                        StartMonitor(target, T("Speed up · ", "تسريع · ") + ShortName(region) + T(" via ", " عن طريق ") + relay.Name);
                     });
                 });
             });
         }
 
         // Live ping in the status bar (and the graph in the advanced layout), every second.
+        // a live ping is followed (StartMonitor): the advanced layout shows the graph and the header chip
+        bool graphLive;
+
+        void SetGraphLive(bool on)
+        {
+            if (graphLive == on) return;
+            graphLive = on;
+            liveLabel.Visible = !simple && on;
+            ApplyCardLayout();
+        }
+
         void StartMonitor(Endpoint target, string label)
         {
             int gen = Interlocked.Increment(ref monitorGen);
             graph.Clear();
             graph.Label = label;
             SetStatus(label);
+            SetGraphLive(true);
             var t = new Thread(() =>
             {
                 var last = DateTime.MinValue;
@@ -3072,6 +3120,7 @@ namespace PingBoost
             liveLabel.Text = StatusOff;
             liveLabel.ForeColor = Dim;
             SetLiveStatus(null);
+            SetGraphLive(false);
         }
 
         // While servers are locked, the status bar follows the ping of the locked server.
@@ -3107,15 +3156,15 @@ namespace PingBoost
         {
             if (g == null || g.Processes.Length == 0) return;
             var ps = g.Processes.SelectMany(n => Process.GetProcessesByName(n)).ToList();
-            if (ps.Count == 0) { Log(T(g.Name + " isn't running, so its priority wasn't changed.", g.Name + " مو مفتوحة، فما غيّرت أولويتها.")); return; }
+            if (ps.Count == 0) { Log(T(g.Name + " isn't running, so its priority wasn't changed.", g.Name + " مو مفتوحة، فما غيّرنا أولويتها.")); return; }
             foreach (var p in ps)
             {
                 try
                 {
                     p.PriorityClass = ProcessPriorityClass.High;
-                    Log(T("Raised " + g.Name + " priority to High", "رفعت أولوية " + g.Name + " لعالية") + " (pid " + p.Id + ")");
+                    Log(T("Raised " + g.Name + " priority to High", "رفعنا أولوية " + g.Name + " لعالية") + " (pid " + p.Id + ")");
                 }
-                catch (Exception ex) { Log(T("Couldn't change the priority: ", "ما قدرت أغيّر الأولوية: ") + ex.Message); }
+                catch (Exception ex) { Log(T("Couldn't change the priority: ", "ما قدرنا نغيّر الأولوية: ") + ex.Message); }
             }
         }
 
@@ -3189,7 +3238,7 @@ namespace PingBoost
 
         void TestRelays()
         {
-            SetStatus(T("Testing relays...", "أفحص سيرفرات الوسيط..."));
+            SetStatus(T("Testing relays...", "نفحص سيرفرات الوسيط..."));
             var rels = relays.ToList();
             Task.Run(() =>
             {
@@ -3220,7 +3269,7 @@ namespace PingBoost
             {
                 string output;
                 int code = Proc.Run("ipconfig", "/flushdns", 10000, out output);
-                Log(code == 0 ? T("DNS cache cleared.", "مسحنا كاش DNS.") : T("Couldn't clear the DNS cache.", "ما قدرت أمسح كاش DNS."));
+                Log(code == 0 ? T("DNS cache cleared.", "مسحنا كاش DNS.") : T("Couldn't clear the DNS cache.", "ما قدرنا نمسح كاش DNS."));
             });
         }
 
@@ -3274,7 +3323,6 @@ namespace PingBoost
                 b.Click += delegate { act(); };
                 flow.Controls.Add(b);
             };
-            add("Developer tab", () => ShowPage(3));
             add("Self-test", DevSelfTest);
             add("Firewall rules", DevShowRules);
             add("Test notices", DevTestToasts);
@@ -3312,8 +3360,7 @@ namespace PingBoost
             add("traffic.txt", () => DevOpenFile("traffic.txt"));
             add("crash.log", () => DevOpenFile("crash.log"));
             add("Copy diagnostics", () => { Clipboard.SetText(ContactDialog.Diagnostics(logBox.Text)); DevOut("diagnostics copied"); });
-            add("Reset first-run", DevResetFirstRun);
-            add("Exit dev mode", () => SetDevMode(false));
+            add("Reset first-run", DevResetFirstRun); // "Exit developer mode" is on the strip above
             // the lock test takes a whole row
             Func<string, Action, RoundButton> wide = (text, act) =>
             {
@@ -3356,7 +3403,7 @@ namespace PingBoost
             return true;
         }
 
-        string LockTestIdleText { get { return T("Record lock test (60 s)", "سجّل اختبار (60 ثانية)"); } }
+        string LockTestIdleText { get { return "Record lock test (60 s)"; } } // developer tools stay in English
 
         static string LockScope(LockTest.LockInfo info, int n)
         {
@@ -3391,7 +3438,7 @@ namespace PingBoost
                     var cap = LockTest.Record(LockTestSeconds, left => Ui(() =>
                     {
                         if (devLockTestBtn != null && !devLockTestBtn.IsDisposed)
-                            devLockTestBtn.Text = left > 0 ? T("Recording... ", "أسجّل... ") + left + T(" s", " ثانية") : T("Reading the capture...", "أقرأ التسجيل...");
+                            devLockTestBtn.Text = left > 0 ? "Recording... " + left + " s" : "Reading the capture...";
                     }), owners);
                     var lines = LockTest.Classify(g, cap, info, owners);
                     string text = LockTest.Report(g, cap, info, lines, LockTestSeconds, at);
@@ -3430,7 +3477,7 @@ namespace PingBoost
                 {
                     string r;
                     try { r = f(); } catch (Exception ex) { r = "FAIL " + ex.Message; }
-                    DevOut(name.PadRight(22) + r);
+                    DevOut(name.PadRight(22) + " " + r);
                 };
                 check("Version", () => Brand.DisplayVersion + ", install " + Telemetry.InstallId.Substring(0, 8));
                 check("Windows Firewall", () => ServerLock.FirewallOn() ? "on" : "OFF (locks can't work)");
@@ -3612,7 +3659,7 @@ namespace PingBoost
 
             if (samples.Count == 0)
             {
-                TextRenderer.DrawText(g, Lang.T("Your live ping shows up here once BOOST is on", "البنق المباشر حقك يطلع هنا لما تشغّل البوست"),
+                TextRenderer.DrawText(g, Lang.T("Your live ping shows up here once Speed up is on", "البنق المباشر حقك يطلع هنا لما تشغّل التسريع"),
                     Font, rc, MainForm.Dim, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | Lang.Flags);
                 return;
             }

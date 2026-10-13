@@ -158,7 +158,7 @@ namespace PingBoost
                 using (var archive = ZipFile.OpenRead(zip))
                 {
                     var entry = archive.Entries.FirstOrDefault(e => e.Name.Equals("2XPing.exe", StringComparison.OrdinalIgnoreCase));
-                    if (entry == null) return Lang.T("2XPing.exe is missing from the download", "ما لقيت 2XPing.exe داخل الملف");
+                    if (entry == null) return Lang.T("2XPing.exe is missing from the download", "ما لقينا 2XPing.exe داخل الملف");
                     // hashed while it is written, from the verified zip
                     using (var src = entry.Open())
                     using (var dst = File.Create(target))
@@ -302,7 +302,7 @@ namespace PingBoost
                     go.Enabled = later.Enabled = false;
                     bar.Visible = true;
                     status.ForeColor = MainForm.Dim;
-                    status.Text = Lang.T("Downloading...", "أنزّل التحديث...");
+                    status.Text = Lang.T("Downloading...", "ننزّل التحديث...");
                     var sw = Stopwatch.StartNew();
                     ThreadPool.QueueUserWorkItem(delegate
                     {

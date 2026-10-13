@@ -422,22 +422,37 @@ namespace PingBoost
             int textStart = 12 + icon + 10, textEnd = 12 + check + 10;
             var rc = LeadRight ? new Rectangle(textEnd, 0, Width - textStart - textEnd, Height) : new Rectangle(textStart, 0, Width - textStart - textEnd, Height);
             // game names are Latin: no right-to-left reordering (it moves the colon of "Arena Breakout: Infinite"),
-            // just aligned to the reading side; a long name wraps to two lines instead of being cut
-            var flags = TextFormatFlags.NoPrefix | TextFormatFlags.WordBreak | TextFormatFlags.EndEllipsis |
+            // just aligned to the reading side; a long name goes on two lines instead of being cut
+            var flags = TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis |
                         (RightToLeft == RightToLeft.Yes ? TextFormatFlags.Right : TextFormatFlags.Left);
             var color = on ? MainForm.TextC : MainForm.Dim;
-            if (TextRenderer.MeasureText(g, Text, Font, Size.Empty, TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine).Width <= rc.Width)
-                TextRenderer.DrawText(g, Text, Font, rc, color, flags | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine);
+            var measure = TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine; // the whole width, never cut by the ellipsis
+            if (TextRenderer.MeasureText(g, Text, Font, Size.Empty, measure).Width <= rc.Width)
+                TextRenderer.DrawText(g, Text, Font, rc, color, flags | TextFormatFlags.VerticalCenter);
             else
                 using (var small = Fonts.Ui(Font.SizeInPoints / 0.92f * 0.9f))
                 {
-                    // still too long for two lines: drop the subtitle ("Arena Breakout: Infinite" -> "Arena Breakout")
-                    string text = Text;
-                    if (TextRenderer.MeasureText(g, text, small, new Size(rc.Width, 0), flags).Height > rc.Height && text.Contains(":"))
-                        text = text.Substring(0, text.IndexOf(':'));
-                    int h = Math.Min(rc.Height, TextRenderer.MeasureText(g, text, small, new Size(rc.Width, 0), flags).Height);
-                    TextRenderer.DrawText(g, text, small, new Rectangle(rc.X, (Height - h) / 2, rc.Width, h), color, flags);
+                    // two lines drawn one by one, closer than the font's own (tall) line spacing: as many words on the
+                    // first line as fit, the rest on the second; still too long: without the subtitle ("Arena Breakout")
+                    string first, second;
+                    TwoLines(g, Text, small, measure, rc.Width, out first, out second);
+                    if (TextRenderer.MeasureText(g, second, small, Size.Empty, measure).Width > rc.Width && Text.Contains(":"))
+                        TwoLines(g, Text.Substring(0, Text.IndexOf(':')), small, measure, rc.Width, out first, out second);
+                    int lineH = TextRenderer.MeasureText(g, "Ag", small, Size.Empty, flags).Height;
+                    int step = lineH * 3 / 4, top = (Height - step - lineH) / 2;
+                    TextRenderer.DrawText(g, first, small, new Rectangle(rc.X, top, rc.Width, lineH), color, flags);
+                    TextRenderer.DrawText(g, second, small, new Rectangle(rc.X, top + step, rc.Width, lineH), color, flags);
                 }
+        }
+
+        static void TwoLines(Graphics g, string text, Font font, TextFormatFlags measure, int width, out string first, out string second)
+        {
+            var words = text.Split(' ');
+            int n = 1;
+            while (n < words.Length - 1 &&
+                   TextRenderer.MeasureText(g, string.Join(" ", words, 0, n + 1), font, Size.Empty, measure).Width <= width) n++;
+            first = string.Join(" ", words, 0, n);
+            second = string.Join(" ", words, n, words.Length - n);
         }
     }
 
@@ -463,5 +478,23 @@ namespace PingBoost
         }
 
         public override string Text { get { return Box.Text; } set { Box.Text = value; } }
+
+        // Grey text shown while the field is empty (the Windows cue banner, kept while the field has focus too).
+        string placeholder;
+        public string Placeholder
+        {
+            get { return placeholder; }
+            set
+            {
+                placeholder = value;
+                if (Box.IsHandleCreated) SetCue();
+                else Box.HandleCreated += delegate { SetCue(); };
+            }
+        }
+
+        void SetCue() { SendMessage(Box.Handle, 0x1501 /* EM_SETCUEBANNER */, (IntPtr)1, placeholder ?? ""); }
+
+        [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+        static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, string lParam);
     }
 }
