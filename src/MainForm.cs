@@ -32,7 +32,7 @@ namespace PingBoost
 
         // server list columns
         const int ColRegion = 0, ColPing = 1, ColJitter = 2, ColLoss = 3, ColPlayers = 4, ColWait = 5, ColVia = 6, ColRoute = 7;
-        static readonly int[] AdvancedWidths = { 230, 84, 76, 62, 92, 104, 92, 124 };
+        static readonly int[] AdvancedWidths = { 226, 84, 82, 62, 92, 104, 90, 124 };
         static readonly int[] SimpleWidths = { 420, 140, 0, 0, 0, 0, 0, 0 };
 
         // A region heading row in the server list (Deadlock matchmaking region + its activity).
@@ -1171,8 +1171,9 @@ namespace PingBoost
             userPicked = expanded = false;
             if (loadFailed == g) loadFailed = null;
             pickBar.Visible = g.CanLock;
-            // the lock bar tells lockable games what to do: the note above the card would say it a second time
-            gameNote.Visible = !simple && !g.CanLock;
+            // the lock bar tells Valve games what to do, so their note would say it a second time; games locked by their
+            // own traffic (Overwatch, Dead by Daylight...) keep theirs: it warns that a blocked pick won't load the match
+            gameNote.Visible = !simple && (!g.CanLock || g.LockSpace != null);
             UpdateLockBar();
             serverList.Items.Clear();
             UpdateCard();
@@ -1305,7 +1306,7 @@ namespace PingBoost
             string name = Stats.MmRegions.ContainsKey(h.Key) ? Lang.T(Stats.MmRegions[h.Key][0], Stats.MmRegions[h.Key][1]) : h.Key;
             if (h.Key == DeadlockData.Russia)
                 return name + "   ·   " + Stats.Approx(PlayersOf(h.Matches)) + T(" online", " أونلاين") + "   ·   " +
-                       T("separate queue on the European servers, the lock can't choose it", "لها كيو خاص يلعب على سيرفرات أوروبا، والتثبيت ما يقدر يختارها");
+                       T("separate queue on the European servers, the lock can't choose it", "لها كيو خاص، ومبارياتها على سيرفرات أوروبا، والتثبيت ما يقدر يختارها");
             return name + "   ·   " + Stats.Approx(PlayersOf(h.Matches)) + T(" online", " أونلاين") +
                    "   ·   " + T("wait ", "الانتظار ") + Stats.EstimateWait(h.Matches);
         }
@@ -2348,7 +2349,7 @@ namespace PingBoost
 
         void NothingFound()
         {
-            SetStatus(T("No game connection found.", "ما لقينا اتصال للعبة."));
+            SetStatus(T("No game connection found.", "ما شفنا اللعبة متصلة بأي سيرفر."));
             Msg(T("We found no connection to a game server. Make sure you're inside a real match (not the menu or practice) and try again.",
                   "ما لقينا أي اتصال بسيرفر اللعبة. تأكد إنك داخل مباراة حقيقية (مو القائمة ولا التدريب) وجرّب مرة ثانية."), ToastKind.Warn);
         }
@@ -2707,7 +2708,8 @@ namespace PingBoost
         string LockButtonName()
         {
             if (!simple) return T("Lock my servers", "ثبّت سيرفراتي");
-            string names = lockSummary != null ? lockNames : null;
+            // the lock that is on names it only when it is this game's (lockNames belongs to lockGame)
+            string names = lockSummary != null && lockGame == CurrentGame ? lockNames : null;
             if (names == null)
             {
                 var chosen = RegionGroups.Chosen(everyChoice);

@@ -424,6 +424,7 @@ namespace PingBoost
             if (choice.Tag == "best") return Lang.T("Best choice", "أحسن خيار");
             if (choice.Tag == "ping") return Lang.T("Lowest ping", "أقل بنق");
             if (choice.Tag == "queue") return Lang.T("Shortest wait", "أقصر انتظار");
+            if (choice.Tag == "players") return Lang.T("Most players", "أكثر لاعبين");
             return null;
         }
 

@@ -376,6 +376,15 @@ namespace PingBoost
             }
         }
 
+        // the full name on hover, also where the tile has to shorten it
+        static readonly ToolTip tip = new ToolTip();
+
+        protected override void OnTextChanged(EventArgs e)
+        {
+            base.OnTextChanged(e);
+            tip.SetToolTip(this, Text);
+        }
+
         public GameTile()
         {
             Height = 46;
@@ -430,22 +439,45 @@ namespace PingBoost
             if (TextRenderer.MeasureText(g, Text, Font, Size.Empty, measure).Width <= rc.Width)
                 TextRenderer.DrawText(g, Text, Font, rc, color, flags | TextFormatFlags.VerticalCenter);
             else
-                using (var small = Fonts.Ui(Font.SizeInPoints / 0.92f * 0.9f))
+            {
+                // a smaller font: one line if that fits, else two lines that both fit (drawn one by one, closer than the
+                // font's own tall line spacing); only when even the smallest can't hold it, the subtitle goes
+                // ("Arena Breakout: Infinite" -> "Arena Breakout"); the tooltip keeps the full name
+                foreach (float scale in new[] { 0.9f, 0.82f })
+                    using (var small = Fonts.Ui(Font.SizeInPoints / 0.92f * scale))
+                    {
+                        if (TextRenderer.MeasureText(g, Text, small, Size.Empty, measure).Width <= rc.Width)
+                        {
+                            TextRenderer.DrawText(g, Text, small, rc, color, flags | TextFormatFlags.VerticalCenter);
+                            return;
+                        }
+                        string a, b;
+                        if (TwoLines(g, Text, small, measure, rc.Width, out a, out b)) { DrawTwo(g, a, b, small, rc, color, flags); return; }
+                    }
+                using (var smallest = Fonts.Ui(Font.SizeInPoints / 0.92f * 0.82f))
                 {
-                    // two lines drawn one by one, closer than the font's own (tall) line spacing: as many words on the
-                    // first line as fit, the rest on the second; still too long: without the subtitle ("Arena Breakout")
-                    string first, second;
-                    TwoLines(g, Text, small, measure, rc.Width, out first, out second);
-                    if (TextRenderer.MeasureText(g, second, small, Size.Empty, measure).Width > rc.Width && Text.Contains(":"))
-                        TwoLines(g, Text.Substring(0, Text.IndexOf(':')), small, measure, rc.Width, out first, out second);
-                    int lineH = TextRenderer.MeasureText(g, "Ag", small, Size.Empty, flags).Height;
-                    int step = lineH * 3 / 4, top = (Height - step - lineH) / 2;
-                    TextRenderer.DrawText(g, first, small, new Rectangle(rc.X, top, rc.Width, lineH), color, flags);
-                    TextRenderer.DrawText(g, second, small, new Rectangle(rc.X, top + step, rc.Width, lineH), color, flags);
+                    string text = Text.Contains(":") ? Text.Substring(0, Text.IndexOf(':')) : Text, a, b;
+                    if (TextRenderer.MeasureText(g, text, smallest, Size.Empty, measure).Width <= rc.Width)
+                        TextRenderer.DrawText(g, text, smallest, rc, color, flags | TextFormatFlags.VerticalCenter);
+                    else
+                    {
+                        TwoLines(g, text, smallest, measure, rc.Width, out a, out b);
+                        DrawTwo(g, a, b, smallest, rc, color, flags);
+                    }
                 }
+            }
         }
 
-        static void TwoLines(Graphics g, string text, Font font, TextFormatFlags measure, int width, out string first, out string second)
+        void DrawTwo(Graphics g, string first, string second, Font font, Rectangle rc, Color color, TextFormatFlags flags)
+        {
+            int lineH = TextRenderer.MeasureText(g, "Ag", font, Size.Empty, flags).Height;
+            int step = lineH * 3 / 4, top = (Height - step - lineH) / 2;
+            TextRenderer.DrawText(g, first, font, new Rectangle(rc.X, top, rc.Width, lineH), color, flags);
+            TextRenderer.DrawText(g, second, font, new Rectangle(rc.X, top + step, rc.Width, lineH), color, flags);
+        }
+
+        // Splits at the last word break where the first line still fits; true when the second line fits too.
+        static bool TwoLines(Graphics g, string text, Font font, TextFormatFlags measure, int width, out string first, out string second)
         {
             var words = text.Split(' ');
             int n = 1;
@@ -453,6 +485,8 @@ namespace PingBoost
                    TextRenderer.MeasureText(g, string.Join(" ", words, 0, n + 1), font, Size.Empty, measure).Width <= width) n++;
             first = string.Join(" ", words, 0, n);
             second = string.Join(" ", words, n, words.Length - n);
+            return words.Length > 1 && TextRenderer.MeasureText(g, first, font, Size.Empty, measure).Width <= width &&
+                   TextRenderer.MeasureText(g, second, font, Size.Empty, measure).Width <= width;
         }
     }
 

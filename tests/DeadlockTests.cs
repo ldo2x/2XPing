@@ -206,10 +206,10 @@ namespace PingBoost
             Check(CardLogic.Decide(i).Note == null, "no footnote unless asked (other games)");
             i.RussiaNote = true;
             var v = CardLogic.Decide(i);
-            Check(v.Kind == CardKind.Choose && v.Note == "روسيا لها كيو خاص يلعب على سيرفرات أوروبا، والتثبيت ما يقدر يختارها.", "Arabic, no number: " + v.Note);
+            Check(v.Kind == CardKind.Choose && v.Note == "روسيا لها كيو خاص، ومبارياتها على سيرفرات أوروبا، والتثبيت ما يقدر يختارها.", "Arabic, no number: " + v.Note);
             i.RussiaPlayers = 4321;
             v = CardLogic.Decide(i);
-            Check(v.Note == "روسيا لها كيو خاص يلعب على سيرفرات أوروبا، والتثبيت ما يقدر يختارها (تقريباً 4,321 لاعب).", "Arabic: " + v.Note);
+            Check(v.Note == "روسيا لها كيو خاص، ومبارياتها على سيرفرات أوروبا، والتثبيت ما يقدر يختارها (تقريباً 4,321 لاعب).", "Arabic: " + v.Note);
             Lang.Ar = false;
             v = CardLogic.Decide(i);
             Check(v.Note == "Russia is a separate queue played on the European servers; the lock can't choose it (~4,321 players).", "English: " + v.Note);

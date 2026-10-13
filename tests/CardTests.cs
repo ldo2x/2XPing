@@ -44,6 +44,11 @@ namespace PingBoost
             Check(Stats.EstimateWait(Stats.FastQueue) == "1 إلى 3 دقايق", "fast: " + Stats.EstimateWait(Stats.FastQueue));
             Lang.Ar = false;
             Check(Stats.EstimateWait(Stats.FastQueue) == "~1-3 min", "English keeps the range");
+            // the welcome's "you get N days": Arabic plural by number
+            Check(Updater.Days(3) == "3 days" && Updater.Days(1) == "1 day", "English days");
+            Lang.Ar = true;
+            Check(Updater.Days(1) == "يوم" && Updater.Days(2) == "يومين" && Updater.Days(3) == "3 أيام" && Updater.Days(11) == "11 يوم",
+                  "Arabic days: " + Updater.Days(1) + "|" + Updater.Days(2) + "|" + Updater.Days(3) + "|" + Updater.Days(11));
         }
 
         static void CardLoading()

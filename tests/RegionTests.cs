@@ -115,10 +115,19 @@ namespace PingBoost
             var f = RegionGroups.Featured(all);
             Check(f.Count == 3, "three tiles, got " + f.Count);
             Check(f[0].Def.Key == "A" && f[0].Tag == "ping", "first is A tagged ping");
-            Check(f[1].Def.Key == "B" && f[1].Tag == "queue", "second is B tagged queue");
+            // both wait about 1-3 minutes: B has more players, not a shorter wait
+            Check(f[1].Def.Key == "B" && f[1].Tag == "players", "second is B tagged players, got " + f[1].Tag);
             Check(f[2].Def.Key == "C" && f[2].Tag == null, "third is C with no tag");
             Check(f[0].Selected && !f[1].Selected && !f[2].Selected, "only A selected");
             Check(f[1].Matches == 200 && f[1].Players == 2000, "matches and players filled in");
+        }
+
+        static void FeaturedShortestWaitOnlyWhenShorter()
+        {
+            // A waits 3-6 minutes (20 matches), B 1-3 (200): B's wait really is shorter
+            var f = RegionGroups.Featured(Synthetic(Queue("A", 20, "B", 200), new object[] { "A", 78 }, new object[] { "B", 160 }));
+            Check(f[0].Tag == "ping" && f[1].Def.Key == "B" && f[1].Tag == "queue", "B tagged queue, got " + f[1].Tag);
+            Check(Stats.WaitBucket(200) < Stats.WaitBucket(20) && Stats.WaitBucket(0) == 4, "buckets in order");
         }
 
         static void FeaturedCollapsesWhenOneWinsBoth()
@@ -255,6 +264,7 @@ namespace PingBoost
             Run("DeadlockRegionsSkipRelayOnly", DeadlockRegionsSkipRelayOnly);
             Run("DbdRegionsMatchSpec", DbdRegionsMatchSpec);
             Run("FeaturedPicksBestPingAndFastestQueue", FeaturedPicksBestPingAndFastestQueue);
+            Run("FeaturedShortestWaitOnlyWhenShorter", FeaturedShortestWaitOnlyWhenShorter);
             Run("FeaturedCollapsesWhenOneWinsBoth", FeaturedCollapsesWhenOneWinsBoth);
             Run("FeaturedWithoutQueueData", FeaturedWithoutQueueData);
             Run("UnknownPingSortsLast", UnknownPingSortsLast);

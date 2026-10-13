@@ -229,7 +229,12 @@ namespace PingBoost
             else
             {
                 best.Tag = "ping";
-                if (busiest != null) { busiest.Tag = "queue"; featured.Add(busiest); }
+                // "Shortest wait" only when its wait really is shorter than the best ping's; otherwise "Most players"
+                if (busiest != null)
+                {
+                    busiest.Tag = Stats.WaitBucket(busiest.Matches) < Stats.WaitBucket(Math.Max(0, best.Matches)) ? "queue" : "players";
+                    featured.Add(busiest);
+                }
             }
             foreach (var c in byPing)
             {

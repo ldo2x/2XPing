@@ -320,8 +320,8 @@ namespace PingBoost
                     NoteAr = "اللعبة تحدد منطقتك من حسابك. ادخل رايد واضغط «على أي سيرفر أنا؟» عشان تعرف سيرفرك الحقيقي." },
                 new Game { Name = "Overwatch 2", Icon = "overwatch", Released = true, InDevelopment = true, Provider = Provider.Blizzard, SteamAppId = "2357570", Processes = new[] {"Overwatch"}, LockSpace = OwSpace, LockAllow = OwAllow, DetectIgnore = OwIgnore, LockGroups = OwGroups, RegionMap = OwRegionMap,
                     LockPorts = "1-3723,3725-65535", // 3724 is Blizzard's own port: never block it
-                    NoteEn = "Pick the regions you want and lock them. Try a normal match first: if the game still picks a blocked region, the match won't load.",
-                    NoteAr = "علّم على المناطق اللي تبغاها واضغط «ثبّت سيرفراتي». جرّبه في مباراة عادية أول: لو اللعبة اختارت منطقة محجوبة، المباراة ما تفتح." },
+                    NoteEn = "Try a normal match first: if the game still picks a blocked region, the match won't load.",
+                    NoteAr = "جرّبه في مباراة عادية أول: لو اللعبة اختارت منطقة محجوبة، المباراة ما تفتح." },
                 new Game { Name = "Valorant", Icon = "valorant", Provider = Provider.Aws, AwsRegions = aws, Processes = new[] {"VALORANT-Win64-Shipping"}, LockSpace = awsLock,
                     NoteEn = "Valorant runs on Amazon: tick the regions you want and press Lock my servers. Try it in Unrated first: if the game still picks a blocked one, the match won't load.",
                     NoteAr = "Valorant على Amazon: علّم على المناطق اللي تبغاها واضغط «ثبّت سيرفراتي». جرّبه في Unrated أول: لو اللعبة اختارت منطقة محجوبة، المباراة ما تفتح." },
@@ -339,8 +339,8 @@ namespace PingBoost
                     NoteAr = "Rocket League تخليك تختار المناطق بنفسك من قائمة Play. اختار اللي بنقها أقل هنا." },
                 new Game { Name = "Dead by Daylight", Icon = "dbd", Released = true, InDevelopment = true, SteamAppId = "381210", Provider = Provider.Aws, AwsRegions = DbdRegions, RegionMap = DbdRegionMap,
                     LockSpace = DbdRegions.Select(r => "aws:" + r).ToArray(), Processes = new[] {"DeadByDaylight-Win64-Shipping"},
-                    NoteEn = "Dead by Daylight runs on Amazon GameLift and has no Middle East region. Tick the regions you want and press Lock my servers.",
-                    NoteAr = "Dead by Daylight على Amazon GameLift، وما فيها منطقة للشرق الأوسط. علّم على المناطق اللي تبغاها واضغط «ثبّت سيرفراتي»." },
+                    NoteEn = "Dead by Daylight runs on Amazon GameLift and has no Middle East region. Try a normal match first: if the game still picks a blocked region, the match won't load.",
+                    NoteAr = "Dead by Daylight على Amazon GameLift، وما فيها منطقة للشرق الأوسط. جرّبه في مباراة عادية أول: لو اللعبة اختارت منطقة محجوبة، المباراة ما تفتح." },
             };
         }
 

@@ -127,6 +127,12 @@ namespace PingBoost
         // so the old 100 / 40 / 10 became 40 / 15 / 4.
         public const int FastQueue = 40, MediumQueue = 15, SlowQueue = 4;
 
+        // The wait bucket EstimateWait names: 0 the shortest ... 4 "very slow".
+        public static int WaitBucket(int matches)
+        {
+            return matches >= FastQueue ? 0 : matches >= MediumQueue ? 1 : matches >= SlowQueue ? 2 : matches > 0 ? 3 : 4;
+        }
+
         // Rough queue-time bucket from a region's matches in the live sample (DeadlockActivity). Arabic says the range in
         // words ("1 إلى 3"): a "1-3" range is turned around ("3-1") when drawn right to left.
         public static string EstimateWait(int matchesPerHour)

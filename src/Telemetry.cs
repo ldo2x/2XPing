@@ -307,10 +307,10 @@ namespace PingBoost
                     Text = Lang.T(
                         "This is a beta. While it's open, 2X Ping sends your name and PC name, PC info, location (city and internet provider), " +
                         "the game and ping, and error logs, so we can improve it.\n" +
-                        "Updates are required: you get " + Updater.GraceDays + " days.\nYou need to agree to use the beta.",
+                        "Updates are required: you get " + Updater.Days(Updater.GraceDays) + ".\nYou need to agree to use the beta.",
                         "هادي نسخة تجريبية، والبرنامج وهو مفتوح يرسل لنا اسمك واسم جهازك ومعلومات جهازك ومدينتك وشركة النت " +
                         "واللعبة والبنق وسجل الأخطاء عشان نطوّره.\n" +
-                        "التحديثات إجبارية، وعندك " + Updater.GraceDays + " أيام.\nلازم توافق عشان تستخدمه.")
+                        "التحديثات إجبارية، وعندك " + Updater.Days(Updater.GraceDays) + ".\nلازم توافق عشان تستخدمه.")
                 };
                 noticeCard.Controls.Add(notice);
                 var details = new LinkLabel

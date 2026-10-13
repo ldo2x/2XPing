@@ -83,8 +83,13 @@ namespace PingBoost
             double d = DaysLeft(r);
             if (d <= 0) return Lang.T("today", "اليوم");
             if (d < 1) { int h = Math.Max(1, (int)Math.Ceiling(d * 24)); return Lang.T(h + (h == 1 ? " hour" : " hours"), h == 1 ? "ساعة" : h == 2 ? "ساعتين" : h + (h <= 10 ? " ساعات" : " ساعة")); }
-            int n = (int)Math.Ceiling(d);
-            return Lang.T(n + (n == 1 ? " day" : " days"), n == 1 ? "يوم" : n == 2 ? "يومين" : n + " أيام");
+            return Days((int)Math.Ceiling(d));
+        }
+
+        // "3 days" / "يوم", "يومين", "3 أيام", "11 يوم" (Arabic plural: 3-10 take أيام, 11 and up يوم).
+        public static string Days(int n)
+        {
+            return Lang.T(n + (n == 1 ? " day" : " days"), n == 1 ? "يوم" : n == 2 ? "يومين" : n + (n <= 10 ? " أيام" : " يوم"));
         }
 
         // Downloads the release, checks its SHA256, swaps the exe and starts the new version.
