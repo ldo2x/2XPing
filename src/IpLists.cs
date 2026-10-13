@@ -26,7 +26,8 @@ namespace PingBoost
             try
             {
                 string text = Http.Get(url, 30000);
-                AtomicFile.WriteAllText(file, text);
+                // a good download is used even if the cache can't be written this time
+                try { AtomicFile.WriteAllText(file, text); } catch { }
                 return text;
             }
             catch (Exception ex)

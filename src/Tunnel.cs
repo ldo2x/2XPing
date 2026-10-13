@@ -50,6 +50,8 @@ namespace PingBoost
                 foreach (var dir in new[] { "out", "in" })
                 {
                     string output;
+                    // the app is closing: no new rules (closing removes what is there)
+                    if (FirewallWorker.Closing) { Remove(); throw new OperationCanceledException("closing"); }
                     int code = Netsh("advfirewall firewall add rule name=\"" + Rule + "\" dir=" + dir +
                                      " action=block enable=yes" + scope + " remoteip=" + ips, out output);
                     if (code != 0) { Remove(); throw new Exception("Windows Firewall: " + output); }
@@ -64,11 +66,22 @@ namespace PingBoost
             string output;
             Netsh("advfirewall firewall delete rule name=\"" + Rule + "\"", out output);
             Netsh("advfirewall firewall delete rule name=\"PingBoost-RegionLock\"", out output); // pre-2X Ping name
-            // "show rule" answers non-zero when no rule has the name; -1 = netsh didn't answer, so nothing is known
-            bool gone = Netsh("advfirewall firewall show rule name=\"" + Rule + "\"", out output) > 0;
+            // both names confirmed gone ("show rule" answers exactly 1 when no rule has the name; -1 = no answer)
+            bool gone = Present(Rule) == false && Present("PingBoost-RegionLock") == false;
             if (gone) MayExist = false;
             return gone;
         }
+
+        // true = a rule with this name exists, false = none (netsh answered 1), null = netsh didn't answer (unknown)
+        static bool? Present(string name)
+        {
+            string output;
+            int code = Netsh("advfirewall firewall show rule name=\"" + name + "\"", out output);
+            return code == 0 ? true : code == 1 ? (bool?)false : null;
+        }
+
+        // Are 2X Ping firewall rules there? null when netsh couldn't tell.
+        public static bool? Present() { return Present(Rule); }
 
         // Is Windows Firewall on for the network in use? (When it's off, block rules do nothing.)
         public static bool FirewallOn()
@@ -79,11 +92,7 @@ namespace PingBoost
         }
 
         // Any 2X Ping firewall rule still present?
-        public static bool Exists()
-        {
-            string output;
-            return Netsh("advfirewall firewall show rule name=\"" + Rule + "\"", out output) == 0;
-        }
+        public static bool Exists() { return Present(Rule) == true; }
 
         static int Netsh(string args, out string output)
         {

@@ -112,21 +112,26 @@ namespace PingBoost
             Load += delegate { FitAdvancedHeight(true); };
 
             RefreshRelays();
-            // on the firewall worker, so it runs before any lock the player asks for in the first seconds
+            // leftovers from a crash: on the firewall worker, so this runs before any lock the player asks for in the
+            // first seconds (only the rule and tunnel steps, which must stay in order)
             FirewallWorker.Run(() =>
             {
-                // leftovers from a crash, and a firewall that's off (locks can't work then)
-                if (ServerLock.Exists()) { Issues.Report("leftover_lock", "rules from a previous session were still there"); ServerLock.Remove(); }
-                else ServerLock.MayExist = false;
+                bool? present = ServerLock.Present();
+                if (present == true) { Issues.Report("leftover_lock", "rules from a previous session were still there"); ServerLock.Remove(); }
+                else if (present == false) ServerLock.MayExist = false; // unknown (netsh didn't answer): closing still checks
                 // a relay tunnel left installed by a crash (the service would start again at every boot)
                 if (Tunnel.ServiceInstalled && Tunnel.Installed)
                 {
                     Issues.Report("leftover_tunnel", "relay tunnel service from a previous session was still installed");
                     Tunnel.Stop();
                 }
+            });
+            Task.Run(() =>
+            {
                 // a capture of ours left running if the app closed mid-way (e.g. during a lock test); never someone else's
                 try { if (Detector.Run("pktmon", "filter list").IndexOf("2XPing", StringComparison.OrdinalIgnoreCase) >= 0) Detector.Cleanup(); } catch { }
-                if (!ServerLock.FirewallOn()) Issues.Report("firewall_off", "Windows Firewall is off for the current network profile");
+                // a firewall that's off (locks can't work then)
+                try { if (!ServerLock.FirewallOn()) Issues.Report("firewall_off", "Windows Firewall is off for the current network profile"); } catch { }
             });
             if (!Tunnel.Installed)
                 Log(T("WireGuard is not installed, so relay routing is off until you install it (Tools).",
@@ -168,6 +173,8 @@ namespace PingBoost
                 Interlocked.Increment(ref monitorGen);
                 Interlocked.Increment(ref boostGen);
                 bool tunnel = tunnelActive, locked = lockSummary != null, testing = lockTesting;
+                // from here on, no queued step adds rules or starts the tunnel (one already queued returns at once)
+                FirewallWorker.Closing = true;
                 // bounded (the updater waits for this process), but always: the firewall changes still queued finish
                 // first, then whatever may be left goes, whether or not the window thinks a lock is on
                 var cleanup = new Thread(() =>
@@ -2190,7 +2197,7 @@ namespace PingBoost
             string locked = lockSummary;
             FirewallWorker.Run(() =>
             {
-                if (ServerLock.Exists()) return;
+                if (ServerLock.Present() != false) return; // there, or netsh couldn't tell: never a false alarm
                 Issues.Report("lock_rules_missing", "lock on " + locked + " but no firewall rules");
                 Ui(() =>
                 {
@@ -2379,6 +2386,7 @@ namespace PingBoost
                     info.Ports = info.Protocol != null ? g.LockPorts : null;
                     FirewallWorker.Run(() =>
                     {
+                        if (FirewallWorker.Closing) return; // the app is closing: no new rules
                         int n;
                         try { n = ServerLock.Apply(block, exe, exe != null ? "UDP" : null, g.LockPorts); }
                         catch (Exception ex) { failed(ex); return; }
@@ -2530,7 +2538,7 @@ namespace PingBoost
                     foreach (var g in games)
                         foreach (var p in g.Processes.SelectMany(n => Process.GetProcessesByName(n)))
                             using (p) try { p.PriorityClass = ProcessPriorityClass.Normal; } catch { }
-                    left = ServerLock.Exists();
+                    left = ServerLock.Present() != false;
                 }
                 catch (Exception ex) { ReportCrash("reset", ex); } // busy is always cleared below
                 Ui(() =>
@@ -2601,11 +2609,24 @@ namespace PingBoost
             // set before the tunnel exists: a Stop (or closing the app) from now on always removes it, even half-made
             tunnelActive = true;
             int gen = Interlocked.Increment(ref boostGen);
-            FirewallWorker.Run(() =>
+            Action<Exception> boostFailed = ex =>
             {
+                Log(T("Boost failed: ", "ما زبط البوست: ") + ex.Message);
+                Telemetry.Send("error", region.NameEn, -1, "boost via " + relay.Name + ": " + ex.GetType().Name + ": " + ex.Message);
+                Ui(() =>
+                {
+                    if (gen != Volatile.Read(ref boostGen)) return;
+                    StopAll(); // removes the half-made tunnel too
+                    Msg(T("Boost failed: ", "ما زبط البوست: ") + ex.Message, ToastKind.Bad);
+                });
+            };
+            // the address lists and DNS take network time: done first, so the firewall queue only holds the tunnel step
+            Task.Run(() =>
+            {
+                List<string> cidrs;
                 try
                 {
-                    var cidrs = new List<string>();
+                    cidrs = new List<string>();
                     if (g.Provider == Provider.Aws) cidrs.AddRange(GameDb.AwsCidrs(region.Id));
                     else cidrs.AddRange(region.Cidrs);
                     foreach (var ep in region.Endpoints)
@@ -2614,8 +2635,15 @@ namespace PingBoost
                         if (ip != null) cidrs.Add(ip + "/32");
                     }
                     cidrs = cidrs.Distinct().ToList();
-                    Tunnel.Start(Tunnel.BuildConf(relay, cidrs));
-                    // Stop was pressed while it was being built: its Tunnel.Stop is queued right after this
+                }
+                catch (Exception ex) { boostFailed(ex); return; }
+                FirewallWorker.Run(() =>
+                {
+                    // Stop was pressed, or the app is closing: the tunnel isn't started at all
+                    if (FirewallWorker.Closing || gen != Volatile.Read(ref boostGen)) return;
+                    try { Tunnel.Start(Tunnel.BuildConf(relay, cidrs)); }
+                    catch (Exception ex) { boostFailed(ex); return; }
+                    // Stop was pressed while it was starting: its Tunnel.Stop is queued right after this
                     if (gen != Volatile.Read(ref boostGen)) return;
                     Log(T("Route ready through ", "الطريق جاهز عن طريق ") + relay.Name + " - " + region.Name + " (" + cidrs.Count + ")");
                     Telemetry.Send("boost", region.NameEn, -1, "relay " + relay.Name);
@@ -2625,18 +2653,7 @@ namespace PingBoost
                         RaisePriority(g);
                         StartMonitor(target, T("BOOST · ", "بوست · ") + ShortName(region) + T(" via ", " عن طريق ") + relay.Name);
                     });
-                }
-                catch (Exception ex)
-                {
-                    Log(T("Boost failed: ", "ما زبط البوست: ") + ex.Message);
-                    Telemetry.Send("error", region.NameEn, -1, "boost via " + relay.Name + ": " + ex.GetType().Name + ": " + ex.Message);
-                    Ui(() =>
-                    {
-                        if (gen != Volatile.Read(ref boostGen)) return;
-                        StopAll(); // removes the half-made tunnel too
-                        Msg(T("Boost failed: ", "ما زبط البوست: ") + ex.Message, ToastKind.Bad);
-                    });
-                }
+                });
             });
         }
 

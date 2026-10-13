@@ -39,7 +39,12 @@ namespace PingBoost
                 if (id != null) return id;
                 id = Storage.GetOrAddSetting("install_id", () => Guid.NewGuid().ToString());
                 Guid parsed;
-                if (!Guid.TryParse(id, out parsed)) id = Guid.NewGuid().ToString(); // a damaged value would be refused by the database
+                if (!Guid.TryParse(id, out parsed))
+                {
+                    // a damaged value would be refused by the database: replaced, and the new one kept for next time
+                    id = Guid.NewGuid().ToString();
+                    Storage.SetSetting("install_id", id);
+                }
                 return installId = id;
             }
         }

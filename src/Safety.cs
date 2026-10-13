@@ -136,7 +136,7 @@ namespace PingBoost
     // prefixes 0-32 and ranges that go up. One bad entry in a downloaded list would make netsh refuse the whole rule.
     static class RemoteAddress
     {
-        static readonly Regex Shape = new Regex(@"^(\d{1,3}(?:\.\d{1,3}){3})(?:/(\d{1,2})|-(\d{1,3}(?:\.\d{1,3}){3}))?\z");
+        static readonly Regex Shape = new Regex(@"^([0-9]{1,3}(?:\.[0-9]{1,3}){3})(?:/([0-9]{1,2})|-([0-9]{1,3}(?:\.[0-9]{1,3}){3}))?\z"); // [0-9], not \d (other scripts' digits)
 
         public static bool Valid(string s)
         {
@@ -289,6 +289,9 @@ namespace PingBoost
     {
         static readonly object gate = new object();
         static Task tail = Task.FromResult(0);
+
+        // Set when the app starts closing: steps that would add rules or start the tunnel return without doing it.
+        public static volatile bool Closing;
 
         // what happens to an unexpected error of a step (reported like a crash; the next steps still run)
         public static Action<Exception> OnError = ex =>
