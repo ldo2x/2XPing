@@ -885,17 +885,19 @@ namespace PingBoost
             }
             var textRc = Lang.Ar ? new Rectangle(e.Bounds.X + 6, e.Bounds.Y, e.Bounds.Width - iconSize - 30, e.Bounds.Height)
                                  : new Rectangle(e.Bounds.X + iconSize + 22, e.Bounds.Y, e.Bounds.Width - iconSize - 28, e.Bounds.Height);
-            if (!g.Released)
+            if (!g.Released || g.InDevelopment)
             {
-                // developer mode only: a small "trial" tag on games that aren't in the public version yet
-                string tag = T("TRIAL", "تجريبي");
+                // a small tag: "trial" (developer mode only, not in the public version yet) or
+                // "in development" (public, but its server lock is still being worked on)
+                bool trial = !g.Released;
+                string tag = trial ? T("TRIAL", "تجريبي") : T("IN DEVELOPMENT", "قيد التطوير");
                 using (var f = Fonts.Semi(7.5f))
                 {
                     var ts = TextRenderer.MeasureText(tag, f);
                     var tagRc = new Rectangle(Lang.Ar ? textRc.X : textRc.Right - ts.Width - 8, e.Bounds.Y + (e.Bounds.Height - 18) / 2, ts.Width + 8, 18);
                     using (var path = Shapes.Round(tagRc, 6))
-                    using (var b = new SolidBrush(Color.FromArgb(28, 70, 74))) e.Graphics.FillPath(b, path);
-                    TextRenderer.DrawText(e.Graphics, tag, f, tagRc, DevAccent, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+                    using (var b = new SolidBrush(trial ? Color.FromArgb(28, 70, 74) : Color.FromArgb(66, 52, 28))) e.Graphics.FillPath(b, path);
+                    TextRenderer.DrawText(e.Graphics, tag, f, tagRc, trial ? DevAccent : Warn, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
                     textRc = Lang.Ar ? new Rectangle(textRc.X + tagRc.Width + 6, textRc.Y, textRc.Width - tagRc.Width - 6, textRc.Height)
                                      : new Rectangle(textRc.X, textRc.Y, textRc.Width - tagRc.Width - 6, textRc.Height);
                 }
