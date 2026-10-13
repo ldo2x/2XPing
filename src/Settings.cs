@@ -39,8 +39,8 @@ namespace PingBoost
                 f.StartPosition = FormStartPosition.CenterParent;
                 f.MinimizeBox = f.MaximizeBox = false;
                 f.ShowInTaskbar = false;
-                f.BackColor = MainForm.Bg;
-                f.ForeColor = MainForm.TextC;
+                f.BackColor = Theme.Bg;
+                f.ForeColor = Theme.TextC;
                 f.Font = Fonts.Ui(10f);
                 f.RightToLeft = Lang.Ar ? RightToLeft.Yes : RightToLeft.No;
 
@@ -51,10 +51,10 @@ namespace PingBoost
                 // a card with its title; content starts at y = 46 inside it
                 Func<int, int, int, string, Card> section = (cx, cy, h, title) =>
                 {
-                    var c = new Card { Bounds = new Rectangle(cx, cy, W, h), Fill = MainForm.Panel1, Radius = 14 };
+                    var c = new Card { Bounds = new Rectangle(cx, cy, W, h), Fill = Theme.Panel1, Radius = 14 };
                     c.Controls.Add(new Label
                     {
-                        Text = title, Font = Fonts.Semi(10.5f), ForeColor = MainForm.Accent, Bounds = new Rectangle(16, 12, W - 32, 26)
+                        Text = title, Font = Fonts.Semi(10.5f), ForeColor = Theme.Accent, Bounds = new Rectangle(16, 12, W - 32, 26)
                     });
                     f.Controls.Add(c);
                     return c;
@@ -80,7 +80,7 @@ namespace PingBoost
                 var layoutCard = section(colA, y, 132, Lang.T("Layout", "شكل البرنامج"));
                 var layout = new Segmented { Bounds = new Rectangle(16, 46, W - 32, 42), Items = new[] { Lang.T("Simple", "بسيط"), Lang.T("Advanced", "متقدم") }, Font = Fonts.Ui(10f) };
                 layout.SelectedIndex = Prefs.Simple ? 0 : 1;
-                var layoutHint = new Label { Bounds = new Rectangle(16, 94, W - 32, 26), ForeColor = MainForm.Dim, Font = Fonts.Ui(9f) };
+                var layoutHint = new Label { Bounds = new Rectangle(16, 94, W - 32, 26), ForeColor = Theme.Dim, Font = Fonts.Ui(9f) };
                 Action hint = () => layoutHint.Text = layout.SelectedIndex == 0
                     ? Lang.T("Just what you need: pick a region, see your ping, play.", "الأشياء المهمة بس: اختار منطقتك، شوف البنق، والعب.")
                     : Lang.T("Everything: relays, jitter, packet loss, tools and the log.", "كل شي: سيرفرات الوسيط، التذبذب، الفقد، الأدوات والسجل.");
@@ -126,16 +126,16 @@ namespace PingBoost
                     {
                         Text = Lang.T("The server lock for " + CardLogic.JoinNames(dev) + " is still in development.",
                                       "تثبيت السيرفرات في " + CardLogic.JoinNames(dev) + " لسا قيد التطوير."),
-                        ForeColor = MainForm.Warn, Font = Fonts.Ui(8.5f), Bounds = new Rectangle(16, 46 + rows * 54, W - 32, DevNoteH)
+                        ForeColor = Theme.Warn, Font = Fonts.Ui(8.5f), Bounds = new Rectangle(16, 46 + rows * 54, W - 32, DevNoteH)
                     });
                 y += gamesH + Gap;
 
                 // ---- more
                 var moreCard = section(colB, y, 144, Lang.T("More", "أكثر"));
                 const int bw = (W - 32 - 10) / 2;
-                var about = new RoundButton { Text = Lang.T("About 2X Ping", "عن البرنامج"), BackColor = MainForm.Panel2, ForeColor = MainForm.TextC,
+                var about = new RoundButton { Text = Lang.T("About 2X Ping", "عن البرنامج"), BackColor = Theme.Panel2, ForeColor = Theme.TextC,
                                               Bounds = new Rectangle(Lang.Ar ? 16 + bw + 10 : 16, 46, bw, 38) };
-                var reset = new RoundButton { Text = Lang.T("Back to normal", "رجّع كل شي طبيعي"), BackColor = MainForm.Panel2, ForeColor = MainForm.TextC,
+                var reset = new RoundButton { Text = Lang.T("Back to normal", "رجّع كل شي طبيعي"), BackColor = Theme.Panel2, ForeColor = Theme.TextC,
                                               Bounds = new Rectangle(Lang.Ar ? 16 : 16 + bw + 10, 46, bw, 38) };
                 about.Click += delegate { AboutDialog.Show(f); };
                 reset.Click += delegate { wantReset = true; f.DialogResult = DialogResult.Cancel; f.Close(); };
@@ -145,16 +145,16 @@ namespace PingBoost
                 {
                     Text = Lang.T("\"Back to normal\" unlocks your servers. Closing the app does it too.",
                                   "«رجّع كل شي طبيعي» يفك تثبيت السيرفرات، ونفس الشي يصير لما تقفل البرنامج."),
-                    ForeColor = MainForm.Dim, Font = Fonts.Ui(8.5f), Bounds = new Rectangle(16, 94, W - 32, 40)
+                    ForeColor = Theme.Dim, Font = Fonts.Ui(8.5f), Bounds = new Rectangle(16, 94, W - 32, 40)
                 });
                 int bottomB = y + 144;
 
                 // ---- save / cancel, on the reading side's far end
                 y = Math.Max(bottomA, bottomB) + 16;
                 int right = M + W + M + W;
-                var save = new RoundButton { Text = Lang.T("Save", "حفظ"), DialogResult = DialogResult.OK, BackColor = MainForm.Accent, ForeColor = Color.Black,
+                var save = new RoundButton { Text = Lang.T("Save", "حفظ"), DialogResult = DialogResult.OK, BackColor = Theme.Accent, ForeColor = Color.Black,
                                              Font = Fonts.Semi(10f), Bounds = new Rectangle(Lang.Ar ? M : right - 120, y, 120, 40) };
-                var cancel = new RoundButton { Text = Lang.T("Cancel", "إلغاء"), DialogResult = DialogResult.Cancel, BackColor = MainForm.Panel2, ForeColor = MainForm.TextC,
+                var cancel = new RoundButton { Text = Lang.T("Cancel", "إلغاء"), DialogResult = DialogResult.Cancel, BackColor = Theme.Panel2, ForeColor = Theme.TextC,
                                                Bounds = new Rectangle(Lang.Ar ? M + 130 : right - 250, y, 120, 40) };
                 f.Controls.Add(save);
                 f.Controls.Add(cancel);

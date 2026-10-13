@@ -299,8 +299,8 @@ namespace PingBoost
                 f.StartPosition = owner == null ? FormStartPosition.CenterScreen : FormStartPosition.CenterParent;
                 f.MinimizeBox = f.MaximizeBox = false;
                 f.ShowInTaskbar = forced;
-                f.BackColor = MainForm.Bg;
-                f.ForeColor = MainForm.TextC;
+                f.BackColor = Theme.Bg;
+                f.ForeColor = Theme.TextC;
                 f.Font = Fonts.Ui(10f);
                 f.RightToLeft = Lang.Ar ? RightToLeft.Yes : RightToLeft.No;
                 const int W = 440;
@@ -309,12 +309,12 @@ namespace PingBoost
                 f.Controls.Add(new Label
                 {
                     Text = Lang.T("New version: ", "نسخة جديدة: ") + "‎" + r.Ver.ToString(3) + "‎",
-                    Font = Fonts.Semi(14f), ForeColor = MainForm.Accent, TextAlign = ContentAlignment.MiddleCenter,
+                    Font = Fonts.Semi(14f), ForeColor = Theme.Accent, TextAlign = ContentAlignment.MiddleCenter,
                     Bounds = new Rectangle(20, 90, W, 34)
                 });
                 var text = new Label
                 {
-                    ForeColor = MainForm.TextC, TextAlign = ContentAlignment.TopCenter, Bounds = new Rectangle(20, 130, W, 52),
+                    ForeColor = Theme.TextC, TextAlign = ContentAlignment.TopCenter, Bounds = new Rectangle(20, 130, W, 52),
                     Text = forced
                         ? Lang.T("This version is too old to keep using. Update to carry on, it takes a few seconds.",
                                  "هالنسخة قديمة وما تشتغل بعد كذا. حدّث عشان تكمل، ياخذ كم ثانية بس.")
@@ -328,19 +328,19 @@ namespace PingBoost
 
                 var bar = new ProgressPanel { Bounds = new Rectangle(20, 188, W, 6), Visible = false };
                 f.Controls.Add(bar);
-                var status = new Label { ForeColor = MainForm.Dim, TextAlign = ContentAlignment.MiddleCenter, Bounds = new Rectangle(20, 198, W, 24), Font = Fonts.Ui(9f) };
+                var status = new Label { ForeColor = Theme.Dim, TextAlign = ContentAlignment.MiddleCenter, Bounds = new Rectangle(20, 198, W, 24), Font = Fonts.Ui(9f) };
                 f.Controls.Add(status);
 
                 var go = new RoundButton
                 {
                     Text = Lang.T("Update now", "حدّث دحين"), Bounds = new Rectangle(Lang.Ar ? 240 : 20, 232, 220, 40),
-                    FlatStyle = FlatStyle.Flat, BackColor = MainForm.Accent, ForeColor = Color.Black, Font = Fonts.Semi(10.5f), Cursor = Cursors.Hand
+                    FlatStyle = FlatStyle.Flat, BackColor = Theme.Accent, ForeColor = Color.Black, Font = Fonts.Semi(10.5f), Cursor = Cursors.Hand
                 };
                 var later = new RoundButton
                 {
                     Text = forced ? Lang.T("Close the app", "اقفل البرنامج") : Lang.T("Later", "بعدين"),
                     DialogResult = DialogResult.Cancel, Bounds = new Rectangle(Lang.Ar ? 20 : 240, 232, 200, 40),
-                    FlatStyle = FlatStyle.Flat, BackColor = MainForm.Panel2, ForeColor = MainForm.TextC, Cursor = Cursors.Hand
+                    FlatStyle = FlatStyle.Flat, BackColor = Theme.Panel2, ForeColor = Theme.TextC, Cursor = Cursors.Hand
                 };
                 go.FlatAppearance.BorderSize = later.FlatAppearance.BorderSize = 0;
                 f.Controls.Add(go);
@@ -357,7 +357,7 @@ namespace PingBoost
                     working = true;
                     go.Enabled = later.Enabled = false;
                     bar.Visible = true;
-                    status.ForeColor = MainForm.Dim;
+                    status.ForeColor = Theme.Dim;
                     status.Text = Lang.T("Downloading...", "ننزّل التحديث...");
                     var sw = Stopwatch.StartNew();
                     ThreadPool.QueueUserWorkItem(delegate
@@ -383,7 +383,7 @@ namespace PingBoost
                                 return;
                             }
                             bar.Visible = false;
-                            status.ForeColor = Updater.InstalledNotStarted ? MainForm.Warn : MainForm.Bad;
+                            status.ForeColor = Updater.InstalledNotStarted ? Theme.Warn : Theme.Bad;
                             status.Text = Updater.InstalledNotStarted ? err : Lang.T("Couldn't update: ", "ما زبط التحديث: ") + err;
                             failed = true;
                             go.Text = Lang.T("Download page", "صفحة التحميل");
@@ -401,11 +401,11 @@ namespace PingBoost
         {
             int value;
             public int Value { get { return value; } set { this.value = Math.Max(0, Math.Min(100, value)); Invalidate(); } }
-            public ProgressPanel() { DoubleBuffered = true; BackColor = MainForm.Panel2; }
+            public ProgressPanel() { DoubleBuffered = true; BackColor = Theme.Panel2; }
             protected override void OnPaint(PaintEventArgs e)
             {
                 int w = Width * value / 100;
-                using (var b = new SolidBrush(MainForm.Accent))
+                using (var b = new SolidBrush(Theme.Accent))
                     e.Graphics.FillRectangle(b, RightToLeft == RightToLeft.Yes ? Width - w : 0, 0, w, Height);
             }
         }

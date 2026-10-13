@@ -33,14 +33,14 @@ namespace PingBoost
         {
             for (var p = c.Parent; p != null; p = p.Parent)
                 if (p.BackColor.A == 255) return p.BackColor;
-            return MainForm.Bg;
+            return Theme.Bg;
         }
     }
 
     // A rounded card. Children inherit its fill as their background, so labels and lists blend in.
     class Card : Panel
     {
-        Color fill = MainForm.Panel1;
+        Color fill = Theme.Panel1;
         public int Radius = 12;
         public Color Border = Color.Empty;
 
@@ -113,7 +113,7 @@ namespace PingBoost
             using (var b = new SolidBrush(fill)) g.FillPath(b, path);
             if (Focused && ShowFocusCues)
                 using (var path = Shapes.Round(new RectangleF(1, 1, Width - 3, Height - 3), Radius))
-                using (var pen = new Pen(Color.FromArgb(160, MainForm.Lavender), 1.5f)) g.DrawPath(pen, path);
+                using (var pen = new Pen(Color.FromArgb(160, Theme.Lavender), 1.5f)) g.DrawPath(pen, path);
 
             bool rtl = RightToLeft == RightToLeft.Yes;
             // in a mirrored (right-to-left layout) window Windows flips the drawing itself
@@ -137,7 +137,7 @@ namespace PingBoost
     // A status chip: rounded background with a coloured dot (the label's ForeColor) before the text.
     class Chip : Label
     {
-        public Color Fill = MainForm.Panel2;
+        public Color Fill = Theme.Panel2;
 
         public Chip()
         {
@@ -165,7 +165,7 @@ namespace PingBoost
             using (var b = new SolidBrush(ForeColor)) g.FillEllipse(b, dx, box.Y + (h - d) / 2f, d, d);
             var rc = leadRight ? new Rectangle((int)box.X + 10, 0, (int)box.Width - 30 - d, Height)
                                : new Rectangle((int)box.X + 20 + d, 0, (int)box.Width - 30 - d, Height);
-            TextRenderer.DrawText(g, Text, Font, rc, MainForm.TextC, flags | (rtl ? TextFormatFlags.Right : TextFormatFlags.Left));
+            TextRenderer.DrawText(g, Text, Font, rc, Theme.TextC, flags | (rtl ? TextFormatFlags.Right : TextFormatFlags.Left));
         }
     }
 
@@ -220,7 +220,7 @@ namespace PingBoost
         {
             if (!Focused || !ShowFocusCues) return;
             using (var path = Shapes.Round(r, radius))
-            using (var pen = new Pen(Color.FromArgb(170, MainForm.Lavender), 1.5f)) g.DrawPath(pen, path);
+            using (var pen = new Pen(Color.FromArgb(170, Theme.Lavender), 1.5f)) g.DrawPath(pen, path);
         }
     }
 
@@ -269,14 +269,14 @@ namespace PingBoost
             const int tw = 42, th = 24;
             float tx = LeadRight ? Width - tw - 2 : 2, ty = (Height - th) / 2f;
             var track = new RectangleF(tx, ty, tw, th);
-            var off = Shapes.Blend(MainForm.Panel2, Color.White, 0.08f * hover);
+            var off = Shapes.Blend(Theme.Panel2, Color.White, 0.08f * hover);
             using (var path = Shapes.Round(track, th / 2f))
-            using (var b = new SolidBrush(Shapes.Blend(off, MainForm.Accent, pos))) g.FillPath(b, path);
+            using (var b = new SolidBrush(Shapes.Blend(off, Theme.Accent, pos))) g.FillPath(b, path);
             float knob = th - 6;
             // the knob travels towards the reading direction's end when on
             float start = tx + 3, end = tx + tw - knob - 3;
             float kx = LeadRight ? end + (start - end) * pos : start + (end - start) * pos;
-            using (var b = new SolidBrush(Shapes.Blend(MainForm.Dim, Color.White, pos))) g.FillEllipse(b, kx, ty + 3, knob, knob);
+            using (var b = new SolidBrush(Shapes.Blend(Theme.Dim, Color.White, pos))) g.FillEllipse(b, kx, ty + 3, knob, knob);
             FocusRing(g, new RectangleF(tx - 2, ty - 2, tw + 4, th + 4), th / 2f + 2);
             var rc = LeadRight ? new Rectangle(0, 0, Width - tw - 14, Height) : new Rectangle(tw + 12, 0, Width - tw - 14, Height);
             TextRenderer.DrawText(g, Text, Font, rc, ForeColor, TextFlags);
@@ -340,16 +340,16 @@ namespace PingBoost
             var g = Begin(e);
             var all = new RectangleF(0, 0, Width - 1, Height - 1);
             using (var path = Shapes.Round(all, 12))
-            using (var b = new SolidBrush(MainForm.Panel2)) g.FillPath(b, path);
+            using (var b = new SolidBrush(Theme.Panel2)) g.FillPath(b, path);
             for (int i = 0; i < items.Length; i++)
             {
                 var r = Segment(i);
                 bool sel = i == selected;
                 if (sel || i == hot)
                     using (var path = Shapes.Round(r, 9))
-                    using (var b = new SolidBrush(sel ? MainForm.Accent : Color.FromArgb(62, 48, 88))) g.FillPath(b, path);
+                    using (var b = new SolidBrush(sel ? Theme.Accent : Color.FromArgb(62, 48, 88))) g.FillPath(b, path);
                 using (var f = sel ? Fonts.Semi(Font.SizeInPoints / 0.92f) : null)
-                    TextRenderer.DrawText(g, items[i], f ?? Font, Rectangle.Round(r), sel ? Color.Black : MainForm.TextC,
+                    TextRenderer.DrawText(g, items[i], f ?? Font, Rectangle.Round(r), sel ? Color.Black : Theme.TextC,
                         TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
             }
             FocusRing(g, new RectangleF(1, 1, Width - 3, Height - 3), 12);
@@ -396,12 +396,12 @@ namespace PingBoost
         {
             var g = Begin(e);
             var box = new RectangleF(0.5f, 0.5f, Width - 2, Height - 2);
-            var fill = on ? Color.FromArgb(58, 38, 82) : MainForm.Panel1;
+            var fill = on ? Color.FromArgb(58, 38, 82) : Theme.Panel1;
             fill = Shapes.Blend(fill, Color.White, 0.05f * hover);
             using (var path = Shapes.Round(box, 11))
             {
                 using (var b = new SolidBrush(fill)) g.FillPath(b, path);
-                using (var pen = new Pen(on ? Color.FromArgb(200, MainForm.Accent) : Color.FromArgb(64, 52, 88), on ? 1.6f : 1f)) g.DrawPath(pen, path);
+                using (var pen = new Pen(on ? Color.FromArgb(200, Theme.Accent) : Color.FromArgb(64, 52, 88), on ? 1.6f : 1f)) g.DrawPath(pen, path);
             }
             const int icon = 26, check = 20;
             float ix = LeadRight ? Width - 12 - icon : 12;
@@ -422,11 +422,11 @@ namespace PingBoost
             float cx = LeadRight ? 12 : Width - 12 - check, cy = (Height - check) / 2f;
             if (on)
             {
-                using (var b = new SolidBrush(MainForm.Accent)) g.FillEllipse(b, cx, cy, check, check);
+                using (var b = new SolidBrush(Theme.Accent)) g.FillEllipse(b, cx, cy, check, check);
                 using (var pen = new Pen(Color.Black, 2f) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round })
                     g.DrawLines(pen, new[] { new PointF(cx + 5.5f, cy + 10.5f), new PointF(cx + 8.8f, cy + 13.6f), new PointF(cx + 14.6f, cy + 7f) });
             }
-            else using (var pen = new Pen(MainForm.Dim, 1.5f)) g.DrawEllipse(pen, cx + 0.75f, cy + 0.75f, check - 1.5f, check - 1.5f);
+            else using (var pen = new Pen(Theme.Dim, 1.5f)) g.DrawEllipse(pen, cx + 0.75f, cy + 0.75f, check - 1.5f, check - 1.5f);
             FocusRing(g, new RectangleF(1, 1, Width - 3, Height - 3), 11);
             int textStart = 12 + icon + 10, textEnd = 12 + check + 10;
             var rc = LeadRight ? new Rectangle(textEnd, 0, Width - textStart - textEnd, Height) : new Rectangle(textStart, 0, Width - textStart - textEnd, Height);
@@ -434,7 +434,7 @@ namespace PingBoost
             // just aligned to the reading side; a long name goes on two lines instead of being cut
             var flags = TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis |
                         (RightToLeft == RightToLeft.Yes ? TextFormatFlags.Right : TextFormatFlags.Left);
-            var color = on ? MainForm.TextC : MainForm.Dim;
+            var color = on ? Theme.TextC : Theme.Dim;
             var measure = TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine; // the whole width, never cut by the ellipsis
             if (TextRenderer.MeasureText(g, Text, Font, Size.Empty, measure).Width <= rc.Width)
                 TextRenderer.DrawText(g, Text, Font, rc, color, flags | TextFormatFlags.VerticalCenter);
@@ -498,13 +498,13 @@ namespace PingBoost
 
         public InputBox()
         {
-            Fill = MainForm.Panel2;
+            Fill = Theme.Panel2;
             Radius = 10;
             Border = Rest;
             Height = 42;
             Padding = new Padding(14, 11, 14, 8);
-            Box = new TextBox { BorderStyle = BorderStyle.None, BackColor = MainForm.Panel2, ForeColor = MainForm.TextC, Dock = DockStyle.Fill };
-            Box.GotFocus += delegate { Border = MainForm.Accent; Invalidate(); };
+            Box = new TextBox { BorderStyle = BorderStyle.None, BackColor = Theme.Panel2, ForeColor = Theme.TextC, Dock = DockStyle.Fill };
+            Box.GotFocus += delegate { Border = Theme.Accent; Invalidate(); };
             Box.LostFocus += delegate { Border = Rest; Invalidate(); };
             Click += delegate { Box.Focus(); };
             Cursor = Cursors.IBeam;

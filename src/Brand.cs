@@ -107,8 +107,8 @@ namespace PingBoost
                 f.StartPosition = FormStartPosition.CenterParent;
                 f.MinimizeBox = f.MaximizeBox = false;
                 f.ShowInTaskbar = false;
-                f.BackColor = MainForm.Bg;
-                f.ForeColor = MainForm.TextC;
+                f.BackColor = Theme.Bg;
+                f.ForeColor = Theme.TextC;
                 f.Font = Fonts.Ui(10f);
                 f.ClientSize = new Size(440, 420);
 
@@ -131,17 +131,17 @@ namespace PingBoost
                     y += h;
                     return l;
                 };
-                line(Brand.Name.ToUpperInvariant(), Fonts.Bold(22f), MainForm.Accent, 46);
-                line(Lang.T("Version ", "الإصدار ") + Brand.Version, f.Font, MainForm.Dim, 24);
+                line(Brand.Name.ToUpperInvariant(), Fonts.Bold(22f), Theme.Accent, 46);
+                line(Lang.T("Version ", "الإصدار ") + Brand.Version, f.Font, Theme.Dim, 24);
                 if (Brand.IsBeta)
-                    line(Lang.T("BETA - early test version", "نسخة تجريبية (Beta)"), Fonts.Semi(9.5f), MainForm.Warn, 24);
-                line(Lang.T("Made by ", "من تطوير ") + Brand.Developer, Fonts.Semi(12f), MainForm.TextC, 34);
+                    line(Lang.T("BETA - early test version", "نسخة تجريبية (Beta)"), Fonts.Semi(9.5f), Theme.Warn, 24);
+                line(Lang.T("Made by ", "من تطوير ") + Brand.Developer, Fonts.Semi(12f), Theme.TextC, 34);
                 line(Lang.T("Pick the best region for your game, lock it, and see your ping.",
-                            "تختار أحسن منطقة للعبتك، وتثبّتها، وتشوف بنقك."), f.Font, MainForm.Dim, 44);
+                            "تختار أحسن منطقة للعبتك، وتثبّتها، وتشوف بنقك."), f.Font, Theme.Dim, 44);
                 // separate lines so Arabic and Latin text never get reordered together
-                line(Brand.Copyright, Fonts.Ui(9f), MainForm.Dim, 20).RightToLeft = RightToLeft.No;
-                line(Lang.T("Free and open source (MIT License)", "مجاني ومفتوح المصدر (رخصة MIT)"), Fonts.Ui(9f), MainForm.Dim, 22);
-                line("Discord: " + Brand.DiscordUser, Fonts.Ui(9f), MainForm.Dim, 22).RightToLeft = RightToLeft.No;
+                line(Brand.Copyright, Fonts.Ui(9f), Theme.Dim, 20).RightToLeft = RightToLeft.No;
+                line(Lang.T("Free and open source (MIT License)", "مجاني ومفتوح المصدر (رخصة MIT)"), Fonts.Ui(9f), Theme.Dim, 22);
+                line("Discord: " + Brand.DiscordUser, Fonts.Ui(9f), Theme.Dim, 22).RightToLeft = RightToLeft.No;
 
                 y += 8;
                 Func<string, string, int, LinkLabel> link = (text, url, x) =>
@@ -150,7 +150,7 @@ namespace PingBoost
                     {
                         Text = text, AutoSize = false, TextAlign = ContentAlignment.MiddleCenter, Bounds = new Rectangle(x, y, 190, 24),
                         RightToLeft = Lang.Ar ? RightToLeft.Yes : RightToLeft.No, // keeps "GitHub" after the Arabic words
-                        LinkColor = MainForm.Accent, ActiveLinkColor = Color.White, LinkBehavior = LinkBehavior.HoverUnderline
+                        LinkColor = Theme.Accent, ActiveLinkColor = Color.White, LinkBehavior = LinkBehavior.HoverUnderline
                     };
                     l.LinkClicked += delegate { Brand.Open(url); };
                     f.Controls.Add(l);
@@ -164,7 +164,7 @@ namespace PingBoost
                 var ok = new RoundButton
                 {
                     Text = Lang.T("OK", "تمام"), DialogResult = DialogResult.OK, Bounds = new Rectangle(170, y + 8, 100, 34),
-                    FlatStyle = FlatStyle.Flat, BackColor = MainForm.Accent, ForeColor = Color.Black
+                    FlatStyle = FlatStyle.Flat, BackColor = Theme.Accent, ForeColor = Color.Black
                 };
                 ok.FlatAppearance.BorderSize = 0;
                 f.Controls.Add(ok);
@@ -187,8 +187,8 @@ namespace PingBoost
                 f.StartPosition = FormStartPosition.CenterParent;
                 f.MinimizeBox = f.MaximizeBox = false;
                 f.ShowInTaskbar = false;
-                f.BackColor = MainForm.Bg;
-                f.ForeColor = MainForm.TextC;
+                f.BackColor = Theme.Bg;
+                f.ForeColor = Theme.TextC;
                 f.Font = Fonts.Ui(10f);
                 // RTL text without mirrored layout: the layout here is symmetric anyway
                 f.RightToLeft = Lang.Ar ? RightToLeft.Yes : RightToLeft.No;
@@ -198,7 +198,7 @@ namespace PingBoost
                 {
                     Text = Lang.T("You're using a beta. Your feedback decides what we fix and add next.",
                                   "إنت تجرّب نسخة بيتا، ورأيك هو اللي يحدد وش نصلّح ونضيف بعدين."),
-                    ForeColor = MainForm.Warn, Bounds = new Rectangle(16, y, 448, 44)
+                    ForeColor = Theme.Warn, Bounds = new Rectangle(16, y, 448, 44)
                 });
                 y += 52;
 
@@ -207,7 +207,7 @@ namespace PingBoost
                     var b = new RoundButton
                     {
                         Text = title, Bounds = new Rectangle(16, y, 448, 40), FlatStyle = FlatStyle.Flat,
-                        BackColor = MainForm.Panel2, ForeColor = MainForm.TextC, Cursor = Cursors.Hand,
+                        BackColor = Theme.Panel2, ForeColor = Theme.TextC, Cursor = Cursors.Hand,
                         TextAlign = ContentAlignment.MiddleLeft, // flipped to the right automatically in RTL
                         Padding = new Padding(10, 0, 10, 0)
                     };
@@ -216,7 +216,7 @@ namespace PingBoost
                     f.Controls.Add(b);
                     f.Controls.Add(new Label
                     {
-                        Text = sub, ForeColor = MainForm.Dim, Font = Fonts.Ui(8.5f),
+                        Text = sub, ForeColor = Theme.Dim, Font = Fonts.Ui(8.5f),
                         Bounds = new Rectangle(18, y + 42, 446, 20)
                     });
                     y += 70;
@@ -234,9 +234,9 @@ namespace PingBoost
                 {
                     string before = b.Text;
                     b.Text = text;
-                    b.ForeColor = MainForm.Good;
+                    b.ForeColor = Theme.Good;
                     var t = new Timer { Interval = 2000 };
-                    t.Tick += delegate { t.Stop(); t.Dispose(); if (!b.IsDisposed) { b.Text = before; b.ForeColor = MainForm.TextC; } };
+                    t.Tick += delegate { t.Stop(); t.Dispose(); if (!b.IsDisposed) { b.Text = before; b.ForeColor = Theme.TextC; } };
                     t.Start();
                 };
                 row("Discord: " + Brand.DiscordUser,
@@ -260,7 +260,7 @@ namespace PingBoost
                 var ok = new RoundButton
                 {
                     Text = Lang.T("Close", "إغلاق"), DialogResult = DialogResult.OK, Bounds = new Rectangle(184, y + 4, 112, 34),
-                    FlatStyle = FlatStyle.Flat, BackColor = MainForm.Accent, ForeColor = Color.Black
+                    FlatStyle = FlatStyle.Flat, BackColor = Theme.Accent, ForeColor = Color.Black
                 };
                 ok.FlatAppearance.BorderSize = 0;
                 f.Controls.Add(ok);

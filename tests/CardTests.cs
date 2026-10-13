@@ -58,7 +58,7 @@ namespace PingBoost
             Check(v.Kind == CardKind.Loading, "Loading kind");
             Check(v.Title == "نجيب سيرفرات Deadlock...", "Loading title: " + v.Title);
             Check(v.Button == null && !v.ShowTiles && !v.ShowLinks, "Loading has no button, tiles or links");
-            Check(v.Accent == MainForm.Accent, "Loading accent");
+            Check(v.Accent == Theme.Accent, "Loading accent");
         }
 
         static void CardLoadFailedIsOffline()
@@ -118,7 +118,7 @@ namespace PingBoost
             Check(v.ShowTiles && v.ShowLinks, "tiles and links shown");
             Check(v.Button == "العب على أوروبا", "button: " + v.Button);
             Check(v.Sub == null, "one selected = no sub");
-            Check(v.Accent == MainForm.Accent, "Choose accent");
+            Check(v.Accent == Theme.Accent, "Choose accent");
             Check(v.ShowTest, "Choose offers \"Test ping\"");
         }
 
@@ -230,7 +230,7 @@ namespace PingBoost
             Check(v.Sub != null && v.Sub.Contains("جرّب مباراة عادية أول"), "sub: " + v.Sub);
             Check(v.Sub == "افتح اللعبة ودوّر مباراة. جرّب مباراة عادية أول.", "sub exact");
             Check(v.Button == "فك التثبيت" && !v.ShowTiles && !v.ShowLinks, "button, no tiles");
-            Check(v.Accent == MainForm.Good, "Locked accent is Good");
+            Check(v.Accent == Theme.Good, "Locked accent is Good");
         }
 
         static void CardInMatchOnPicked()
@@ -242,7 +242,7 @@ namespace PingBoost
             Check(v.Kind == CardKind.InMatchOk, "InMatchOk kind");
             Check(v.Title == "تلعب دحين في أوروبا ✓", "title: " + v.Title);
             Check(v.Sub == "التثبيت شغّال. وبنقك الحقيقي تشوفه داخل اللعبة.", "sub: " + v.Sub);
-            Check(v.Button == "فك التثبيت" && v.Accent == MainForm.Good, "button and accent");
+            Check(v.Button == "فك التثبيت" && v.Accent == Theme.Good, "button and accent");
         }
 
         static void CardInMatchViaRelay()
@@ -255,7 +255,7 @@ namespace PingBoost
             // only the entry relay is seen: never a claim that the lock worked (audit B4)
             Check(v.Title == "داخل شبكة Valve من دبي، وسيرفر المباراة ما يبان من هنا", "title: " + v.Title);
             Check(v.Sub == "مثبّت على أوروبا. وبنقك الحقيقي تشوفه داخل اللعبة.", "sub: " + v.Sub);
-            Check(v.Button == "فك التثبيت" && v.Accent == MainForm.Accent, "button and neutral accent");
+            Check(v.Button == "فك التثبيت" && v.Accent == Theme.Accent, "button and neutral accent");
         }
 
         static void CardInMatchOutside()
@@ -268,7 +268,7 @@ namespace PingBoost
             Check(v.Title == "اللعبة حطّتك على أمريكا الشمالية", "title: " + v.Title);
             Check(v.Sub == "اقفل اللعبة وافتحها من جديد، وبعدين دوّر مباراة.", "sub: " + v.Sub);
             Check(v.Button == "فك التثبيت", "button");
-            Check(v.Accent == MainForm.Warn, "Outside accent is Warn");
+            Check(v.Accent == Theme.Warn, "Outside accent is Warn");
         }
 
         static void CardLockedEnglish()

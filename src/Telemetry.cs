@@ -264,8 +264,8 @@ namespace PingBoost
                 f.FormBorderStyle = FormBorderStyle.FixedDialog;
                 f.StartPosition = FormStartPosition.CenterScreen;
                 f.MinimizeBox = f.MaximizeBox = false;
-                f.BackColor = MainForm.Bg;
-                f.ForeColor = MainForm.TextC;
+                f.BackColor = Theme.Bg;
+                f.ForeColor = Theme.TextC;
                 f.Font = Fonts.Ui(10f);
                 f.RightToLeft = Lang.Ar ? RightToLeft.Yes : RightToLeft.No;
                 const int W = 480;
@@ -274,15 +274,15 @@ namespace PingBoost
                 f.Controls.Add(new Label
                 {
                     Text = Lang.T("Welcome to 2X Ping", "هلا فيك في 2X Ping"), Font = Fonts.Semi(15f),
-                    ForeColor = MainForm.Accent, TextAlign = ContentAlignment.MiddleCenter, Bounds = new Rectangle(20, 82, W, 36)
+                    ForeColor = Theme.Accent, TextAlign = ContentAlignment.MiddleCenter, Bounds = new Rectangle(20, 82, W, 36)
                 });
                 // a card with its title; content starts at y = 46 inside it
                 Func<int, int, string, Card> section = (cy, h, title) =>
                 {
-                    var c = new Card { Bounds = new Rectangle(20, cy, W, h), Fill = MainForm.Panel1, Radius = 14 };
+                    var c = new Card { Bounds = new Rectangle(20, cy, W, h), Fill = Theme.Panel1, Radius = 14 };
                     c.Controls.Add(new Label
                     {
-                        Text = title, Font = Fonts.Semi(10.5f), ForeColor = MainForm.Accent, Bounds = new Rectangle(16, 12, W - 32, 26)
+                        Text = title, Font = Fonts.Semi(10.5f), ForeColor = Theme.Accent, Bounds = new Rectangle(16, 12, W - 32, 26)
                     });
                     f.Controls.Add(c);
                     return c;
@@ -302,7 +302,7 @@ namespace PingBoost
                 {
                     Text = Lang.T("Only these show up in your list. You can change them later in Settings.",
                                   "اللي تختاره بس يطلع لك، وتقدر تغيّره بعدين من الإعدادات."),
-                    Bounds = new Rectangle(16, 40, W - 32, 22), ForeColor = MainForm.Dim, Font = Fonts.Ui(8.5f)
+                    Bounds = new Rectangle(16, 40, W - 32, 22), ForeColor = Theme.Dim, Font = Fonts.Ui(8.5f)
                 });
                 var picks = new List<GameTile>();
                 const int tw = (W - 32 - 10) / 2;
@@ -321,11 +321,11 @@ namespace PingBoost
 
                 // what is sent, in the words of SECURITY.md's table; the details link sits inside the same card
                 const int NoticeH = 150;
-                var noticeCard = new Card { Bounds = new Rectangle(20, y, W, NoticeH), Fill = MainForm.Panel1, Radius = 14 };
+                var noticeCard = new Card { Bounds = new Rectangle(20, y, W, NoticeH), Fill = Theme.Panel1, Radius = 14 };
                 f.Controls.Add(noticeCard);
                 var notice = new Label
                 {
-                    Bounds = new Rectangle(14, 10, W - 28, NoticeH - 44), ForeColor = MainForm.Dim, Font = Fonts.Ui(9.5f),
+                    Bounds = new Rectangle(14, 10, W - 28, NoticeH - 44), ForeColor = Theme.Dim, Font = Fonts.Ui(9.5f),
                     Text = Lang.T(
                         "This is a beta. While it's open, 2X Ping sends your name and PC name, PC info, location (city and internet provider), " +
                         "the game and ping, and error logs, so we can improve it.\n" +
@@ -338,8 +338,8 @@ namespace PingBoost
                 var details = new LinkLabel
                 {
                     Text = Lang.T("Statistics details", "تفاصيل الإحصائيات"), Bounds = new Rectangle(14, NoticeH - 32, W - 28, 24),
-                    BackColor = MainForm.Panel1, TextAlign = Lang.Ar ? ContentAlignment.MiddleRight : ContentAlignment.MiddleLeft,
-                    LinkColor = MainForm.Lavender, ActiveLinkColor = Color.White, LinkBehavior = LinkBehavior.HoverUnderline
+                    BackColor = Theme.Panel1, TextAlign = Lang.Ar ? ContentAlignment.MiddleRight : ContentAlignment.MiddleLeft,
+                    LinkColor = Theme.Lavender, ActiveLinkColor = Color.White, LinkBehavior = LinkBehavior.HoverUnderline
                 };
                 details.LinkClicked += delegate { Brand.Open(Brand.RepoUrl + "/blob/main/SECURITY.md#usage-statistics-beta"); };
                 noticeCard.Controls.Add(details);
@@ -349,7 +349,7 @@ namespace PingBoost
                 var why = new Label
                 {
                     Text = Lang.T("Write your name and pick at least one game", "اكتب اسمك واختار لعبة وحدة على الأقل"),
-                    Bounds = new Rectangle(20, y, W, 22), ForeColor = MainForm.Warn, Font = Fonts.Ui(9f),
+                    Bounds = new Rectangle(20, y, W, 22), ForeColor = Theme.Warn, Font = Fonts.Ui(9f),
                     TextAlign = ContentAlignment.MiddleCenter
                 };
                 f.Controls.Add(why);
@@ -358,21 +358,21 @@ namespace PingBoost
                 {
                     Text = Lang.T("Agree and start", "موافق وأبدأ"), DialogResult = DialogResult.OK,
                     Bounds = new Rectangle(Lang.Ar ? 280 : 20, y, 220, 40), FlatStyle = FlatStyle.Flat,
-                    BackColor = MainForm.Accent, ForeColor = Color.Black, Font = Fonts.Semi(10.5f), Enabled = false
+                    BackColor = Theme.Accent, ForeColor = Color.Black, Font = Fonts.Semi(10.5f), Enabled = false
                 };
                 var exit = new RoundButton
                 {
                     Text = Lang.T("Exit", "خروج"), DialogResult = DialogResult.Cancel,
                     Bounds = new Rectangle(Lang.Ar ? 20 : 280, y, 220, 40), FlatStyle = FlatStyle.Flat,
-                    BackColor = MainForm.Panel2, ForeColor = MainForm.TextC
+                    BackColor = Theme.Panel2, ForeColor = Theme.TextC
                 };
                 ok.FlatAppearance.BorderSize = exit.FlatAppearance.BorderSize = 0;
                 // ready once there is a name and at least one game; until then quiet but readable, with the reason above it
                 EventHandler refresh = delegate
                 {
                     ok.Enabled = name.Text.Trim().Length >= 2 && picks.Any(p => p.Checked);
-                    ok.BackColor = ok.Enabled ? MainForm.Accent : MainForm.Panel2;
-                    ok.ForeColor = ok.Enabled ? Color.Black : MainForm.TextC;
+                    ok.BackColor = ok.Enabled ? Theme.Accent : Theme.Panel2;
+                    ok.ForeColor = ok.Enabled ? Color.Black : Theme.TextC;
                     why.Visible = !ok.Enabled;
                 };
                 name.Box.TextChanged += refresh;
@@ -409,17 +409,17 @@ namespace PingBoost
 
         public DevPanel()
         {
-            BackColor = MainForm.Bg;
-            ForeColor = MainForm.TextC;
+            BackColor = Theme.Bg;
+            ForeColor = Theme.TextC;
             Font = Fonts.Ui(9.5f);
             RightToLeft = RightToLeft.No; // developer tools stay in English, left to right
 
             var top = new Panel { Dock = DockStyle.Top, Height = 46, Padding = new Padding(10, 8, 10, 8) };
-            summary = new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Font = Fonts.Semi(11f), ForeColor = MainForm.Accent };
-            var btn = new RoundButton { Text = "Refresh", Dock = DockStyle.Right, Width = 100, FlatStyle = FlatStyle.Flat, BackColor = MainForm.Panel2 };
+            summary = new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Font = Fonts.Semi(11f), ForeColor = Theme.Accent };
+            var btn = new RoundButton { Text = "Refresh", Dock = DockStyle.Right, Width = 100, FlatStyle = FlatStyle.Flat, BackColor = Theme.Panel2 };
             btn.FlatAppearance.BorderSize = 0;
             btn.Click += delegate { Reload(); };
-            var forget = new RoundButton { Text = "Forget key", Dock = DockStyle.Right, Width = 100, FlatStyle = FlatStyle.Flat, BackColor = MainForm.Panel2 };
+            var forget = new RoundButton { Text = "Forget key", Dock = DockStyle.Right, Width = 100, FlatStyle = FlatStyle.Flat, BackColor = Theme.Panel2 };
             forget.FlatAppearance.BorderSize = 0;
             forget.Click += delegate { Telemetry.DevKey = null; var h = ForgetKey; if (h != null) h(); };
             top.Controls.Add(summary);
@@ -436,9 +436,9 @@ namespace PingBoost
                            "Games installed", 300, "Last seen", 110);
             log = List("Time", 120, "Name", 110, "Kind", 70, "Game", 110, "Server", 150, "Ping", 50, "Detail", 300, "Data", 400);
             issues = List("Problem", 300, "Code", 150, "Times", 60, "Players", 65, "Versions", 140, "Last seen", 110, "Latest example", 520);
-            errorsOnly = new CheckBox { Text = "Errors only", Dock = DockStyle.Top, Height = 28, ForeColor = MainForm.TextC };
+            errorsOnly = new CheckBox { Text = "Errors only", Dock = DockStyle.Top, Height = 28, ForeColor = Theme.TextC };
             errorsOnly.CheckedChanged += delegate { FillLog(); };
-            var logPage = new TabPage("Log") { BackColor = MainForm.Bg };
+            var logPage = new TabPage("Log") { BackColor = Theme.Bg };
             logPage.Controls.Add(log);
             logPage.Controls.Add(errorsOnly);
             tabs.TabPages.Add(Page("Problems", issues));
@@ -461,7 +461,7 @@ namespace PingBoost
 
         static TabPage Page(string title, Control c)
         {
-            var p = new TabPage(title) { BackColor = MainForm.Bg };
+            var p = new TabPage(title) { BackColor = Theme.Bg };
             p.Controls.Add(c);
             return p;
         }
@@ -471,7 +471,7 @@ namespace PingBoost
             var lv = new ListView
             {
                 Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true, BorderStyle = BorderStyle.None,
-                BackColor = MainForm.Panel1, ForeColor = MainForm.TextC, GridLines = false
+                BackColor = Theme.Panel1, ForeColor = Theme.TextC, GridLines = false
             };
             for (int i = 0; i < cols.Length; i += 2) lv.Columns.Add((string)cols[i], (int)cols[i + 1]);
             return lv;
@@ -573,7 +573,7 @@ namespace PingBoost
                 var g = byVer[k];
                 var item = new ListViewItem(new[] { g.Key, g.Count().ToString(), (100.0 * g.Count() / Math.Max(1, active.Count)).ToString("0") + "%",
                                                     k == 0 ? "latest" : "needs to update" });
-                item.ForeColor = k == 0 ? MainForm.Good : MainForm.Warn;
+                item.ForeColor = k == 0 ? Theme.Good : Theme.Warn;
                 versions.Items.Add(item);
             }
             versions.EndUpdate();
@@ -645,7 +645,7 @@ namespace PingBoost
                     grp.Select(r => S(r, "install_id")).Distinct().Count().ToString(),
                     string.Join(", ", grp.Select(r => S(r, "app_version")).Distinct().Take(3)),
                     T(latest, "at").ToString("MM-dd HH:mm"), S(latest, "detail").Replace("\r", " ").Replace("\n", " ") });
-                item.ForeColor = grp.Key == "crash" || grp.Key == "lock_outside" || grp.Key == "lock_rules_missing" ? MainForm.Bad : MainForm.Warn;
+                item.ForeColor = grp.Key == "crash" || grp.Key == "lock_outside" || grp.Key == "lock_rules_missing" ? Theme.Bad : Theme.Warn;
                 issues.Items.Add(item);
             }
             if (issues.Items.Count == 0) NoData(issues, "No problems reported");
@@ -655,7 +655,7 @@ namespace PingBoost
         // An empty grid says why it is empty, in one dim row.
         static void NoData(ListView lv, string text)
         {
-            lv.Items.Add(new ListViewItem(text) { ForeColor = MainForm.Dim });
+            lv.Items.Add(new ListViewItem(text) { ForeColor = Theme.Dim });
         }
 
         void FillLog()
@@ -669,7 +669,7 @@ namespace PingBoost
                 names.TryGetValue(S(r, "install_id"), out n);
                 var item = new ListViewItem(new[] { T(r, "at").ToString("MM-dd HH:mm:ss"), n ?? "?", S(r, "kind"), S(r, "game"),
                     S(r, "server"), S(r, "ping"), S(r, "detail").Replace("\r", " ").Replace("\n", " "), Json(r, "data") });
-                if (S(r, "kind") == "error") item.ForeColor = MainForm.Bad;
+                if (S(r, "kind") == "error") item.ForeColor = Theme.Bad;
                 log.Items.Add(item);
             }
             log.EndUpdate();

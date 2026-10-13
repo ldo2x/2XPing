@@ -31,10 +31,10 @@ namespace PingBoost
         public StateCard()
         {
             Radius = 16;
-            Fill = MainForm.Panel1;
+            Fill = Theme.Panel1;
             button = new RoundButton
             {
-                BackColor = MainForm.Accent, ForeColor = Color.Black, Font = Fonts.Semi(11f), Radius = 10, Height = 40, Visible = false
+                BackColor = Theme.Accent, ForeColor = Color.Black, Font = Fonts.Semi(11f), Radius = 10, Height = 40, Visible = false
             };
             button.Click += delegate { Raise(ButtonPressed); };
             other = new CardLink { Text = Lang.T("Other regions", "مناطق ثانية"), Visible = false };
@@ -101,8 +101,8 @@ namespace PingBoost
             if (hasButton) button.Text = v.Button;
             // once locked, "Unlock" is a quiet secondary action; pink stays for what we want the player to press
             bool secondary = v != null && (v.Kind == CardKind.Locked || v.Kind == CardKind.InMatchOk || v.Kind == CardKind.InMatchRelay || v.Kind == CardKind.Outside);
-            button.BackColor = secondary ? MainForm.Panel2 : MainForm.Accent;
-            button.ForeColor = secondary ? MainForm.TextC : Color.Black;
+            button.BackColor = secondary ? Theme.Panel2 : Theme.Accent;
+            button.ForeColor = secondary ? Theme.TextC : Color.Black;
             button.Visible = hasButton;
             hasLinks = v != null && v.ShowLinks;
             other.Visible = hasLinks && otherAvailable;
@@ -114,8 +114,8 @@ namespace PingBoost
             hint.Visible = link;
             if (link) hint.Text = v.HintLink;
 
-            var accent = v != null ? v.Accent : MainForm.Accent;
-            Border = accent == MainForm.Good || accent == MainForm.Warn ? Shapes.Blend(accent, MainForm.Panel1, 0.6f) : Color.Empty;
+            var accent = v != null ? v.Accent : Theme.Accent;
+            Border = accent == Theme.Good || accent == Theme.Warn ? Shapes.Blend(accent, Theme.Panel1, 0.6f) : Color.Empty;
 
             if (Waiting) dots.Start(); else dots.Stop();
             PerformLayout();
@@ -154,10 +154,10 @@ namespace PingBoost
         {
             get
             {
-                if (view == null) return MainForm.TextC;
-                if (view.Accent == MainForm.Good) return MainForm.Good;
-                if (view.Accent == MainForm.Warn) return MainForm.Warn;
-                return MainForm.TextC;
+                if (view == null) return Theme.TextC;
+                if (view.Accent == Theme.Good) return Theme.Good;
+                if (view.Accent == Theme.Warn) return Theme.Warn;
+                return Theme.TextC;
             }
         }
 
@@ -353,9 +353,9 @@ namespace PingBoost
             if (view == null) return;
             var g = e.Graphics;
             TextRenderer.DrawText(g, view.Title, titleFont, titleRect, TitleColor, Flags);
-            if (view.Sub != null) TextRenderer.DrawText(g, view.Sub, subFont, subRect, MainForm.Dim, Flags);
-            if (noteRect != Rectangle.Empty) TextRenderer.DrawText(g, view.Note, noteFont, noteRect, MainForm.Dim, Flags);
-            if (stepsRect != Rectangle.Empty) TextRenderer.DrawText(g, view.HintSteps, noteFont, stepsRect, MainForm.Dim, Flags);
+            if (view.Sub != null) TextRenderer.DrawText(g, view.Sub, subFont, subRect, Theme.Dim, Flags);
+            if (noteRect != Rectangle.Empty) TextRenderer.DrawText(g, view.Note, noteFont, noteRect, Theme.Dim, Flags);
+            if (stepsRect != Rectangle.Empty) TextRenderer.DrawText(g, view.HintSteps, noteFont, stepsRect, Theme.Dim, Flags);
             if (dotsRect != Rectangle.Empty)
             {
                 g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
@@ -364,7 +364,7 @@ namespace PingBoost
                 for (int i = 0; i < 3; i++)
                 {
                     int k = LeadRight ? 2 - i : i; // the pulse runs in the reading direction
-                    var c = k == dotPhase ? MainForm.Accent : Shapes.Blend(MainForm.Dim, MainForm.Panel1, 0.45f);
+                    var c = k == dotPhase ? Theme.Accent : Shapes.Blend(Theme.Dim, Theme.Panel1, 0.45f);
                     using (var b = new SolidBrush(c)) g.FillEllipse(b, x + i * (d + gap), y, d, d);
                 }
             }
@@ -430,9 +430,9 @@ namespace PingBoost
 
         static Color PingColor(double ms)
         {
-            if (ms >= double.MaxValue) return MainForm.Dim;
-            if (ms < 60) return MainForm.Good;
-            return ms < 120 ? MainForm.Warn : MainForm.Bad;
+            if (ms >= double.MaxValue) return Theme.Dim;
+            if (ms < 60) return Theme.Good;
+            return ms < 120 ? Theme.Warn : Theme.Bad;
         }
 
         protected override void OnPaint(PaintEventArgs e)
@@ -441,12 +441,12 @@ namespace PingBoost
             if (choice == null) return;
             bool on = choice.Selected;
             var box = new RectangleF(0.75f, Lip + 0.75f, Width - 2.5f, Height - Lip - 2.5f);
-            var rest = Shapes.Blend(MainForm.Panel1, MainForm.Panel2, 0.55f);
+            var rest = Shapes.Blend(Theme.Panel1, Theme.Panel2, 0.55f);
             var fill = Shapes.Blend(on ? Color.FromArgb(62, 38, 86) : rest, Color.White, 0.05f * hover);
             using (var path = Shapes.Round(box, 12))
             {
                 using (var b = new SolidBrush(fill)) g.FillPath(b, path);
-                var edge = on ? MainForm.Accent : Shapes.Blend(Color.FromArgb(70, 56, 98), MainForm.Lavender, 0.25f * hover);
+                var edge = on ? Theme.Accent : Shapes.Blend(Color.FromArgb(70, 56, 98), Theme.Lavender, 0.25f * hover);
                 using (var pen = new Pen(edge, on ? 1.8f : 1f)) g.DrawPath(pen, path);
             }
             FocusRing(g, new RectangleF(box.X + 2, box.Y + 2, box.Width - 4, box.Height - 4), 10);
@@ -456,15 +456,15 @@ namespace PingBoost
             float cx = LeadRight ? Width - In - CheckD : In;
             if (on)
             {
-                using (var b = new SolidBrush(MainForm.Accent)) g.FillEllipse(b, cx, cy, CheckD, CheckD);
+                using (var b = new SolidBrush(Theme.Accent)) g.FillEllipse(b, cx, cy, CheckD, CheckD);
                 using (var pen = new Pen(Color.Black, 2f) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round })
                     g.DrawLines(pen, new[] { new PointF(cx + 5f, cy + 9.5f), new PointF(cx + 8f, cy + 12.4f), new PointF(cx + 13.2f, cy + 6.4f) });
             }
-            else using (var pen = new Pen(MainForm.Dim, 1.5f)) g.DrawEllipse(pen, cx + 0.75f, cy + 0.75f, CheckD - 1.5f, CheckD - 1.5f);
+            else using (var pen = new Pen(Theme.Dim, 1.5f)) g.DrawEllipse(pen, cx + 0.75f, cy + 0.75f, CheckD - 1.5f, CheckD - 1.5f);
 
             int textX = In + CheckD + 10, textW = Width - textX - In;
             int y = Lip + 16;
-            TextRenderer.DrawText(g, choice.Name, nameFont, Row(textX, y, textW, NameH), on ? MainForm.TextC : Shapes.Blend(MainForm.TextC, MainForm.Dim, 0.35f), TextFlags);
+            TextRenderer.DrawText(g, choice.Name, nameFont, Row(textX, y, textW, NameH), on ? Theme.TextC : Shapes.Blend(Theme.TextC, Theme.Dim, 0.35f), TextFlags);
             y += NameH + 6;
 
             bool known = choice.Ping < double.MaxValue;
@@ -479,17 +479,17 @@ namespace PingBoost
                 int pw = TextRenderer.MeasureText(g, ping, pingFont, area, nopad).Width;
                 TextRenderer.DrawText(g, ping, pingFont, Row(textX + pad, y, textW - pad, LineH), PingColor(choice.Ping), nopad);
                 if (pad + pw < textW)
-                    TextRenderer.DrawText(g, " · " + Lang.T("via ", "عن طريق ") + choice.Via, lineFont, Row(textX + pad + pw, y, textW - pad - pw, LineH), MainForm.Dim, nopad);
+                    TextRenderer.DrawText(g, " · " + Lang.T("via ", "عن طريق ") + choice.Via, lineFont, Row(textX + pad + pw, y, textW - pad - pw, LineH), Theme.Dim, nopad);
             }
             else TextRenderer.DrawText(g, ping, known ? pingFont : lineFont, Row(textX, y, textW, LineH), PingColor(choice.Ping), TextFlags);
             y += LineH;
             if (HasQueue(choice))
             {
-                TextRenderer.DrawText(g, Lang.T("Wait ", "الانتظار ") + Stats.EstimateWait(choice.Matches), lineFont, Row(textX, y, textW, LineH), MainForm.Dim, TextFlags);
+                TextRenderer.DrawText(g, Lang.T("Wait ", "الانتظار ") + Stats.EstimateWait(choice.Matches), lineFont, Row(textX, y, textW, LineH), Theme.Dim, TextFlags);
                 y += LineH;
             }
             if (HasPlayers(choice))
-                TextRenderer.DrawText(g, RegionGroups.Busy(choice.Players) + " · " + Stats.Approx(choice.Players), lineFont, Row(textX, y, textW, LineH), MainForm.Dim, TextFlags);
+                TextRenderer.DrawText(g, RegionGroups.Busy(choice.Players) + " · " + Stats.Approx(choice.Players), lineFont, Row(textX, y, textW, LineH), Theme.Dim, TextFlags);
 
             // the tag sits on the top edge, over the check
             string tag = TagText();
@@ -498,7 +498,7 @@ namespace PingBoost
                 int tw = TextRenderer.MeasureText(tag, badgeFont).Width + 18;
                 float bx = LeadRight ? Width - In + 4 - tw : In - 4;
                 var pill = new RectangleF(bx, 0, tw, BadgeH);
-                Color pf = choice.Tag == "best" ? MainForm.Accent : choice.Tag == "ping" ? MainForm.Good : MainForm.Lavender;
+                Color pf = choice.Tag == "best" ? Theme.Accent : choice.Tag == "ping" ? Theme.Good : Theme.Lavender;
                 using (var path = Shapes.Round(pill, BadgeH / 2f))
                 using (var b = new SolidBrush(pf)) g.FillPath(b, path);
                 TextRenderer.DrawText(g, tag, badgeFont, Rectangle.Round(pill), Color.Black,
@@ -523,7 +523,7 @@ namespace PingBoost
         protected override void OnPaint(PaintEventArgs e)
         {
             var g = Begin(e);
-            var color = Shapes.Blend(MainForm.Lavender, Color.White, 0.3f * hover);
+            var color = Shapes.Blend(Theme.Lavender, Color.White, 0.3f * hover);
             var flags = TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix |
                         (RightToLeft == RightToLeft.Yes ? TextFormatFlags.RightToLeft : 0);
             TextRenderer.DrawText(g, Text, Font, ClientRectangle, color, flags);

@@ -13,20 +13,6 @@ namespace PingBoost
 {
     class MainForm : Form
     {
-        // Celeste theme: night purple, unicorn pink, lavender, sparkle gold
-        public static readonly Color Bg = Color.FromArgb(20, 15, 30);
-        public static readonly Color Panel1 = Color.FromArgb(30, 23, 44);
-        public static readonly Color Panel2 = Color.FromArgb(46, 35, 68);
-        public static readonly Color RowAlt = Color.FromArgb(36, 28, 52);
-        public static readonly Color RowSel = Color.FromArgb(74, 40, 92);
-        public static readonly Color Accent = Color.FromArgb(255, 111, 200);   // pink
-        public static readonly Color Lavender = Color.FromArgb(182, 158, 255);
-        public static readonly Color Good = Color.FromArgb(104, 236, 204);     // aqua: good ping
-        public static readonly Color TextC = Color.FromArgb(246, 240, 252);
-        public static readonly Color Dim = Color.FromArgb(168, 154, 192);
-        public static readonly Color Bad = Color.FromArgb(255, 92, 122);
-        public static readonly Color Warn = Color.FromArgb(255, 198, 92);      // sparkle gold
-
         const double RelayMarginMs = 3; // a relay must beat direct by this much to be chosen
         const int CheckArea = 34;       // width of the pick tick box in the region column
 
@@ -109,8 +95,8 @@ namespace PingBoost
             ClientSize = new Size(1240, 760);
             MinimumSize = new Size(980, 640);
             StartPosition = FormStartPosition.CenterScreen;
-            BackColor = Bg;
-            ForeColor = TextC;
+            BackColor = Theme.Bg;
+            ForeColor = Theme.TextC;
             Font = Fonts.Ui(10f);
             try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
             ApplyDirection();
@@ -361,17 +347,17 @@ namespace PingBoost
 
         void BuildUi()
         {
-            var header = new Panel { Dock = DockStyle.Top, Height = 64, BackColor = Panel1 };
+            var header = new Panel { Dock = DockStyle.Top, Height = 64, BackColor = Theme.Panel1 };
             header.Controls.Add(liveLabel = new Chip
             {
-                Text = StatusOff, Font = Fonts.Semi(11f), ForeColor = Dim, Width = 430,
+                Text = StatusOff, Font = Fonts.Semi(11f), ForeColor = Theme.Dim, Width = 430,
                 Dock = DockStyle.Right, TextAlign = ContentAlignment.MiddleRight, Padding = new Padding(0, 0, 14, 0),
                 // advanced layout only (the simple layout's card says the state), and only with a live ping to show:
                 // otherwise the status bar at the bottom says the same
                 Visible = !simple && graphLive
             });
-            header.Controls.Add(HeaderButton(T("Settings", "الإعدادات"), 120, TextC, OpenSettings));
-            header.Controls.Add(HeaderButton(T("Feedback", "تواصل معنا"), 120, Warn, () =>
+            header.Controls.Add(HeaderButton(T("Settings", "الإعدادات"), 120, Theme.TextC, OpenSettings));
+            header.Controls.Add(HeaderButton(T("Feedback", "تواصل معنا"), 120, Theme.Warn, () =>
             {
                 Telemetry.Send("use", null, -1, "feedback");
                 ContactDialog.Show(this, logBox.Text);
@@ -394,30 +380,30 @@ namespace PingBoost
             header.Controls.Add(logo);
             header.Controls.Add(new Label
             {
-                Text = "2X PING", Font = Fonts.Bold(17f), ForeColor = Accent,
+                Text = "2X PING", Font = Fonts.Bold(17f), ForeColor = Theme.Accent,
                 AutoSize = true, Location = new Point(64, 4)
             });
             if (Brand.IsBeta)
                 header.Controls.Add(new Label
                 {
-                    Text = "BETA", Font = Fonts.Bold(7.5f), ForeColor = Color.Black, BackColor = Warn,
+                    Text = "BETA", Font = Fonts.Bold(7.5f), ForeColor = Color.Black, BackColor = Theme.Warn,
                     AutoSize = false, Bounds = new Rectangle(178, 11, 42, 18), TextAlign = ContentAlignment.MiddleCenter
                 });
             if (devMode)
                 header.Controls.Add(new Label
                 {
-                    Text = "DEV", Font = Fonts.Bold(7.5f), ForeColor = Color.Black, BackColor = DevAccent,
+                    Text = "DEV", Font = Fonts.Bold(7.5f), ForeColor = Color.Black, BackColor = Theme.DevAccent,
                     AutoSize = false, Bounds = new Rectangle(226, 11, 38, 18), TextAlign = ContentAlignment.MiddleCenter
                 });
             header.Controls.Add(new Label
             {
                 Text = T("by " + Brand.Developer + "  ·  lower ping, better games", "بنق أقل، لعب أحلى  ·  من " + Brand.Developer),
-                ForeColor = Dim, AutoSize = true, Location = new Point(67, 38), Font = Fonts.Ui(9f)
+                ForeColor = Theme.Dim, AutoSize = true, Location = new Point(67, 38), Font = Fonts.Ui(9f)
             });
 
             statusLabel = new Label
             {
-                Dock = DockStyle.Bottom, Height = 28, BackColor = Panel1, ForeColor = Dim,
+                Dock = DockStyle.Bottom, Height = 28, BackColor = Theme.Panel1, ForeColor = Theme.Dim,
                 TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(12, 0, 12, 0), Text = T("Ready", "جاهز"),
                 Visible = !simple
             };
@@ -428,10 +414,10 @@ namespace PingBoost
                 Text = "‎" + Brand.Name + " v" + Brand.DisplayVersion + "  ·  " + Brand.Copyright
             });
 
-            var left = new Panel { Dock = DockStyle.Left, Width = 252, BackColor = Panel1, Padding = new Padding(10, 6, 10, 10) };
+            var left = new Panel { Dock = DockStyle.Left, Width = 252, BackColor = Theme.Panel1, Padding = new Padding(10, 6, 10, 10) };
             gameList = new ListBox
             {
-                Dock = DockStyle.Fill, BorderStyle = BorderStyle.None, BackColor = Panel1, ForeColor = TextC,
+                Dock = DockStyle.Fill, BorderStyle = BorderStyle.None, BackColor = Theme.Panel1, ForeColor = Theme.TextC,
                 DrawMode = DrawMode.OwnerDrawFixed, ItemHeight = 48, IntegralHeight = false
             };
             FillGames();
@@ -448,7 +434,7 @@ namespace PingBoost
             left.Controls.Add(gameList);
             left.Controls.Add(new Label
             {
-                Text = T("GAMES", "الألعاب"), ForeColor = Dim, Dock = DockStyle.Top, Height = 30,
+                Text = T("GAMES", "الألعاب"), ForeColor = Theme.Dim, Dock = DockStyle.Top, Height = 30,
                 Font = Fonts.Semi(9.5f), TextAlign = ContentAlignment.MiddleLeft
             });
 
@@ -463,7 +449,7 @@ namespace PingBoost
             tabButtons = new Button[names.Count];
             for (int i = 0; i < names.Count; i++)
             {
-                var b = MakeButton(names[i], Panel2);
+                var b = MakeButton(names[i], Theme.Panel2);
                 b.Bounds = new Rectangle(i * 156, 0, 148, 34);
                 int idx = i;
                 b.Click += delegate { ShowPage(idx); };
@@ -478,13 +464,13 @@ namespace PingBoost
 
             // "a new version is out" strip under the header (hidden until there is one)
             updateBar = new Panel { Dock = DockStyle.Top, Height = 44, BackColor = Color.FromArgb(58, 44, 30), Padding = new Padding(14, 7, 14, 7), Visible = false };
-            updateBtn = MakeButton(T("Update now", "حدّث دحين"), Warn);
+            updateBtn = MakeButton(T("Update now", "حدّث دحين"), Theme.Warn);
             updateBtn.ForeColor = Color.Black;
             updateBtn.Font = Fonts.Semi(10f);
             updateBtn.Dock = DockStyle.Right;
             updateBtn.Width = 130;
             updateBtn.Click += delegate { if (pendingUpdate != null && UpdateDialog.Show(this, pendingUpdate, false)) CloseForUpdate(); };
-            updateLabel = new Label { Dock = DockStyle.Fill, ForeColor = Warn, TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true };
+            updateLabel = new Label { Dock = DockStyle.Fill, ForeColor = Theme.Warn, TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true };
             updateBar.Controls.Add(updateLabel);
             updateBar.Controls.Add(updateBtn);
 
@@ -501,7 +487,7 @@ namespace PingBoost
         Panel HeaderButton(string text, int width, Color fore, Action onClick)
         {
             var wrap = new Panel { Dock = DockStyle.Right, Width = width, Padding = new Padding(8, 15, 0, 15) };
-            var b = MakeButton(text, Panel2);
+            var b = MakeButton(text, Theme.Panel2);
             b.ForeColor = fore;
             b.Dock = DockStyle.Fill;
             b.Click += delegate { onClick(); };
@@ -560,17 +546,17 @@ namespace PingBoost
         Panel BuildServersPage()
         {
             var p = new Panel();
-            gameNote = new Label { Dock = DockStyle.Top, Height = 32, ForeColor = Dim, TextAlign = ContentAlignment.MiddleLeft, Visible = !simple };
+            gameNote = new Label { Dock = DockStyle.Top, Height = 32, ForeColor = Theme.Dim, TextAlign = ContentAlignment.MiddleLeft, Visible = !simple };
 
             // region lock bar (Valve games)
             pickBar = new Panel { Dock = DockStyle.Top, Height = 44, Padding = new Padding(4, 0, 4, 8) };
-            btnLock = MakeButton(T("Lock my servers", "ثبّت سيرفراتي"), Accent);
+            btnLock = MakeButton(T("Lock my servers", "ثبّت سيرفراتي"), Theme.Accent);
             btnLock.ForeColor = Color.Black;
             btnLock.Font = Fonts.Semi(10f);
             btnLock.Dock = DockStyle.Right;
             btnLock.Width = 150;
             btnLock.Click += delegate { LockServers(false); };
-            btnUnlock = MakeButton(T("Unlock", "فك التثبيت"), Panel2);
+            btnUnlock = MakeButton(T("Unlock", "فك التثبيت"), Theme.Panel2);
             btnUnlock.Dock = DockStyle.Right;
             btnUnlock.Width = 120;
             btnUnlock.Click += delegate { UnlockServers(); };
@@ -610,31 +596,31 @@ namespace PingBoost
             // the simple layout has no bottom bar: no BOOST (it only matters with a relay), graph hidden
             var bottom = bottomPanel = new Panel { Dock = DockStyle.Bottom, Height = 200, Visible = !simple };
             var controls = new Panel { Dock = DockStyle.Bottom, Height = 56 };
-            btnTest = MakeButton(T("Test ping", "افحص البنق"), Panel2);
+            btnTest = MakeButton(T("Test ping", "افحص البنق"), Theme.Panel2);
             btnTest.Bounds = new Rectangle(0, 12, 140, 40);
             btnTest.Click += delegate { Telemetry.Send("use", null, -1, "test button"); RunTest(); };
-            routeLabel = new Label { Text = T("Route:", "الطريق:"), ForeColor = Dim, AutoSize = true, Location = new Point(154, 22), Visible = !simple };
+            routeLabel = new Label { Text = T("Route:", "الطريق:"), ForeColor = Theme.Dim, AutoSize = true, Location = new Point(154, 22), Visible = !simple };
             routeBox = new ComboBox
             {
-                DropDownStyle = ComboBoxStyle.DropDownList, FlatStyle = FlatStyle.Flat, BackColor = Panel2,
-                ForeColor = TextC, Bounds = new Rectangle(214, 18, 210, 28),
+                DropDownStyle = ComboBoxStyle.DropDownList, FlatStyle = FlatStyle.Flat, BackColor = Theme.Panel2,
+                ForeColor = Theme.TextC, Bounds = new Rectangle(214, 18, 210, 28),
                 DrawMode = DrawMode.OwnerDrawFixed, ItemHeight = 22, Visible = !simple
             };
             routeBox.DrawItem += (s, e) =>
             {
                 if (e.Index < 0) return;
                 bool sel = (e.State & DrawItemState.Selected) != 0;
-                using (var b = new SolidBrush(sel ? RowSel : Panel2)) e.Graphics.FillRectangle(b, e.Bounds);
+                using (var b = new SolidBrush(sel ? Theme.RowSel : Theme.Panel2)) e.Graphics.FillRectangle(b, e.Bounds);
                 TextRenderer.DrawText(e.Graphics, routeBox.Items[e.Index].ToString(), Font,
-                    Rectangle.Inflate(e.Bounds, -4, 0), TextC, TextFormatFlags.VerticalCenter | TextFormatFlags.Left | Lang.Flags);
+                    Rectangle.Inflate(e.Bounds, -4, 0), Theme.TextC, TextFormatFlags.VerticalCenter | TextFormatFlags.Left | Lang.Flags);
             };
             int bx = simple ? 154 : 438;
-            btnBoost = MakeButton(T("Speed up", "شغّل التسريع"), Accent);
+            btnBoost = MakeButton(T("Speed up", "شغّل التسريع"), Theme.Accent);
             btnBoost.ForeColor = Color.Black;
             btnBoost.Font = Fonts.Semi(11f);
             btnBoost.Bounds = new Rectangle(bx, 12, 160, 40);
             btnBoost.Click += delegate { Boost(); };
-            btnStop = MakeButton(T("Stop", "وقّف"), Panel2);
+            btnStop = MakeButton(T("Stop", "وقّف"), Theme.Panel2);
             btnStop.Bounds = new Rectangle(bx + 170, 12, 100, 40);
             btnStop.Enabled = false;
             btnStop.Click += delegate { StopAll(); };
@@ -646,7 +632,7 @@ namespace PingBoost
 
             // one card holds the lock bar and the server list: picking and locking read as one task
             // (the simple layout shows it under the state card only after "Pick by hand")
-            listCard = new Card { Dock = DockStyle.Fill, Fill = Panel1, Radius = 14, Padding = new Padding(12, 12, 12, 12) };
+            listCard = new Card { Dock = DockStyle.Fill, Fill = Theme.Panel1, Radius = 14, Padding = new Padding(12, 12, 12, 12) };
             listCard.Controls.Add(serverList);
             listCard.Controls.Add(pickBar);
             p.Controls.Add(listCard);
@@ -667,7 +653,7 @@ namespace PingBoost
             var p = new Panel();
             var info = new Label
             {
-                Dock = DockStyle.Top, Height = 64, ForeColor = Dim,
+                Dock = DockStyle.Top, Height = 64, ForeColor = Theme.Dim,
                 Text = T("A relay is a VPS of yours running WireGuard (set it up with setup-relay.sh). When the route through it is faster, " +
                          "ONLY the game's traffic goes through it; browsing, downloads and Discord stay on your normal connection.",
                          "الوسيط سيرفر VPS حقك عليه WireGuard (تجهّزه بسكربت setup-relay.sh). لو طلع الطريق عن طريقه أسرع، " +
@@ -701,7 +687,7 @@ namespace PingBoost
             logBox = new TextBox
             {
                 Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical,
-                BackColor = Panel1, ForeColor = TextC, BorderStyle = BorderStyle.None, Font = Fonts.Ui(9.5f),
+                BackColor = Theme.Panel1, ForeColor = Theme.TextC, BorderStyle = BorderStyle.None, Font = Fonts.Ui(9.5f),
                 Text = oldLog
             };
             p.Controls.Add(logBox);
@@ -711,7 +697,7 @@ namespace PingBoost
 
         Button ToolButton(string text, Action onClick)
         {
-            var b = MakeButton(text, Panel2);
+            var b = MakeButton(text, Theme.Panel2);
             b.AutoSize = true;
             b.Padding = new Padding(10, 4, 10, 4);
             b.Margin = new Padding(0, 0, 8, 0);
@@ -722,17 +708,16 @@ namespace PingBoost
 
         static RoundButton MakeButton(string text, Color bg)
         {
-            return new RoundButton { Text = text, BackColor = bg, ForeColor = TextC };
+            return new RoundButton { Text = text, BackColor = bg, ForeColor = Theme.TextC };
         }
 
-        static readonly Color RowHover = Color.FromArgb(54, 42, 78);
         static ListViewItem hotRow; // the row under the mouse
 
         static Color RowBack(ListViewItem item, int index)
         {
-            if (item.Selected) return RowSel;
-            if (item == hotRow) return RowHover;
-            return index % 2 == 0 ? Panel1 : RowAlt;
+            if (item.Selected) return Theme.RowSel;
+            if (item == hotRow) return Theme.RowHover;
+            return index % 2 == 0 ? Theme.Panel1 : Theme.RowAlt;
         }
 
         ListView MakeListView(string[] cols, int[] widths)
@@ -740,7 +725,7 @@ namespace PingBoost
             var lv = new ListView
             {
                 Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true, MultiSelect = false,
-                HideSelection = false, BorderStyle = BorderStyle.None, BackColor = Panel1, ForeColor = TextC,
+                HideSelection = false, BorderStyle = BorderStyle.None, BackColor = Theme.Panel1, ForeColor = Theme.TextC,
                 OwnerDraw = true, HeaderStyle = ColumnHeaderStyle.Nonclickable,
                 // with an embedded (private) font WinForms stops owner-drawing the header, so the control keeps a
                 // system font; all text is still drawn with the form's font (Readex Pro) in the Draw* handlers below
@@ -773,8 +758,8 @@ namespace PingBoost
             lv.DrawColumnHeader += (s, e) =>
             {
                 if (e.Bounds.Width <= 0) return;
-                using (var b = new SolidBrush(Panel2)) e.Graphics.FillRectangle(b, e.Bounds);
-                TextRenderer.DrawText(e.Graphics, e.Header.Text, Font, Rectangle.Inflate(e.Bounds, -8, 0), Dim,
+                using (var b = new SolidBrush(Theme.Panel2)) e.Graphics.FillRectangle(b, e.Bounds);
+                TextRenderer.DrawText(e.Graphics, e.Header.Text, Font, Rectangle.Inflate(e.Bounds, -8, 0), Theme.Dim,
                     TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | Align);
             };
             lv.DrawItem += (s, e) => { };
@@ -850,14 +835,14 @@ namespace PingBoost
                 // the same round pink check as the game tiles
                 if (r.Picked)
                 {
-                    using (var b = new SolidBrush(Accent)) e.Graphics.FillEllipse(b, box);
+                    using (var b = new SolidBrush(Theme.Accent)) e.Graphics.FillEllipse(b, box);
                     using (var pen = new Pen(Color.Black, 2f) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round, LineJoin = System.Drawing.Drawing2D.LineJoin.Round })
                         e.Graphics.DrawLines(pen, new[] { new PointF(box.X + 5f, box.Y + 9.5f), new PointF(box.X + 8f, box.Y + 12.4f), new PointF(box.X + 13.2f, box.Y + 6.3f) });
                 }
                 else
                 {
-                    using (var b = new SolidBrush(Panel2)) e.Graphics.FillEllipse(b, box);
-                    using (var pen = new Pen(Color.FromArgb(150, Lavender), 1.5f)) e.Graphics.DrawEllipse(pen, box.X + 0.75f, box.Y + 0.75f, box.Width - 1.5f, box.Height - 1.5f);
+                    using (var b = new SolidBrush(Theme.Panel2)) e.Graphics.FillEllipse(b, box);
+                    using (var pen = new Pen(Color.FromArgb(150, Theme.Lavender), 1.5f)) e.Graphics.DrawEllipse(pen, box.X + 0.75f, box.Y + 0.75f, box.Width - 1.5f, box.Height - 1.5f);
                 }
                 textRc = Lang.Ar ? new Rectangle(rc.X + 4, rc.Y, rc.Width - CheckArea - 4, rc.Height)
                                  : new Rectangle(rc.X + CheckArea, rc.Y, rc.Width - CheckArea - 4, rc.Height);
@@ -885,8 +870,8 @@ namespace PingBoost
             for (int i = 0; i < pages.Length; i++)
             {
                 pages[i].Visible = i == idx;
-                tabButtons[i].BackColor = i == idx ? RowSel : Panel2;
-                tabButtons[i].ForeColor = i == idx ? Accent : TextC;
+                tabButtons[i].BackColor = i == idx ? Theme.RowSel : Theme.Panel2;
+                tabButtons[i].ForeColor = i == idx ? Theme.Accent : Theme.TextC;
             }
         }
 
@@ -906,15 +891,15 @@ namespace PingBoost
             if (e.Index < 0) return;
             var g = (Game)gameList.Items[e.Index];
             bool sel = (e.State & DrawItemState.Selected) != 0, hot = e.Index == hotGame;
-            using (var b = new SolidBrush(Panel1)) e.Graphics.FillRectangle(b, e.Bounds);
+            using (var b = new SolidBrush(Theme.Panel1)) e.Graphics.FillRectangle(b, e.Bounds);
             if (sel || hot)
             {
                 e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
                 var pill = new RectangleF(e.Bounds.X + 2, e.Bounds.Y + 3, e.Bounds.Width - 4, e.Bounds.Height - 6);
                 using (var path = Shapes.Round(pill, 10))
-                using (var b = new SolidBrush(sel ? Panel2 : Color.FromArgb(38, 30, 56))) e.Graphics.FillPath(b, path);
+                using (var b = new SolidBrush(sel ? Theme.Panel2 : Color.FromArgb(38, 30, 56))) e.Graphics.FillPath(b, path);
                 if (sel)
-                    using (var b = new SolidBrush(Accent))
+                    using (var b = new SolidBrush(Theme.Accent))
                         e.Graphics.FillRectangle(b, Lang.Ar ? e.Bounds.Right - 5 : e.Bounds.X + 2, e.Bounds.Y + 12, 3, e.Bounds.Height - 24);
             }
             // icon on the leading side, then the name
@@ -931,7 +916,7 @@ namespace PingBoost
             // game names are Latin: aligned to the reading side, never reordered (right-to-left puts the "..." in front)
             var nameFlags = TextFormatFlags.EndEllipsis | TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix |
                             (Lang.Ar ? TextFormatFlags.Right : TextFormatFlags.Left);
-            var nameColor = sel ? TextC : Color.FromArgb(206, 196, 226);
+            var nameColor = sel ? Theme.TextC : Color.FromArgb(206, 196, 226);
             if (!g.Released || g.InDevelopment)
             {
                 // a small tag under the name, so the name keeps the whole width: "trial" (developer mode only, not in
@@ -949,7 +934,7 @@ namespace PingBoost
                     e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
                     using (var path = Shapes.Round(tagRc, 6))
                     using (var b = new SolidBrush(trial ? Color.FromArgb(28, 70, 74) : Color.FromArgb(66, 52, 28))) e.Graphics.FillPath(b, path);
-                    TextRenderer.DrawText(e.Graphics, tag, f, tagRc, trial ? DevAccent : Warn,
+                    TextRenderer.DrawText(e.Graphics, tag, f, tagRc, trial ? Theme.DevAccent : Theme.Warn,
                         TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding |
                         (Lang.Ar ? TextFormatFlags.RightToLeft : 0));
                 }
@@ -1121,9 +1106,9 @@ namespace PingBoost
 
         static Color PingColor(double v)
         {
-            if (v < 0) return Bad;
-            if (v < 60) return Good;
-            return v < 120 ? Warn : Bad;
+            if (v < 0) return Theme.Bad;
+            if (v < 60) return Theme.Good;
+            return v < 120 ? Theme.Warn : Theme.Bad;
         }
 
         static void SetSub(ListViewItem item, int i, string text, Color color)
@@ -1309,7 +1294,7 @@ namespace PingBoost
         void AddRegionRow(Region r)
         {
             var item = new ListViewItem(r.Name) { UseItemStyleForSubItems = false, Tag = r };
-            item.ForeColor = TextC;
+            item.ForeColor = Theme.TextC;
             for (int i = 0; i < 7; i++) item.SubItems.Add("");
             serverList.Items.Add(item);
             UpdateRow(item);
@@ -1332,13 +1317,13 @@ namespace PingBoost
             using (var b = new SolidBrush(Color.FromArgb(40, 30, 60))) e.Graphics.FillRectangle(b, row);
             var font = Fonts.Semi(10.5f);
             var text = Rectangle.Inflate(row, -14, 0);
-            TextRenderer.DrawText(e.Graphics, HeaderText(h), font, text, h.Key == "" || h.Key == DeadlockData.Russia ? Dim : Lavender,
+            TextRenderer.DrawText(e.Graphics, HeaderText(h), font, text, h.Key == "" || h.Key == DeadlockData.Russia ? Theme.Dim : Theme.Lavender,
                 TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | Align);
             if (h.Top)
             {
                 // the busiest region gets a gold sparkle badge on the opposite side
                 var flags = TextFormatFlags.VerticalCenter | (Lang.Ar ? TextFormatFlags.Left : TextFormatFlags.Right);
-                TextRenderer.DrawText(e.Graphics, T("✦ most players", "✦ الأكثر لاعبين"), font, text, Warn, flags | Lang.Flags);
+                TextRenderer.DrawText(e.Graphics, T("✦ most players", "✦ الأكثر لاعبين"), font, text, Theme.Warn, flags | Lang.Flags);
             }
             font.Dispose();
         }
@@ -1536,7 +1521,7 @@ namespace PingBoost
                 }
                 UpdateCard();
             }
-            SetDetect(T("On: ", "إنت على: ") + place, ok ? Good : Warn);
+            SetDetect(T("On: ", "إنت على: ") + place, ok ? Theme.Good : Theme.Warn);
             if (lockSummary != null && !ok)
                 Issues.Report("lock_outside", g.Name + " on " + id + " (console log) while locked on " + lockSummary,
                     new Dictionary<string, object> { { "game", g.Name }, { "datacenter", id }, { "source", "console log" }, { "locked", lockSummary } },
@@ -1888,54 +1873,54 @@ namespace PingBoost
                                             (g != null && !g.Hosts(r) ? T("   ·  relay only", "   ·  وسيط بس") : "") +
                                             (r.NoRelay ? T("   ·  can't be locked (Valve lists no relay here)", "   ·  ما ينثبّت (Valve ما تعطي وسيط له)") : "") +
                                             (devMode ? "   ·  ‎" + r.Cidrs.Count + " ranges‎" : "");
-            item.SubItems[ColRegion].ForeColor = r.Here || r.Picked ? Accent : (r.Detected ? Warn : TextC);
+            item.SubItems[ColRegion].ForeColor = r.Here || r.Picked ? Theme.Accent : (r.Detected ? Theme.Warn : Theme.TextC);
 
             string mm;
             int matches;
             if (g != null && g.AppId == "1422450" && activity != null && DeadlockData.Hosting.TryGetValue(r.Id, out mm) &&
                 activity.TryGetValue(mm, out matches))
             {
-                SetSub(item, ColPlayers, Stats.Approx(PlayersOf(matches)), TextC);
-                SetSub(item, ColWait, Stats.EstimateWait(matches), matches >= Stats.FastQueue ? Accent : matches >= Stats.MediumQueue ? Warn : Bad);
+                SetSub(item, ColPlayers, Stats.Approx(PlayersOf(matches)), Theme.TextC);
+                SetSub(item, ColWait, Stats.EstimateWait(matches), matches >= Stats.FastQueue ? Theme.Accent : matches >= Stats.MediumQueue ? Theme.Warn : Theme.Bad);
             }
             else
             {
-                SetSub(item, ColPlayers, "-", Dim);
-                SetSub(item, ColWait, "-", Dim);
+                SetSub(item, ColPlayers, "-", Theme.Dim);
+                SetSub(item, ColWait, "-", Theme.Dim);
             }
 
             // hosts matches but has no relay: nothing to ping, and the lock never blocks it (it never says "blocked")
             if (r.NoRelay)
             {
-                item.SubItems[ColRegion].ForeColor = Dim;
-                foreach (int i in new[] { ColPing, ColJitter, ColLoss, ColVia, ColRoute }) SetSub(item, i, "-", Dim);
+                item.SubItems[ColRegion].ForeColor = Theme.Dim;
+                foreach (int i in new[] { ColPing, ColJitter, ColLoss, ColVia, ColRoute }) SetSub(item, i, "-", Theme.Dim);
                 return;
             }
             if (LockedOut(g, r))
             {
-                SetSub(item, ColPing, T("blocked", "محجوب"), Dim);
-                foreach (int i in new[] { ColJitter, ColLoss, ColVia, ColRoute }) SetSub(item, i, "-", Dim);
+                SetSub(item, ColPing, T("blocked", "محجوب"), Theme.Dim);
+                foreach (int i in new[] { ColJitter, ColLoss, ColVia, ColRoute }) SetSub(item, i, "-", Theme.Dim);
                 return;
             }
             if (r.Direct == null)
             {
-                foreach (int i in new[] { ColPing, ColJitter, ColLoss, ColVia, ColRoute }) SetSub(item, i, "-", Dim);
+                foreach (int i in new[] { ColPing, ColJitter, ColLoss, ColVia, ColRoute }) SetSub(item, i, "-", Theme.Dim);
                 return;
             }
             SetSub(item, ColPing, Ms(r.Direct.Avg), PingColor(r.Direct.Avg));
-            SetSub(item, ColJitter, r.Direct.Ok ? "‎" + Math.Round(r.Direct.Jitter, 1) + " ms‎" : "-", r.Direct.Jitter > 10 ? Warn : Dim);
-            SetSub(item, ColLoss, "‎" + Math.Round(r.Direct.Loss) + "%‎", r.Direct.Loss > 0 ? Bad : Dim);
+            SetSub(item, ColJitter, r.Direct.Ok ? "‎" + Math.Round(r.Direct.Jitter, 1) + " ms‎" : "-", r.Direct.Jitter > 10 ? Theme.Warn : Theme.Dim);
+            SetSub(item, ColLoss, "‎" + Math.Round(r.Direct.Loss) + "%‎", r.Direct.Loss > 0 ? Theme.Bad : Theme.Dim);
 
             var best = BestRelay(r);
-            SetSub(item, ColVia, best == null ? "-" : Ms(best.Value.Value), best == null ? Dim : PingColor(best.Value.Value));
+            SetSub(item, ColVia, best == null ? "-" : Ms(best.Value.Value), best == null ? Theme.Dim : PingColor(best.Value.Value));
 
             var relay = AutoRelay(r);
             if (relay != null)
             {
                 string gain = r.Direct.Ok ? "  (-" + Math.Round(r.Direct.Avg - best.Value.Value) + " ms)" : "";
-                SetSub(item, ColRoute, T("via ", "عن طريق ") + relay.Name + gain, Accent);
+                SetSub(item, ColRoute, T("via ", "عن طريق ") + relay.Name + gain, Theme.Accent);
             }
-            else SetSub(item, ColRoute, r.Direct.Ok ? T("Direct", "مباشر") : "-", r.Direct.Ok ? TextC : Dim);
+            else SetSub(item, ColRoute, r.Direct.Ok ? T("Direct", "مباشر") : "-", r.Direct.Ok ? Theme.TextC : Theme.Dim);
         }
 
         void UpdateRegion(Region r)
@@ -2122,7 +2107,7 @@ namespace PingBoost
             updateBtn.Visible = r != null;
             if (r == null) return;
             string v = "‎" + r.Ver.ToString(3) + "‎";
-            updateLabel.ForeColor = Warn;
+            updateLabel.ForeColor = Theme.Warn;
             updateLabel.Text = r.Optional
                 ? T("A new version is out (" + v + ").", "في نسخة جديدة (" + v + ").")
                 : Updater.Forced(r)
@@ -2136,7 +2121,7 @@ namespace PingBoost
         {
             updateBar.Visible = true;
             updateBtn.Visible = false;
-            updateLabel.ForeColor = Good;
+            updateLabel.ForeColor = Theme.Good;
             updateLabel.Text = T("Updated to " + Brand.Version + " ✓", "تحدّث البرنامج لـ ‎" + Brand.Version + "‎ ✓");
             var t = new System.Windows.Forms.Timer { Interval = 10000 };
             t.Tick += delegate { t.Stop(); t.Dispose(); if (pendingUpdate == null) updateBar.Visible = false; };
@@ -2162,11 +2147,11 @@ namespace PingBoost
         Panel BuildInfoBar()
         {
             var bar = new Panel { Dock = DockStyle.Top, Height = 40 };
-            btnDetect = MakeButton(T("Which server am I on?", "على أي سيرفر أنا؟"), Panel2);
+            btnDetect = MakeButton(T("Which server am I on?", "على أي سيرفر أنا؟"), Theme.Panel2);
             btnDetect.Dock = DockStyle.Right;
             btnDetect.Width = 240;
             btnDetect.Click += delegate { DetectServer(); };
-            infoLabel = new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = TextC, AutoEllipsis = true };
+            infoLabel = new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Theme.TextC, AutoEllipsis = true };
             bar.Controls.Add(infoLabel);
             bar.Controls.Add(new Panel { Dock = DockStyle.Right, Width = 8 });
             bar.Controls.Add(btnDetect);
@@ -2179,7 +2164,7 @@ namespace PingBoost
             if (!quiet)
             {
                 infoLabel.Text = T("Getting player numbers...", "لحظة، نجيب عدد اللاعبين...");
-                infoLabel.ForeColor = Dim;
+                infoLabel.ForeColor = Theme.Dim;
             }
             Task.Run(() =>
             {
@@ -2213,7 +2198,7 @@ namespace PingBoost
                     else
                         text = T("Player numbers aren't available for this game.", "عدد اللاعبين مو متوفر لهادي اللعبة.");
                     infoLabel.Text = text;
-                    infoLabel.ForeColor = TextC;
+                    infoLabel.ForeColor = Theme.TextC;
                     // regroup now that the activity numbers are in, keeping the list where the player left it
                     int top = serverList.TopItem != null ? serverList.TopItem.Index : 0;
                     FillServers(g);
@@ -2494,7 +2479,7 @@ namespace PingBoost
         void SetDetect(string text, Color dot)
         {
             btnDetect.Text = text;
-            btnDetect.ForeColor = TextC;
+            btnDetect.ForeColor = Theme.TextC;
             ((RoundButton)btnDetect).Dot = dot;
         }
 
@@ -2519,7 +2504,7 @@ namespace PingBoost
             ClearMatch(); // a match from before the change says nothing about the new lock
             if (btnDetect != null)
             {
-                if (lockSummary != null) SetDetect(T("Checking at your next match...", "بنتأكد في مباراتك الجاية..."), Lavender);
+                if (lockSummary != null) SetDetect(T("Checking at your next match...", "بنتأكد في مباراتك الجاية..."), Theme.Lavender);
                 else ResetDetectButton();
             }
             UpdateCard();
@@ -2649,7 +2634,7 @@ namespace PingBoost
                 if (matchRegion != null || matchViaRelay || currentServer != null) { ClearMatch(); UpdateCard(); }
                 bool waiting = lockSummary != null && !matchSinceLock;
                 SetDetect(waiting ? T("Checking at your next match...", "بنتأكد في مباراتك الجاية...") : T("Not in a match", "مو داخل مباراة"),
-                          waiting ? Lavender : Dim);
+                          waiting ? Theme.Lavender : Theme.Dim);
                 // locked a while ago and still no match: the lock may be blocking more than it should
                 if (waiting && DateTime.Now - lockChangedAt > TimeSpan.FromMinutes(12))
                     Issues.Report("queue_long", g.Name + ", locked on " + lockSummary + ", no match for " +
@@ -2666,7 +2651,7 @@ namespace PingBoost
                 // only the entry relay in sight: the match server is hidden behind it, so there's nothing to check or report
                 // (never "lock OK", never lock_outside)
                 string at = PlaceName(relay);
-                SetDetect(T("Entering at: ", "داخل من: ") + at, Lavender);
+                SetDetect(T("Entering at: ", "داخل من: ") + at, Theme.Lavender);
                 if (lastAutoServer != relay.Id) Telemetry.Send("detect", relay.NameEn, -1, "auto, through relay");
                 lastAutoServer = relay.Id;
                 SetMatch(null, false, true, at, null);
@@ -2675,7 +2660,7 @@ namespace PingBoost
             }
             string name = dc != null ? ShortName(dc) : (where ?? top.Ip);
             bool ok = dc == null ? lockSummary == null : (lockSummary == null || dc.Picked);
-            SetDetect(T("On: ", "إنت على: ") + name, ok ? Good : Warn);
+            SetDetect(T("On: ", "إنت على: ") + name, ok ? Theme.Good : Theme.Warn);
             // the card: a datacenter we know names the region; a game without them shows the city and its ping
             if (dc != null) SetMatch(RegionNameOf(g, dc), dc.Picked, false);
             else if (!g.CanLock && where != null) { currentServer = where; currentMs = whereMs; }
@@ -2723,7 +2708,7 @@ namespace PingBoost
             if (lockSummary != null)
             {
                 lockLabel.Text = T("Locked: you will only play on ", "مثبّت: ما راح تلعب إلا على ") + lockSummary;
-                lockLabel.ForeColor = Accent;
+                lockLabel.ForeColor = Theme.Accent;
             }
             else
             {
@@ -2731,7 +2716,7 @@ namespace PingBoost
                     ? T("Tick the servers you want, then press Lock my servers.", "علّم (✓) على السيرفرات اللي تبغاها، وبعدين اضغط «ثبّت سيرفراتي».")
                     : T("You picked " + picked + ". Press Lock my servers to play only there.",
                         "اخترت " + picked + (picked == 1 ? " منطقة" : " مناطق") + "، اضغط «ثبّت سيرفراتي» عشان ما تلعب إلا عليها.");
-                lockLabel.ForeColor = Dim;
+                lockLabel.ForeColor = Theme.Dim;
             }
             btnUnlock.Enabled = lockSummary != null && lockingGame == null; // never while a new lock is being applied
         }
@@ -3154,7 +3139,7 @@ namespace PingBoost
             Interlocked.Increment(ref monitorGen);
             Telemetry.Ping = -1;
             liveLabel.Text = StatusOff;
-            liveLabel.ForeColor = Dim;
+            liveLabel.ForeColor = Theme.Dim;
             SetLiveStatus(null);
             SetGraphLive(false);
         }
@@ -3212,10 +3197,10 @@ namespace PingBoost
             relayList.Items.Clear();
             foreach (var r in relays)
             {
-                var item = new ListViewItem(r.Name) { UseItemStyleForSubItems = false, Tag = r, ForeColor = TextC };
-                item.SubItems.Add(r.EndpointHost ?? T("(config file missing)", "(ملف الإعداد مو موجود)")).ForeColor = TextC;
-                item.SubItems.Add(r.Ping < 0 ? "-" : Ms(r.Ping)).ForeColor = r.Ping < 0 ? Dim : PingColor(r.Ping);
-                item.SubItems.Add(r.HasAgent ? r.AgentUrl : T("none (no ping estimate)", "ما في (بدون تقدير للبنق)")).ForeColor = Dim;
+                var item = new ListViewItem(r.Name) { UseItemStyleForSubItems = false, Tag = r, ForeColor = Theme.TextC };
+                item.SubItems.Add(r.EndpointHost ?? T("(config file missing)", "(ملف الإعداد مو موجود)")).ForeColor = Theme.TextC;
+                item.SubItems.Add(r.Ping < 0 ? "-" : Ms(r.Ping)).ForeColor = r.Ping < 0 ? Theme.Dim : PingColor(r.Ping);
+                item.SubItems.Add(r.HasAgent ? r.AgentUrl : T("none (no ping estimate)", "ما في (بدون تقدير للبنق)")).ForeColor = Theme.Dim;
                 relayList.Items.Add(item);
             }
             relayList.EndUpdate();
@@ -3342,13 +3327,12 @@ namespace PingBoost
         }
 
         // The strip under the header: always-visible quick tools, in a colour no player ever sees.
-        static readonly Color DevColor = Color.FromArgb(18, 48, 52), DevAccent = Color.FromArgb(104, 236, 204);
 
         Panel BuildDevStrip()
         {
-            var strip = new Panel { Dock = DockStyle.Top, Height = 42, BackColor = DevColor, Padding = new Padding(12, 6, 12, 6), RightToLeft = RightToLeft.No };
+            var strip = new Panel { Dock = DockStyle.Top, Height = 42, BackColor = Theme.DevColor, Padding = new Padding(12, 6, 12, 6), RightToLeft = RightToLeft.No };
             var flow = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, RightToLeft = RightToLeft.No };
-            flow.Controls.Add(new Label { Text = "DEVELOPER MODE", ForeColor = DevAccent, Font = Fonts.Bold(9f), AutoSize = true, Margin = new Padding(0, 7, 16, 0) });
+            flow.Controls.Add(new Label { Text = "DEVELOPER MODE", ForeColor = Theme.DevAccent, Font = Fonts.Bold(9f), AutoSize = true, Margin = new Padding(0, 7, 16, 0) });
             Action<string, Action> add = (text, act) =>
             {
                 var b = MakeButton(text, Color.FromArgb(28, 70, 74));
@@ -3374,11 +3358,11 @@ namespace PingBoost
             var dash = new DevPanel { Dock = DockStyle.Fill };
             dash.ForgetKey += () => SetDevMode(false);
 
-            var tools = new Card { Dock = DockStyle.Right, Width = 340, Fill = Panel1, Padding = new Padding(12), RightToLeft = RightToLeft.No };
+            var tools = new Card { Dock = DockStyle.Right, Width = 340, Fill = Theme.Panel1, Padding = new Padding(12), RightToLeft = RightToLeft.No };
             var flow = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 410, FlowDirection = FlowDirection.LeftToRight, RightToLeft = RightToLeft.No };
             Action<string, Action> add = (text, act) =>
             {
-                var b = MakeButton(text, Panel2);
+                var b = MakeButton(text, Theme.Panel2);
                 b.Size = new Size(150, 32);
                 b.Margin = new Padding(0, 0, 8, 8);
                 b.Click += delegate { try { act(); } catch (Exception ex) { DevOut("! " + ex.Message); } };
@@ -3400,7 +3384,7 @@ namespace PingBoost
             // the lock test takes a whole row
             Func<string, Action, RoundButton> wide = (text, act) =>
             {
-                var b = MakeButton(text, Panel2);
+                var b = MakeButton(text, Theme.Panel2);
                 b.Size = new Size(308, 32);
                 b.Margin = new Padding(0, 0, 8, 8);
                 b.Click += delegate { try { act(); } catch (Exception ex) { DevOut("! " + ex.Message); } };
@@ -3411,12 +3395,12 @@ namespace PingBoost
             devOut = new TextBox
             {
                 Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, BorderStyle = BorderStyle.None,
-                BackColor = Bg, ForeColor = DevAccent, Font = new Font("Consolas", 9f), RightToLeft = RightToLeft.No
+                BackColor = Theme.Bg, ForeColor = Theme.DevAccent, Font = new Font("Consolas", 9f), RightToLeft = RightToLeft.No
             };
             tools.Controls.Add(devOut);
-            tools.Controls.Add(new Label { Text = "Output", Dock = DockStyle.Top, Height = 22, ForeColor = Dim });
+            tools.Controls.Add(new Label { Text = "Output", Dock = DockStyle.Top, Height = 22, ForeColor = Theme.Dim });
             tools.Controls.Add(flow);
-            tools.Controls.Add(new Label { Text = "TOOLS", Dock = DockStyle.Top, Height = 26, ForeColor = DevAccent, Font = Fonts.Bold(9f) });
+            tools.Controls.Add(new Label { Text = "TOOLS", Dock = DockStyle.Top, Height = 26, ForeColor = Theme.DevAccent, Font = Fonts.Bold(9f) });
 
             p.Controls.Add(dash);
             p.Controls.Add(new Panel { Dock = DockStyle.Right, Width = 12 });
@@ -3622,8 +3606,8 @@ namespace PingBoost
                 f.FormBorderStyle = FormBorderStyle.FixedDialog;
                 f.StartPosition = FormStartPosition.CenterParent;
                 f.MinimizeBox = f.MaximizeBox = false;
-                f.BackColor = MainForm.Bg;
-                f.ForeColor = MainForm.TextC;
+                f.BackColor = Theme.Bg;
+                f.ForeColor = Theme.TextC;
                 f.Font = Fonts.Ui(10f);
                 f.RightToLeft = Lang.Ar ? RightToLeft.Yes : RightToLeft.No;
                 f.ClientSize = new Size(520, 24 + labels.Length * 62 + 56);
@@ -3631,17 +3615,17 @@ namespace PingBoost
                 var boxes = new TextBox[labels.Length];
                 for (int i = 0; i < labels.Length; i++)
                 {
-                    f.Controls.Add(new Label { Text = labels[i], ForeColor = MainForm.Dim, Bounds = new Rectangle(16, 14 + i * 62, 488, 22) });
+                    f.Controls.Add(new Label { Text = labels[i], ForeColor = Theme.Dim, Bounds = new Rectangle(16, 14 + i * 62, 488, 22) });
                     boxes[i] = new TextBox
                     {
                         Text = defaults[i], Bounds = new Rectangle(16, 38 + i * 62, 488, 26), RightToLeft = RightToLeft.No,
-                        BackColor = MainForm.Panel2, ForeColor = MainForm.TextC, BorderStyle = BorderStyle.FixedSingle
+                        BackColor = Theme.Panel2, ForeColor = Theme.TextC, BorderStyle = BorderStyle.FixedSingle
                     };
                     f.Controls.Add(boxes[i]);
                 }
                 int y = 24 + labels.Length * 62 + 8;
-                var ok = new RoundButton { Text = Lang.T("OK", "تمام"), DialogResult = DialogResult.OK, Bounds = new Rectangle(Lang.Ar ? 112 : 320, y, 88, 34), FlatStyle = FlatStyle.Flat, BackColor = MainForm.Accent, ForeColor = Color.Black };
-                var cancel = new RoundButton { Text = Lang.T("Cancel", "إلغاء"), DialogResult = DialogResult.Cancel, Bounds = new Rectangle(Lang.Ar ? 16 : 416, y, 88, 34), FlatStyle = FlatStyle.Flat, BackColor = MainForm.Panel2 };
+                var ok = new RoundButton { Text = Lang.T("OK", "تمام"), DialogResult = DialogResult.OK, Bounds = new Rectangle(Lang.Ar ? 112 : 320, y, 88, 34), FlatStyle = FlatStyle.Flat, BackColor = Theme.Accent, ForeColor = Color.Black };
+                var cancel = new RoundButton { Text = Lang.T("Cancel", "إلغاء"), DialogResult = DialogResult.Cancel, Bounds = new Rectangle(Lang.Ar ? 16 : 416, y, 88, 34), FlatStyle = FlatStyle.Flat, BackColor = Theme.Panel2 };
                 ok.FlatAppearance.BorderSize = cancel.FlatAppearance.BorderSize = 0;
                 f.Controls.Add(ok);
                 f.Controls.Add(cancel);
@@ -3662,7 +3646,7 @@ namespace PingBoost
         {
             SetStyle(ControlStyles.ResizeRedraw | ControlStyles.OptimizedDoubleBuffer |
                      ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint, true);
-            BackColor = MainForm.Panel1;
+            BackColor = Theme.Panel1;
         }
 
         public void Add(double v)
@@ -3690,20 +3674,20 @@ namespace PingBoost
                 {
                     int y = rc.Bottom - i * rc.Height / 4;
                     g.DrawLine(pen, rc.Left, y, rc.Right, y);
-                    TextRenderer.DrawText(g, Math.Round(max * i / 4).ToString(), Font, new Point(6, y - 8), MainForm.Dim);
+                    TextRenderer.DrawText(g, Math.Round(max * i / 4).ToString(), Font, new Point(6, y - 8), Theme.Dim);
                 }
 
             if (samples.Count == 0)
             {
                 TextRenderer.DrawText(g, Lang.T("Your live ping shows up here once Speed up is on", "البنق المباشر حقك يطلع هنا لما تشغّل التسريع"),
-                    Font, rc, MainForm.Dim, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | Lang.Flags);
+                    Font, rc, Theme.Dim, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | Lang.Flags);
                 return;
             }
 
             float step = rc.Width / (float)(Max - 1);
             float x0 = rc.Right - (samples.Count - 1) * step;
-            using (var pen = new Pen(MainForm.Accent, 2f))
-            using (var bad = new SolidBrush(MainForm.Bad))
+            using (var pen = new Pen(Theme.Accent, 2f))
+            using (var bad = new SolidBrush(Theme.Bad))
             {
                 PointF? prev = null;
                 for (int i = 0; i < samples.Count; i++)
@@ -3721,7 +3705,7 @@ namespace PingBoost
                 stats += "    " + Lang.T("avg ", "المتوسط ") + Math.Round(ok.Average()) + "   " + Lang.T("min ", "الأقل ") + Math.Round(ok.Min()) +
                          "   " + Lang.T("max ", "الأعلى ") + Math.Round(ok.Max()) + "   " + Lang.T("loss ", "الفقد ") +
                          "‎" + Math.Round(100.0 * (samples.Count - ok.Count) / samples.Count) + "%‎";
-            TextRenderer.DrawText(g, stats, Font, new Point(rc.Left, 4), MainForm.TextC, Lang.Flags);
+            TextRenderer.DrawText(g, stats, Font, new Point(rc.Left, 4), Theme.TextC, Lang.Flags);
         }
     }
 }

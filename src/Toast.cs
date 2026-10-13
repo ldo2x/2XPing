@@ -67,7 +67,7 @@ namespace PingBoost
             public ToastForm(string text, ToastKind kind, int width)
             {
                 this.text = text;
-                bar = kind == ToastKind.Good ? MainForm.Good : kind == ToastKind.Warn ? MainForm.Warn : kind == ToastKind.Bad ? MainForm.Bad : MainForm.Lavender;
+                bar = kind == ToastKind.Good ? Theme.Good : kind == ToastKind.Warn ? Theme.Warn : kind == ToastKind.Bad ? Theme.Bad : Theme.Lavender;
                 FormBorderStyle = FormBorderStyle.None;
                 ShowInTaskbar = false;
                 StartPosition = FormStartPosition.Manual;
@@ -144,7 +144,7 @@ namespace PingBoost
                 using (var b = new SolidBrush(bar))
                     e.Graphics.FillRectangle(b, Lang.Ar ? ClientSize.Width - 4 : 0, 0, 4, ClientSize.Height);
                 var rc = new Rectangle(Lang.Ar ? 12 : 18, 9, ClientSize.Width - 30, ClientSize.Height - 18);
-                TextRenderer.DrawText(e.Graphics, text, Font, rc, MainForm.TextC, Flags);
+                TextRenderer.DrawText(e.Graphics, text, Font, rc, Theme.TextC, Flags);
             }
 
             protected override void Dispose(bool disposing)

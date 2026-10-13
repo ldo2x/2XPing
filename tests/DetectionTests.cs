@@ -271,7 +271,7 @@ namespace PingBoost
             Check(v.Title == "داخل شبكة Valve من دبي، وسيرفر المباراة ما يبان من هنا", "title: " + v.Title);
             Check(!v.Title.Contains("✓") && !v.Sub.Contains("✓") && !v.Sub.Contains("شغّال"), "no ✓, no 'working'");
             Check(v.Sub == "مثبّت على أوروبا. وبنقك الحقيقي تشوفه داخل اللعبة.", "sub: " + v.Sub);
-            Check(v.Accent == MainForm.Accent && v.Button == "فك التثبيت", "neutral accent, unlock");
+            Check(v.Accent == Theme.Accent && v.Button == "فك التثبيت", "neutral accent, unlock");
             Check(v.HintLink == null && v.HintSteps == null, "no hint without one asked for");
             i.MatchEntry = null;
             Check(CardLogic.Decide(i).Title == "داخل شبكة Valve من وسيط، وسيرفر المباراة ما يبان من هنا", "unknown entry");

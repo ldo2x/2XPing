@@ -88,7 +88,7 @@ namespace PingBoost
                     var v = Make(CardKind.Outside,
                         Lang.T("The game put you on " + i.MatchRegion + place, "اللعبة حطّتك على " + i.MatchRegion + place),
                         Lang.T("Close the game and open it again, then find a match.", "اقفل اللعبة وافتحها من جديد، وبعدين دوّر مباراة."), unlock);
-                    v.Accent = MainForm.Warn;
+                    v.Accent = Theme.Warn;
                     return WithHint(v, i.Hint);
                 }
                 if (i.MatchRegion != null)
@@ -307,13 +307,13 @@ namespace PingBoost
 
         static CardView Good(CardView v)
         {
-            v.Accent = MainForm.Good;
+            v.Accent = Theme.Good;
             return v;
         }
 
         static CardView Make(CardKind kind, string title, string sub, string button)
         {
-            return new CardView { Kind = kind, Title = title, Sub = sub, Button = button, Accent = MainForm.Accent };
+            return new CardView { Kind = kind, Title = title, Sub = sub, Button = button, Accent = Theme.Accent };
         }
     }
 }
