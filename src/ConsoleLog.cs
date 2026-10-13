@@ -17,7 +17,9 @@ namespace PingBoost
     // -condebug). The game's networking library prints the match server's datacenter there
     // ("Remote host is in data center 'fra'"): the real answer, which a traffic capture can't see behind an entry relay.
     // Each Read looks only at the bytes added since the last one, so a log of many MB costs nothing to follow.
-    // A file that got shorter or starts differently is a new log (the game cleared or replaced it) and is read from its start.
+    // A new log (the game cleared or replaced it) is read from its start. It is new when the file got shorter, starts
+    // differently, has another creation time, or no longer has the bytes we read last just before where we stopped (a
+    // new game session that rewrote the same header and grew past the old end).
     // Lines without their own time that were already there at the first read are of unknown age, so they never count
     // as the current match (At = MinValue); lines that appear later are stamped with the time they were read.
     class GameConsole
@@ -29,6 +31,8 @@ namespace PingBoost
         public readonly string Path;
         long offset = -1;  // read up to here; -1 = never read
         byte[] head;       // the file's first bytes at the last read
+        byte[] mark;       // the last bytes before offset at the last read
+        DateTime created;  // the file's creation time at the last read
         Decoder decoder;
         string partial = "";
         public ConsoleLine LastDc, LastRelay; // newest "Remote host is in data center '…'" / "Communicating via relay in '…'"
@@ -62,8 +66,10 @@ namespace PingBoost
                     long len = fs.Length;
                     var h = new byte[(int)Math.Min(HeadLen, len)];
                     ReadFully(fs, h);
+                    DateTime made = DateTime.MinValue;
+                    try { made = File.GetCreationTimeUtc(Path); } catch { }
                     bool first = offset < 0;
-                    if (!first && (len < offset || !SameStart(head, h)))
+                    if (!first && (len < offset || !SameStart(head, h) || made != created || !SameBytesAt(fs, offset, mark)))
                     {
                         // cleared or replaced: a new log, every line of it is new
                         offset = 0;
@@ -71,6 +77,7 @@ namespace PingBoost
                         decoder = null;
                     }
                     head = h;
+                    created = made;
                     long start = first ? Math.Max(0, len - FirstReadMax) : offset;
                     bool cut = start > 0 && (first || len - start > ReadMax);
                     if (len - start > ReadMax) start = len - ReadMax;
@@ -86,6 +93,10 @@ namespace PingBoost
                     if (cut) { int nl = text.IndexOf('\n'); text = nl >= 0 ? text.Substring(nl + 1) : ""; }
                     Feed(text, now, first);
                     offset = start + n;
+                    int k = (int)Math.Min(HeadLen, offset);
+                    mark = new byte[k];
+                    fs.Seek(offset - k, SeekOrigin.Begin);
+                    ReadFully(fs, mark);
                 }
                 return true;
             }
@@ -96,7 +107,8 @@ namespace PingBoost
         void Forget()
         {
             offset = -1;
-            head = null;
+            head = mark = null;
+            created = DateTime.MinValue;
             partial = "";
             decoder = null;
             LastDc = LastRelay = null; // no log, nothing current
@@ -112,6 +124,17 @@ namespace PingBoost
                 got += k;
             }
             return got;
+        }
+
+        // Are the bytes just before offset still the ones read last time?
+        static bool SameBytesAt(FileStream fs, long offset, byte[] mark)
+        {
+            if (mark == null || mark.Length == 0) return true;
+            var now = new byte[mark.Length];
+            fs.Seek(offset - mark.Length, SeekOrigin.Begin);
+            if (ReadFully(fs, now) != mark.Length) return false;
+            for (int i = 0; i < mark.Length; i++) if (now[i] != mark[i]) return false;
+            return true;
         }
 
         // The same file when the shorter of the two starts agrees (a log shorter than HeadLen grows into it).
@@ -140,11 +163,13 @@ namespace PingBoost
             }
         }
 
-        // The line when it was written at or after cutoff (the game's start, the lock change, the last time no
-        // match was seen), or null: an older line is about an earlier match.
-        public static ConsoleLine Fresh(ConsoleLine line, DateTime cutoff)
+        // The line when it is about the current match, or null: written at or after the running game started and the
+        // lock last changed, and after the last server check that saw no match (noMatchAt = when that check read the
+        // log, so a line read in that same check, or before it, is about an earlier match). Lines of unknown age never count.
+        public static ConsoleLine Current(ConsoleLine line, DateTime gameStart, DateTime lockChangedAt, DateTime noMatchAt)
         {
-            return line != null && line.At != DateTime.MinValue && line.At >= cutoff ? line : null;
+            if (line == null || line.At == DateTime.MinValue) return null;
+            return line.At >= gameStart && line.At >= lockChangedAt && line.At > noMatchAt ? line : null;
         }
 
         static readonly Regex Stamp = new Regex(@"^\s*(\d{1,2})/(\d{1,2})(?:/(\d{4}))?\s+(\d{1,2}):(\d{2}):(\d{2})", RegexOptions.CultureInvariant);

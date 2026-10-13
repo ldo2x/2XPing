@@ -105,7 +105,7 @@ namespace PingBoost
                 var log = new GameConsole(path);
                 Check(log.Read(t0), "reads");
                 Check(log.LastDc != null && log.LastDc.Code == "fra" && log.LastDc.At == DateTime.MinValue, "old line kept as old");
-                Check(GameConsole.Fresh(log.LastDc, DateTime.MinValue) == null, "an old line is never fresh");
+                Check(GameConsole.Current(log.LastDc, DateTime.MinValue, DateTime.MinValue, DateTime.MinValue) == null, "an old line is never fresh");
                 // a new match: the line appears after the first read, stamped with the read time
                 var t1 = t0.AddMinutes(5);
                 Append(path, "Communicating via relay in 'dxb'\n    Remote host is in data cen");
@@ -115,8 +115,8 @@ namespace PingBoost
                 var t2 = t1.AddSeconds(30);
                 log.Read(t2);
                 Check(log.LastDc.Code == "vie" && log.LastDc.At == t2, "the finished line counts: " + log.LastDc.Code);
-                Check(GameConsole.Fresh(log.LastDc, t0) != null, "written after the cutoff: fresh");
-                Check(GameConsole.Fresh(log.LastDc, t2.AddSeconds(1)) == null, "a cutoff after it (no match seen since): stale");
+                Check(GameConsole.Current(log.LastDc, t0, DateTime.MinValue, DateTime.MinValue) != null, "written after the cutoff: fresh");
+                Check(GameConsole.Current(log.LastDc, t0, DateTime.MinValue, t2) == null, "read in a check that saw no match: stale");
                 // nothing new: nothing changes
                 log.Read(t2.AddMinutes(1));
                 Check(log.LastDc.Code == "vie" && log.LastDc.At == t2, "no new bytes, same answer");
@@ -139,8 +139,8 @@ namespace PingBoost
                 var fresh = new GameConsole(path);
                 fresh.Read(new DateTime(2026, 10, 13, 21, 45, 0));
                 Check(fresh.LastDc.Code == "par" && fresh.LastDc.At == new DateTime(2026, 10, 13, 21, 40, 0), "the newest dated line");
-                Check(GameConsole.Fresh(fresh.LastDc, new DateTime(2026, 10, 13, 21, 30, 0)) != null, "after the game started: fresh");
-                Check(GameConsole.Fresh(fresh.LastDc, new DateTime(2026, 10, 13, 21, 41, 0)) == null, "before the game started: stale");
+                Check(GameConsole.Current(fresh.LastDc, new DateTime(2026, 10, 13, 21, 30, 0), DateTime.MinValue, DateTime.MinValue) != null, "after the game started: fresh");
+                Check(GameConsole.Current(fresh.LastDc, new DateTime(2026, 10, 13, 21, 41, 0), DateTime.MinValue, DateTime.MinValue) == null, "before the game started: stale");
 
                 // the log is gone: nothing current
                 File.Delete(path);
@@ -173,13 +173,92 @@ namespace PingBoost
 
         static void ConsoleOnPickedByRegion()
         {
-            // Frankfurt picked itself; Helsinki has no relay, so it counts with Europe; Singapore is another region
-            Check(DeadlockData.OnPicked("fra", true, new[] { "fra" }), "picked itself");
-            Check(!DeadlockData.OnPicked("ams", false, new[] { "fra" }), "a datacenter with relays, not picked");
-            Check(DeadlockData.OnPicked("hel", null, new[] { "fra", "ams" }), "Helsinki with a Europe lock");
-            Check(!DeadlockData.OnPicked("hel", null, new[] { "sgp" }), "Helsinki with an SE Asia lock");
-            Check(!DeadlockData.OnPicked("dxb", null, new[] { "fra" }), "a relay is never a match");
-            Check(!DeadlockData.OnPicked("eat", null, new string[0]), "nothing picked");
+            var g = SavedDeadlock();
+            var lockable = g.Regions.Where(r => g.Hosts(r)).Select(r => r.Id).ToList();
+            var europe = lockable.Where(id => DeadlockData.Hosting[id] == "Europe").ToList();
+            Check(europe.Contains("fra") && europe.Contains("ams") && !europe.Contains("hel"), "Europe's lockable datacenters");
+            // a datacenter with relays: its own pick
+            Check(DeadlockData.OnPicked("fra", true, new[] { "fra" }, lockable), "picked itself");
+            Check(!DeadlockData.OnPicked("ams", false, new[] { "fra" }, lockable), "a datacenter with relays, not picked");
+            // Helsinki (no relay, can't be blocked): only with the whole of Europe locked
+            Check(DeadlockData.OnPicked("hel", null, europe, lockable), "Helsinki with all of Europe locked");
+            Check(!DeadlockData.OnPicked("hel", null, new[] { "fra", "ams" }, lockable), "Helsinki with only Frankfurt and Amsterdam: outside");
+            Check(!DeadlockData.OnPicked("hel", null, europe.Where(id => id != "jnb").ToList(), lockable), "Europe without Johannesburg: outside");
+            Check(!DeadlockData.OnPicked("hel", null, new[] { "sgp" }, lockable), "Helsinki with an SE Asia lock");
+            Check(DeadlockData.OnPicked("dsto", null, europe, lockable) && DeadlockData.OnPicked("fsn", null, europe, lockable), "dsto, fsn with Europe");
+            var na = lockable.Where(id => DeadlockData.Hosting[id] == "Row").ToList();
+            Check(DeadlockData.OnPicked("eat", null, na, lockable) && !DeadlockData.OnPicked("eat", null, na.Skip(1), lockable), "US West needs all of North America");
+            Check(!DeadlockData.OnPicked("dxb", null, new[] { "fra" }, lockable), "a relay is never a match");
+            Check(!DeadlockData.OnPicked("eat", null, new string[0], lockable), "nothing picked");
+            Check(!DeadlockData.OnPicked("eat", null, new string[0], new string[0]), "a region with nothing lockable is never picked");
+        }
+
+        // When a console line is about the current match (GameConsole.Current): game start, lock change, no-match check.
+        static void ConsoleCurrentMatch()
+        {
+            var start = new DateTime(2026, 10, 13, 20, 0, 0);
+            Func<DateTime, ConsoleLine> at = t => new ConsoleLine { Code = "fra", At = t };
+            var none = DateTime.MinValue;
+            Check(GameConsole.Current(null, none, none, none) == null, "no line");
+            Check(GameConsole.Current(at(DateTime.MinValue), none, none, none) == null, "a line of unknown age never counts");
+            Check(GameConsole.Current(at(start.AddMinutes(1)), start, none, none) != null, "after the game started");
+            Check(GameConsole.Current(at(start.AddMinutes(-1)), start, none, none) == null, "from the game's earlier run");
+            Check(GameConsole.Current(at(start.AddMinutes(5)), start, start.AddMinutes(6), none) == null, "before the lock changed");
+            Check(GameConsole.Current(at(start.AddMinutes(7)), start, start.AddMinutes(6), none) != null, "after the lock changed");
+            // match 1: its line is read by the 20 s follower at 20:10 while 2X Ping is behind the game
+            var m1 = at(start.AddMinutes(10));
+            // back in the menu: a check at 20:30 sees no match and reads the log then (no new line): match 1's line is stale
+            var menu = start.AddMinutes(30);
+            Check(GameConsole.Current(m1, start, none, none) != null, "match 1, before any no-match check");
+            Check(GameConsole.Current(m1, start, none, menu) == null, "match 1 read in the menu check: stale");
+            // a line read in that very no-match check (stamped with the check's read time) is stale too
+            Check(GameConsole.Current(at(menu), start, none, menu) == null, "read in the no-match check itself: stale");
+            // match 2 prints its line, read at 20:40: current
+            Check(GameConsole.Current(at(start.AddMinutes(40)), start, none, menu) != null, "match 2 after the menu: current");
+        }
+
+        static void ConsoleLaterReadCap()
+        {
+            string path = TempLog();
+            try
+            {
+                File.WriteAllText(path, "start\n", new UTF8Encoding(false));
+                var log = new GameConsole(path);
+                log.Read(new DateTime(2026, 10, 13, 20, 0, 0));
+                // more than 4 MB written between two reads: an old datacenter early, then filler, then the newest
+                var sb = new StringBuilder();
+                sb.Append("    Remote host is in data center 'sgp'\n");
+                string filler = new string('y', 300) + "\n";
+                while (sb.Length < GameConsole.ReadMax + 8192) sb.Append(filler);
+                Append(path, sb.ToString());
+                var t = new DateTime(2026, 10, 13, 20, 1, 0);
+                log.Read(t);
+                Check(log.LastDc == null, "the line beyond the 4 MB cap is not read (only the newest 4 MB)");
+                Append(path, "    Remote host is in data center 'hkg'\n");
+                log.Read(t.AddSeconds(20));
+                Check(log.LastDc != null && log.LastDc.Code == "hkg" && log.LastDc.At == t.AddSeconds(20), "reading goes on after the cap");
+            }
+            finally { try { File.Delete(path); } catch { } }
+        }
+
+        // A new session that rewrote the log with the same first bytes and grew past the old end is still a new log.
+        static void ConsoleRewrittenSameStart()
+        {
+            string path = TempLog();
+            try
+            {
+                string header = "Steam Console Client (c) Valve Corporation - version 1.0 - common header line\n";
+                File.WriteAllText(path, header + "old session line one\n    Remote host is in data center 'lhr'\n", new UTF8Encoding(false));
+                var log = new GameConsole(path);
+                log.Read(new DateTime(2026, 10, 13, 20, 0, 0));
+                Check(log.LastDc.Code == "lhr" && log.LastDc.At == DateTime.MinValue, "first read: old");
+                File.WriteAllText(path, header + "new session, a different line here\n    Remote host is in data center 'par'\nmore lines after it\n",
+                                  new UTF8Encoding(false));
+                var t = new DateTime(2026, 10, 13, 20, 5, 0);
+                log.Read(t);
+                Check(log.LastDc.Code == "par" && log.LastDc.At == t, "rewritten under the old end: read from the start: " + log.LastDc.Code);
+            }
+            finally { try { File.Delete(path); } catch { } }
         }
 
         static void CardRelayOnlyIsNeutral()
@@ -265,6 +344,9 @@ namespace PingBoost
             Run("ConsoleReadsOnlyNewLines", ConsoleReadsOnlyNewLines);
             Run("ConsoleFirstReadIsTheTailOnly", ConsoleFirstReadIsTheTailOnly);
             Run("ConsoleOnPickedByRegion", ConsoleOnPickedByRegion);
+            Run("ConsoleCurrentMatch", ConsoleCurrentMatch);
+            Run("ConsoleLaterReadCap", ConsoleLaterReadCap);
+            Run("ConsoleRewrittenSameStart", ConsoleRewrittenSameStart);
             Run("CardRelayOnlyIsNeutral", CardRelayOnlyIsNeutral);
             Run("CardExactHint", CardExactHint);
             Run("CardExactPlaceFromLog", CardExactPlaceFromLog);
