@@ -2,6 +2,9 @@
 
 ## Next (in testing)
 
+- **A simpler main screen.** One card at the top says in plain words what is happening: locked or not, in a match, on your region or not. Under it, 2-3 region choices with ping, wait time and players, and you can pick several. Overwatch and Dead by Daylight are chosen by region; «اختيار يدوي» opens the full server list
+- The advanced layout keeps the same card on top with every tool under it
+- Far fewer pop-up notices in the simple layout: what the card already says (locked, "you're playing on...", unlocked) isn't repeated. Warnings, errors and update notices stay
 - **Deadlock: lower ping with a lock.** The lock no longer blocks Valve's relay-only locations (Dubai, Johannesburg): the game enters Valve's network through the closest one and rides it to the match server. Blocking Dubai pushed players in the Gulf onto their internet provider's longer route (about +30 ms to Frankfurt for a player in Riyadh on STC)
 - Deadlock: before locking, 2X Ping checks your shortest way into Valve's network (from your own pings and Valve's published pings between its datacenters). If the lock has to block it because matches are played there too, you're told how many ms it can add and to tick it as well
 - Deadlock: relay-only locations are no longer suggested as "Your best server" (no matches are played there) and can't be ticked; the list marks them "relay only"
