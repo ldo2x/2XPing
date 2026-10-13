@@ -69,7 +69,8 @@ namespace PingBoost
         bool busy, boosting, clickedCheck;
         readonly HashSet<Game> tested = new HashSet<Game>(); // games tested since the app opened
         volatile bool tunnelActive;
-        int monitorGen;
+        int monitorGen;     // read by the monitor thread: always through Volatile/Interlocked
+        int boostGen;       // bumped by Stop: a relay route still being built then goes away instead of starting
         string lockSummary; // null = no region lock
         LockTest.LockInfo lockInfo; // how the current lock was applied (developer lock test)
         Dictionary<string, int> activity; // Deadlock matches/hour per matchmaking region
@@ -79,6 +80,8 @@ namespace PingBoost
 
         public MainForm()
         {
+            uiThread = Thread.CurrentThread.ManagedThreadId;
+            HandleCreated += delegate { FlushEarlyUi(); };
             Lang.Ar = Storage.LoadArabic();
             simple = Prefs.Simple;
             devMode = DevModeSaved;
@@ -109,10 +112,18 @@ namespace PingBoost
             Load += delegate { FitAdvancedHeight(true); };
 
             RefreshRelays();
-            Task.Run(() =>
+            // on the firewall worker, so it runs before any lock the player asks for in the first seconds
+            FirewallWorker.Run(() =>
             {
                 // leftovers from a crash, and a firewall that's off (locks can't work then)
                 if (ServerLock.Exists()) { Issues.Report("leftover_lock", "rules from a previous session were still there"); ServerLock.Remove(); }
+                else ServerLock.MayExist = false;
+                // a relay tunnel left installed by a crash (the service would start again at every boot)
+                if (Tunnel.ServiceInstalled && Tunnel.Installed)
+                {
+                    Issues.Report("leftover_tunnel", "relay tunnel service from a previous session was still installed");
+                    Tunnel.Stop();
+                }
                 // a capture of ours left running if the app closed mid-way (e.g. during a lock test); never someone else's
                 try { if (Detector.Run("pktmon", "filter list").IndexOf("2XPing", StringComparison.OrdinalIgnoreCase) >= 0) Detector.Cleanup(); } catch { }
                 if (!ServerLock.FirewallOn()) Issues.Report("firewall_off", "Windows Firewall is off for the current network profile");
@@ -154,10 +165,20 @@ namespace PingBoost
             };
             FormClosing += delegate
             {
-                monitorGen++;
-                if (tunnelActive) Tunnel.Stop();
-                if (lockSummary != null) ServerLock.Remove();
-                if (lockTesting) Detector.Cleanup(); // the lock test's thread won't reach its finally once the app exits
+                Interlocked.Increment(ref monitorGen);
+                Interlocked.Increment(ref boostGen);
+                bool tunnel = tunnelActive, locked = lockSummary != null, testing = lockTesting;
+                // bounded (the updater waits for this process), but always: the firewall changes still queued finish
+                // first, then whatever may be left goes, whether or not the window thinks a lock is on
+                var cleanup = new Thread(() =>
+                {
+                    FirewallWorker.Drain(8000);
+                    if (tunnel || Tunnel.ServiceInstalled) Tunnel.Stop();
+                    if (locked || ServerLock.MayExist) ServerLock.Remove();
+                    if (testing) Detector.Cleanup(); // the lock test's thread won't reach its finally once the app exits
+                }) { IsBackground = true };
+                cleanup.Start();
+                cleanup.Join(14000);
                 Telemetry.Exit();
             };
         }
@@ -906,7 +927,25 @@ namespace PingBoost
                 sel ? TextC : Color.FromArgb(206, 196, 226), TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | Align);
         }
 
-        bool pendingRebuild; // settings changed while a ping test was running: rebuild when it ends
+        bool pendingRebuild; // settings changed while a test, a server check or a reset was running: rebuild when it ends
+
+        // Called wherever busy ends: a Settings change made meanwhile is applied now (after the caller is done).
+        void SetIdle()
+        {
+            busy = false;
+            if (!pendingRebuild || !IsHandleCreated) return;
+            // posted, never inline: the caller goes on using the current controls first
+            try
+            {
+                BeginInvoke((Action)(() =>
+                {
+                    if (busy || !pendingRebuild) return;
+                    pendingRebuild = false;
+                    RebuildUi();
+                }));
+            }
+            catch (InvalidOperationException) { }
+        }
 
         void OpenSettings()
         {
@@ -947,6 +986,10 @@ namespace PingBoost
             GameDb.ShowUnreleased = devMode;
             games = GameDb.Available(allGames);
             var g = CurrentGame;
+            // re-selecting the game below starts its card over: the match seen and the player's choices survive a rebuild
+            string keepRegion = matchRegion, keepServer = currentServer;
+            bool keepOnPicked = matchOnPicked, keepViaRelay = matchViaRelay, keepUserPicked = userPicked, keepExpanded = expanded;
+            int keepMs = currentMs;
             SuspendLayout();
             var old = Controls.Cast<Control>().ToArray();
             Controls.Clear();
@@ -959,17 +1002,45 @@ namespace PingBoost
             RefreshRelays();
             btnBoost.Enabled = !boosting;
             btnStop.Enabled = boosting;
-            if (g != null && gameList.Items.Contains(g)) gameList.SelectedItem = g;
+            if (g != null && gameList.Items.Contains(g))
+            {
+                gameList.SelectedItem = g;
+                matchRegion = keepRegion; currentServer = keepServer; currentMs = keepMs;
+                matchOnPicked = keepOnPicked; matchViaRelay = keepViaRelay;
+                userPicked = keepUserPicked; expanded = keepExpanded;
+                UpdateCard();
+            }
             else if (gameList.Items.Count > 0) gameList.SelectedIndex = 0; // the open game was hidden in Settings
         }
 
         // ---------------------------------------------------------------- helpers
 
+        int uiThread;
+        readonly List<Action> earlyUi = new List<Action>(); // posted from other threads before the window had a handle
+        bool handleReady;
+
         void Ui(Action a)
         {
-            if (IsDisposed) return;
-            if (InvokeRequired) { try { BeginInvoke(a); } catch (InvalidOperationException) { } }
-            else a();
+            if (IsDisposed || Disposing) return;
+            if (Thread.CurrentThread.ManagedThreadId == uiThread) { a(); return; }
+            // without a handle, InvokeRequired says false even on another thread: never run it here, keep it for later
+            lock (earlyUi)
+                if (!handleReady) { earlyUi.Add(a); return; }
+            try { BeginInvoke(a); }
+            catch (InvalidOperationException) { } // also ObjectDisposedException: the window is closing
+        }
+
+        void FlushEarlyUi()
+        {
+            List<Action> waiting;
+            lock (earlyUi)
+            {
+                handleReady = true;
+                waiting = earlyUi.ToList();
+                earlyUi.Clear();
+            }
+            foreach (var a in waiting)
+                try { BeginInvoke(a); } catch (InvalidOperationException) { }
         }
 
         void Log(string msg)
@@ -1524,87 +1595,110 @@ namespace PingBoost
 
             Task.Run(() =>
             {
-                foreach (var rel in rels) rel.Ping = rel.MeasurePing();
-                Ui(RefreshRelays);
-
-                int done = 0;
-                // every region (and each of its addresses) at once: the whole test takes about as long as the slowest server
-                Parallel.ForEach(regions, new ParallelOptions { MaxDegreeOfParallelism = 64 }, r =>
+                try
                 {
-                    var results = r.Endpoints.AsParallel().AsOrdered().Select(ep => Pinger.Measure(ep, 3, 1000)).ToList();
-                    PingResult best = null;
-                    Endpoint bestEp = null;
-                    for (int i = 0; i < results.Count; i++)
+                    foreach (var rel in rels) rel.Ping = rel.MeasurePing();
+                    Ui(RefreshRelays);
+
+                    int done = 0;
+                    // every region (and each of its addresses) at once: the whole test takes about as long as the slowest server
+                    Parallel.ForEach(regions, new ParallelOptions { MaxDegreeOfParallelism = 64 }, r =>
                     {
-                        var res = results[i];
-                        if (best == null || (res.Ok && (!best.Ok || res.Avg < best.Avg))) { best = res; bestEp = r.Endpoints[i]; }
-                    }
-                    r.Direct = best ?? new PingResult();
-                    r.BestEndpoint = best != null && best.Ok ? bestEp : null;
+                        var results = r.Endpoints.AsParallel().AsOrdered().Select(ep => Pinger.Measure(ep, 3, 1000)).ToList();
+                        PingResult best = null;
+                        Endpoint bestEp = null;
+                        for (int i = 0; i < results.Count; i++)
+                        {
+                            var res = results[i];
+                            if (best == null || (res.Ok && (!best.Ok || res.Avg < best.Avg))) { best = res; bestEp = r.Endpoints[i]; }
+                        }
+                        r.Direct = best ?? new PingResult();
+                        r.BestEndpoint = best != null && best.Ok ? bestEp : null;
 
-                    var via = new Dictionary<string, double>();
-                    var target = r.Target;
-                    foreach (var rel in rels)
+                        var via = new Dictionary<string, double>();
+                        var target = r.Target;
+                        foreach (var rel in rels)
+                        {
+                            if (rel.Ping < 0 || !rel.HasAgent || target == null) continue;
+                            double v = rel.ProbeFromRelay(target);
+                            if (v >= 0) via[rel.Name] = rel.Ping + v;
+                        }
+                        r.ViaRelay = via;
+
+                        int n = Interlocked.Increment(ref done);
+                        Ui(() => { UpdateRegion(r); SetStatus(T("Testing... ", "أفحص... ") + n + "/" + regions.Count); });
+                    });
+
+                    long ms = watch.ElapsedMilliseconds;
+                    Ui(() =>
                     {
-                        if (rel.Ping < 0 || !rel.HasAgent || target == null) continue;
-                        double v = rel.ProbeFromRelay(target);
-                        if (v >= 0) via[rel.Name] = rel.Ping + v;
-                    }
-                    r.ViaRelay = via;
-
-                    int n = Interlocked.Increment(ref done);
-                    Ui(() => { UpdateRegion(r); SetStatus(T("Testing... ", "أفحص... ") + n + "/" + regions.Count); });
-                });
-
-                long ms = watch.ElapsedMilliseconds;
-                Ui(() =>
+                        busy = false;
+                        testGame = null;
+                        btnTest.Enabled = true;
+                        tested.Add(g);
+                        Storage.SaveLast(g);
+                        if (pendingRebuild) { pendingRebuild = false; RebuildUi(); return; }
+                        // the user switched games while this test ran: test the game they are looking at now
+                        var cur = CurrentGame;
+                        bool wanted = testNext == cur;
+                        testNext = null;
+                        if (cur != g && cur != null && (Prefs.AutoTest || wanted) && cur.Regions.Count > 0 && !tested.Contains(cur))
+                        {
+                            RunTest();
+                            return;
+                        }
+                        // the card follows the game on screen: this game's new pings, or just "no test running" for another one
+                        if (cur == g) RebuildChoices();
+                        UpdateCard();
+                        var top = regions.Where(r => BestLatency(r) < double.MaxValue).OrderBy(BestLatency).FirstOrDefault();
+                        // every result, so ping can be compared by city, ISP and connection type
+                        var results = new Dictionary<string, object>();
+                        foreach (var r in regions.Where(r => r.Direct != null))
+                            results[r.Id] = new object[] { r.Direct.Ok ? (object)Math.Round(r.Direct.Avg) : null, Math.Round(r.Direct.Loss), Math.Round(r.Direct.Jitter, 1) };
+                        var data = new Dictionary<string, object> { { "ms", ms }, { "regions", results }, { "best", top != null ? top.Id : null } };
+                        if (top == null)
+                        {
+                            SetStatus(T("No server replied. Check your internet or firewall.", "ولا سيرفر رد، شيّك على النت أو جدار الحماية."));
+                            Telemetry.Send("test", null, -1, "no reply, " + regions.Count + " regions", data);
+                            Issues.Report("all_down", g.Name + ": none of " + regions.Count + " regions answered", data, g.Icon);
+                            return;
+                        }
+                        if (CurrentGame == g)
+                        {
+                            // closest first; regions blocked by the lock go to the end
+                            g.Regions = g.Regions.OrderBy(r => LockedOut(g, r) ? 1 : 0).ThenBy(BestLatency).ToList();
+                            FillServers(g);
+                        }
+                        SetStatus(T("Done. Your best region: ", "خلص الفحص. أحسن منطقة لك: ") + ShortName(top) + "  " + Ms(BestLatency(top)));
+                        Telemetry.Send("test", top.NameEn, (int)Math.Round(BestLatency(top)), regions.Count + " regions, " + ms + " ms", data);
+                        var down = regions.Where(r => r.Direct != null && !r.Direct.Ok && !r.Detected).Select(r => r.Id).ToList();
+                        if (down.Count > 0)
+                            Issues.Report("region_down", g.Name + ": " + string.Join(", ", down),
+                                new Dictionary<string, object> { { "game", g.Name }, { "regions", down.ToArray() } }, g.Icon + string.Join(",", down));
+                        Log(g.Name + ": " + T("best region ", "أحسن منطقة ") + top.Name + " " + Ms(BestLatency(top)));
+                    });
+                }
+                catch (Exception ex)
                 {
-                    busy = false;
-                    testGame = null;
-                    btnTest.Enabled = true;
-                    tested.Add(g);
-                    Storage.SaveLast(g);
-                    if (pendingRebuild) { pendingRebuild = false; RebuildUi(); return; }
-                    // the user switched games while this test ran: test the game they are looking at now
-                    var cur = CurrentGame;
-                    bool wanted = testNext == cur;
-                    testNext = null;
-                    if (cur != g && cur != null && (Prefs.AutoTest || wanted) && cur.Regions.Count > 0 && !tested.Contains(cur))
+                    ReportCrash("ping test", ex);
+                    Ui(() =>
                     {
-                        RunTest();
-                        return;
-                    }
-                    // the card follows the game on screen: this game's new pings, or just "no test running" for another one
-                    if (cur == g) RebuildChoices();
-                    UpdateCard();
-                    var top = regions.Where(r => BestLatency(r) < double.MaxValue).OrderBy(BestLatency).FirstOrDefault();
-                    // every result, so ping can be compared by city, ISP and connection type
-                    var results = new Dictionary<string, object>();
-                    foreach (var r in regions.Where(r => r.Direct != null))
-                        results[r.Id] = new object[] { r.Direct.Ok ? (object)Math.Round(r.Direct.Avg) : null, Math.Round(r.Direct.Loss), Math.Round(r.Direct.Jitter, 1) };
-                    var data = new Dictionary<string, object> { { "ms", ms }, { "regions", results }, { "best", top != null ? top.Id : null } };
-                    if (top == null)
-                    {
-                        SetStatus(T("No server replied. Check your internet or firewall.", "ولا سيرفر رد، شيّك على النت أو جدار الحماية."));
-                        Telemetry.Send("test", null, -1, "no reply, " + regions.Count + " regions", data);
-                        Issues.Report("all_down", g.Name + ": none of " + regions.Count + " regions answered", data, g.Icon);
-                        return;
-                    }
-                    if (CurrentGame == g)
-                    {
-                        // closest first; regions blocked by the lock go to the end
-                        g.Regions = g.Regions.OrderBy(r => LockedOut(g, r) ? 1 : 0).ThenBy(BestLatency).ToList();
-                        FillServers(g);
-                    }
-                    SetStatus(T("Done. Your best region: ", "خلص الفحص. أحسن منطقة لك: ") + ShortName(top) + "  " + Ms(BestLatency(top)));
-                    Telemetry.Send("test", top.NameEn, (int)Math.Round(BestLatency(top)), regions.Count + " regions, " + ms + " ms", data);
-                    var down = regions.Where(r => r.Direct != null && !r.Direct.Ok && !r.Detected).Select(r => r.Id).ToList();
-                    if (down.Count > 0)
-                        Issues.Report("region_down", g.Name + ": " + string.Join(", ", down),
-                            new Dictionary<string, object> { { "game", g.Name }, { "regions", down.ToArray() } }, g.Icon + string.Join(",", down));
-                    Log(g.Name + ": " + T("best region ", "أحسن منطقة ") + top.Name + " " + Ms(BestLatency(top)));
-                });
+                        testGame = null;
+                        btnTest.Enabled = true;
+                        SetStatus(T("The ping test stopped with an error. Press Test ping to try again.",
+                                    "فحص البنق وقف بخطأ. اضغط «افحص البنق» وجرّب مرة ثانية."));
+                        UpdateCard();
+                        SetIdle();
+                    });
+                }
             });
+        }
+
+        // An unexpected error on a background task: reported like a crash, without ending the app.
+        static void ReportCrash(string where, Exception ex)
+        {
+            Issues.Report("crash", where + ": " + ex.GetType().Name + ": " + ex.Message,
+                new Dictionary<string, object> { { "stack", Privacy.ShortStack(ex) }, { "fatal", false } }, where + ex.GetType().Name);
         }
 
         // ---------------------------------------------------------------- updates (required)
@@ -1850,13 +1944,15 @@ namespace PingBoost
                         }));
                     }
                     catch { }
-                    // every address the game talked to, so the server lists can grow for games without official ones
-                    Telemetry.Send("traffic", null, -1, hits.Count + " addresses", new Dictionary<string, object>
-                    {
-                        { "hits", hits.Take(8).Select(h => h.Ip + ":" + h.Port + " x" + h.Packets).ToArray() }
-                    });
                     // voice chat and service hosts are never the server the player is on
                     hits = ServerHits(g, hits);
+                    // the game servers it talked to, so the server lists can grow: only after that filter, and only for
+                    // games with dedicated servers (a custom game's capture can hold other players' home addresses)
+                    if (g.Provider != Provider.Custom && g.Processes.Length > 0 && hits.Count > 0)
+                        Telemetry.Send("traffic", null, -1, hits.Count + " addresses", new Dictionary<string, object>
+                        {
+                            { "hits", hits.Take(8).Select(h => h.Ip + ":" + h.Port + " x" + h.Packets).ToArray() }
+                        });
                     // games with known datacenters (Valve, Overwatch): name the datacenter and check it against the lock
                     if (g.Provider == Provider.Valve || (g.CanLock && hits.Any(h => ValveRegionOf(g, h.Ip) != null)))
                         Ui(() => ShowValveResult(g, hits));
@@ -1866,7 +1962,7 @@ namespace PingBoost
                 {
                     Log(T("Server check failed: ", "ما زبط الفحص: ") + ex.Message);
                     Issues.Report("detect_failed", "manual check: " + ex.Message);
-                    Ui(() => { busy = false; btnDetect.Enabled = true; Msg(T("Server check failed: ", "ما زبط الفحص: ") + ex.Message, ToastKind.Bad); });
+                    Ui(() => { btnDetect.Enabled = true; Msg(T("Server check failed: ", "ما زبط الفحص: ") + ex.Message, ToastKind.Bad); SetIdle(); });
                 }
             });
         }
@@ -1881,7 +1977,7 @@ namespace PingBoost
         // Valve: the address is one of Valve's relays/servers, so we can name the region and check it against the lock.
         void ShowValveResult(Game g, List<Detector.Hit> hits)
         {
-            busy = false;
+            SetIdle();
             btnDetect.Enabled = true;
             foreach (var r in g.Regions) r.Here = false;
             var found = hits.Select(h => ValveRegionOf(g, h.Ip)).Where(r => r != null && g.Hosts(r)).Distinct().ToList();
@@ -1952,7 +2048,7 @@ namespace PingBoost
             }
             Ui(() =>
             {
-                busy = false;
+                SetIdle();
                 btnDetect.Enabled = true;
                 if (found.Count == 0) { NothingFound(); return; }
                 foreach (var r in found)
@@ -2048,7 +2144,9 @@ namespace PingBoost
                 List<Detector.Hit> hits = null;
                 string where = null;
                 int whereMs = -1;
-                bool running = Detector.IsRunning(g.Processes);
+                bool running = false;
+                try { running = Detector.IsRunning(g.Processes); }
+                catch (Exception ex) { ReportCrash("automatic check", ex); }
                 if (running)
                     try
                     {
@@ -2090,7 +2188,7 @@ namespace PingBoost
             if (lockSummary == null || DateTime.Now - lastRulesCheck < TimeSpan.FromMinutes(2)) return;
             lastRulesCheck = DateTime.Now;
             string locked = lockSummary;
-            Task.Run(() =>
+            FirewallWorker.Run(() =>
             {
                 if (ServerLock.Exists()) return;
                 Issues.Report("lock_rules_missing", "lock on " + locked + " but no firewall rules");
@@ -2209,7 +2307,7 @@ namespace PingBoost
                         "اخترت " + picked + (picked == 1 ? " منطقة" : " مناطق") + "، اضغط «ثبّت سيرفراتي» عشان ما تلعب إلا عليها.");
                 lockLabel.ForeColor = Dim;
             }
-            btnUnlock.Enabled = lockSummary != null;
+            btnUnlock.Enabled = lockSummary != null && lockingGame == null; // never while a new lock is being applied
         }
 
         void LockServers()
@@ -2243,8 +2341,19 @@ namespace PingBoost
             string cardNames = CardLockNames(g, picked);
             btnLock.Enabled = false;
             lockingGame = g; // the status bar is hidden in the simple layout: the card says it too
+            UpdateLockBar();
             SetStatus(T("Locking your servers...", "أثبّت سيرفراتك..."));
             UpdateCard();
+            Action<Exception> failed = ex => Ui(() =>
+            {
+                lockingGame = null;
+                btnLock.Enabled = true;
+                UpdateLockBar();
+                UpdateCard();
+                Log(T("Lock failed: ", "ما زبط التثبيت: ") + ex.Message);
+                Issues.Report("lock_apply_failed", g.Name + ": " + ex.Message, null, g.Icon);
+                Msg(T("Lock failed: ", "ما زبط التثبيت: ") + ex.Message, ToastKind.Bad);
+            });
             Task.Run(() =>
             {
                 try
@@ -2268,57 +2377,53 @@ namespace PingBoost
                         Program = exe, Protocol = exe == null ? null : "UDP",
                     };
                     info.Ports = info.Protocol != null ? g.LockPorts : null;
-                    int n = ServerLock.Apply(block, exe, exe != null ? "UDP" : null, g.LockPorts);
-                    info.Scope = LockScope(info, n);
-                    bool firewallOn = ServerLock.FirewallOn();
-                    if (!firewallOn) Issues.Report("firewall_off", "while locking " + g.Name);
-                    Ui(() =>
+                    FirewallWorker.Run(() =>
                     {
-                        lockingGame = null;
-                        lockSummary = names;
-                        lockGame = g;
-                        lockNames = cardNames;
-                        lockInfo = info;
-                        LockChanged(g);
-                        Telemetry.Server = string.Join(", ", picked.Select(r => r.NameEn));
-                        Telemetry.Send("lock", Telemetry.Server, -1, n + " ranges blocked, mode " + info.Mode);
-                        if (devMode) DevOut("lock mode " + info.Mode + ": " + info.Scope);
-                        btnLock.Enabled = true;
-                        UpdateLockBar();
-                        FillServers(g);
-                        Log(T("Lock ON (", "التثبيت شغّال (") + g.Name + "): " + names + "  (" + n + ")");
-                        SetStatus(T("Locked: ", "مثبّت على: ") + names);
-                        StartLockMonitor();
-                        AdvancedMsg(T("Locked. You'll only be matched on: ", "تم التثبيت. ما بتلعب إلا على: ") + names, ToastKind.Good);
-                        if (g.LockSpace != null)
-                            AdvancedMsg(T("Try a casual match first (not ranked): if " + g.Name + " still picks a blocked server, the match won't load, and in ranked that counts as leaving.",
-                                  "جرّبه في مباراة عادية أول (مو رانكد): لو اللعبة اختارت سيرفر محجوب المباراة ما تفتح، وفي الرانكد تنحسب منسحب."), ToastKind.Warn);
-                        AdvancedMsg(T("If the game is open, restart it (or wait a minute) before you queue.",
-                              "لو اللعبة مفتوحة، اقفلها وافتحها من جديد (أو استنى دقيقة) قبل ما تدوّر مباراة."));
-                        if (Storage.GetSetting("tip_tray") != "1")
+                        int n;
+                        try { n = ServerLock.Apply(block, exe, exe != null ? "UDP" : null, g.LockPorts); }
+                        catch (Exception ex) { failed(ex); return; }
+                        int skipped = ServerLock.Skipped; // entries of a downloaded list that weren't valid addresses
+                        info.Scope = LockScope(info, n);
+                        bool firewallOn = ServerLock.FirewallOn();
+                        if (!firewallOn) Issues.Report("firewall_off", "while locking " + g.Name);
+                        Ui(() =>
                         {
-                            Storage.SetSetting("tip_tray", "1");
-                            Msg(T("You can minimize 2X Ping: the lock stays on until you unlock or close it.",
-                                  "تقدر تصغّر البرنامج، والتثبيت يبقى شغّال لين تفكّه أو تقفل البرنامج."));
-                        }
-                        // the lock can't work with the firewall off: this one the player has to know
-                        if (!firewallOn)
-                            Msg(T("Windows Firewall is off, so the lock can't block anything. Turn it on in Windows Security > Firewall.",
-                                  "جدار حماية ويندوز مطفي، فالتثبيت ما يقدر يحجب شي. شغّله من أمان ويندوز ← جدار الحماية."), ToastKind.Bad);
+                            lockingGame = null;
+                            lockSummary = names;
+                            lockGame = g;
+                            lockNames = cardNames;
+                            lockInfo = info;
+                            LockChanged(g);
+                            Telemetry.Server = string.Join(", ", picked.Select(r => r.NameEn));
+                            Telemetry.Send("lock", Telemetry.Server, -1, n + " ranges blocked, mode " + info.Mode +
+                                           (skipped > 0 ? ", " + skipped + " bad entries skipped" : ""));
+                            if (devMode) DevOut("lock mode " + info.Mode + ": " + info.Scope);
+                            btnLock.Enabled = true;
+                            UpdateLockBar();
+                            FillServers(g);
+                            Log(T("Lock ON (", "التثبيت شغّال (") + g.Name + "): " + names + "  (" + n + ")");
+                            SetStatus(T("Locked: ", "مثبّت على: ") + names);
+                            StartLockMonitor();
+                            AdvancedMsg(T("Locked. You'll only be matched on: ", "تم التثبيت. ما بتلعب إلا على: ") + names, ToastKind.Good);
+                            if (g.LockSpace != null)
+                                AdvancedMsg(T("Try a casual match first (not ranked): if " + g.Name + " still picks a blocked server, the match won't load, and in ranked that counts as leaving.",
+                                      "جرّبه في مباراة عادية أول (مو رانكد): لو اللعبة اختارت سيرفر محجوب المباراة ما تفتح، وفي الرانكد تنحسب منسحب."), ToastKind.Warn);
+                            AdvancedMsg(T("If the game is open, restart it (or wait a minute) before you queue.",
+                                  "لو اللعبة مفتوحة، اقفلها وافتحها من جديد (أو استنى دقيقة) قبل ما تدوّر مباراة."));
+                            if (Storage.GetSetting("tip_tray") != "1")
+                            {
+                                Storage.SetSetting("tip_tray", "1");
+                                Msg(T("You can minimize 2X Ping: the lock stays on until you unlock or close it.",
+                                      "تقدر تصغّر البرنامج، والتثبيت يبقى شغّال لين تفكّه أو تقفل البرنامج."));
+                            }
+                            // the lock can't work with the firewall off: this one the player has to know
+                            if (!firewallOn)
+                                Msg(T("Windows Firewall is off, so the lock can't block anything. Turn it on in Windows Security > Firewall.",
+                                      "جدار حماية ويندوز مطفي، فالتثبيت ما يقدر يحجب شي. شغّله من أمان ويندوز ← جدار الحماية."), ToastKind.Bad);
+                        });
                     });
                 }
-                catch (Exception ex)
-                {
-                    Ui(() =>
-                    {
-                        lockingGame = null;
-                        btnLock.Enabled = true;
-                        UpdateCard();
-                        Log(T("Lock failed: ", "ما زبط التثبيت: ") + ex.Message);
-                        Issues.Report("lock_apply_failed", g.Name + ": " + ex.Message, null, g.Icon);
-                        Msg(T("Lock failed: ", "ما زبط التثبيت: ") + ex.Message, ToastKind.Bad);
-                    });
-                }
+                catch (Exception ex) { failed(ex); }
             });
         }
 
@@ -2363,7 +2468,7 @@ namespace PingBoost
 
         void UnlockServers()
         {
-            if (lockSummary == null) return;
+            if (lockSummary == null || lockingGame != null) return;
             if (LockTestRunning()) return;
             lockSummary = null;
             lockGame = null;
@@ -2376,11 +2481,18 @@ namespace PingBoost
             UpdateLockBar();
             var g = CurrentGame;
             if (g != null) FillServers(g);
-            Task.Run(() =>
+            FirewallWorker.Run(() =>
             {
-                ServerLock.Remove();
-                Log(T("Lock removed, all servers are back.", "فكّينا التثبيت، وكل السيرفرات رجعت."));
-                SetStatus(T("Lock removed.", "فكّينا التثبيت."));
+                if (ServerLock.Remove())
+                {
+                    Log(T("Lock removed, all servers are back.", "فكّينا التثبيت، وكل السيرفرات رجعت."));
+                    SetStatus(T("Lock removed.", "فكّينا التثبيت."));
+                    return;
+                }
+                Issues.Report("unlock_failed", "firewall rules still there after unlock");
+                Log(T("Some firewall rules could not be removed.", "في قواعد بجدار الحماية ما قدرت أشيلها."));
+                Ui(() => Msg(T("The lock is off, but some firewall rules are still there. Press Unlock again, or close 2X Ping and open it again, it cleans them on start.",
+                               "فكّينا التثبيت، بس في قواعد بجدار الحماية لسا موجودة. اضغط «فك التثبيت» مرة ثانية، أو اقفل البرنامج وافتحه، وهو ينظفها أول ما يفتح."), ToastKind.Warn));
             });
         }
 
@@ -2388,7 +2500,7 @@ namespace PingBoost
         public void ResetEverything()
         {
             if (LockTestRunning()) return;
-            if (busy)
+            if (busy || lockingGame != null)
             {
                 Msg(T("Wait for the current test to finish first.", "استنى الفحص الحالي يخلص أول."), ToastKind.Warn);
                 return;
@@ -2407,18 +2519,23 @@ namespace PingBoost
             Telemetry.Send("reset", null, -1, null);
             busy = true;
             SetStatus(T("Putting everything back...", "أرجّع كل شي زي ما كان..."));
-            Task.Run(() =>
+            FirewallWorker.Run(() =>
             {
-                ServerLock.Remove();
-                Tunnel.Stop();
-                Detector.Cleanup();
-                foreach (var g in games)
-                    foreach (var p in g.Processes.SelectMany(n => Process.GetProcessesByName(n)))
-                        try { p.PriorityClass = ProcessPriorityClass.Normal; } catch { }
-                bool left = ServerLock.Exists();
+                bool left = true;
+                try
+                {
+                    ServerLock.Remove();
+                    Tunnel.Stop();
+                    Detector.Cleanup();
+                    foreach (var g in games)
+                        foreach (var p in g.Processes.SelectMany(n => Process.GetProcessesByName(n)))
+                            using (p) try { p.PriorityClass = ProcessPriorityClass.Normal; } catch { }
+                    left = ServerLock.Exists();
+                }
+                catch (Exception ex) { ReportCrash("reset", ex); } // busy is always cleared below
                 Ui(() =>
                 {
-                    busy = false;
+                    SetIdle();
                     var cur = CurrentGame;
                     if (cur != null) FillServers(cur);
                     UpdateLockBar();
@@ -2481,7 +2598,10 @@ namespace PingBoost
             }
 
             SetStatus(T("Building the route through ", "أجهّز الطريق عن طريق ") + relay.Name + "...");
-            Task.Run(() =>
+            // set before the tunnel exists: a Stop (or closing the app) from now on always removes it, even half-made
+            tunnelActive = true;
+            int gen = Interlocked.Increment(ref boostGen);
+            FirewallWorker.Run(() =>
             {
                 try
                 {
@@ -2495,16 +2615,27 @@ namespace PingBoost
                     }
                     cidrs = cidrs.Distinct().ToList();
                     Tunnel.Start(Tunnel.BuildConf(relay, cidrs));
-                    tunnelActive = true;
+                    // Stop was pressed while it was being built: its Tunnel.Stop is queued right after this
+                    if (gen != Volatile.Read(ref boostGen)) return;
                     Log(T("Route ready through ", "الطريق جاهز عن طريق ") + relay.Name + " - " + region.Name + " (" + cidrs.Count + ")");
                     Telemetry.Send("boost", region.NameEn, -1, "relay " + relay.Name);
-                    Ui(() => { RaisePriority(g); StartMonitor(target, T("BOOST · ", "بوست · ") + ShortName(region) + T(" via ", " عن طريق ") + relay.Name); });
+                    Ui(() =>
+                    {
+                        if (gen != Volatile.Read(ref boostGen)) return;
+                        RaisePriority(g);
+                        StartMonitor(target, T("BOOST · ", "بوست · ") + ShortName(region) + T(" via ", " عن طريق ") + relay.Name);
+                    });
                 }
                 catch (Exception ex)
                 {
                     Log(T("Boost failed: ", "ما زبط البوست: ") + ex.Message);
-                    Telemetry.Send("error", region.NameEn, -1, "boost via " + relay.Name + ": " + ex);
-                    Ui(() => { StopAll(); Msg(T("Boost failed: ", "ما زبط البوست: ") + ex.Message, ToastKind.Bad); });
+                    Telemetry.Send("error", region.NameEn, -1, "boost via " + relay.Name + ": " + ex.GetType().Name + ": " + ex.Message);
+                    Ui(() =>
+                    {
+                        if (gen != Volatile.Read(ref boostGen)) return;
+                        StopAll(); // removes the half-made tunnel too
+                        Msg(T("Boost failed: ", "ما زبط البوست: ") + ex.Message, ToastKind.Bad);
+                    });
                 }
             });
         }
@@ -2512,23 +2643,23 @@ namespace PingBoost
         // Live ping in the status bar (and the graph in the advanced layout), every second.
         void StartMonitor(Endpoint target, string label)
         {
-            int gen = ++monitorGen;
+            int gen = Interlocked.Increment(ref monitorGen);
             graph.Clear();
             graph.Label = label;
             SetStatus(label);
             var t = new Thread(() =>
             {
                 var last = DateTime.MinValue;
-                while (gen == monitorGen)
+                while (gen == Volatile.Read(ref monitorGen))
                 {
                     // while the game is in front: one ping every 15 s, just for the taskbar title
                     if (!appActive && DateTime.Now - last < TimeSpan.FromSeconds(15)) { Thread.Sleep(500); continue; }
                     last = DateTime.Now;
                     double v = Pinger.Once(target, 1500);
-                    if (gen != monitorGen) break;
+                    if (gen != Volatile.Read(ref monitorGen)) break;
                     Ui(() =>
                     {
-                        if (gen != monitorGen) return;
+                        if (gen != Volatile.Read(ref monitorGen)) return;
                         liveLabel.Text = T("Status: ", "الحالة: ") + label + "  ·  " + Ms(v);
                         liveLabel.ForeColor = PingColor(v);
                         SetLiveStatus(label + " · " + Ms(v));
@@ -2560,7 +2691,7 @@ namespace PingBoost
 
         void StopMonitor()
         {
-            monitorGen++;
+            Interlocked.Increment(ref monitorGen);
             Telemetry.Ping = -1;
             liveLabel.Text = StatusOff;
             liveLabel.ForeColor = Dim;
@@ -2584,10 +2715,11 @@ namespace PingBoost
             btnStop.Enabled = false;
             SetStatus(T("Stopped.", "وقّفناه."));
             StartLockMonitor();
+            Interlocked.Increment(ref boostGen); // a route still being built is dropped
             if (tunnelActive)
             {
                 tunnelActive = false;
-                Task.Run(() =>
+                FirewallWorker.Run(() =>
                 {
                     Tunnel.Stop();
                     Log(T("Relay route removed, everything is direct again.", "شلنا طريق الوسيط، وكل شي رجع مباشر."));
@@ -2685,14 +2817,22 @@ namespace PingBoost
             var rels = relays.ToList();
             Task.Run(() =>
             {
-                foreach (var r in rels)
+                try
                 {
-                    r.Ping = r.MeasurePing();
-                    string agent = !r.HasAgent ? T("no agent", "بدون أداة قياس")
-                        : r.ProbeFromRelay(new Endpoint("1.1.1.1", 443)) >= 0 ? T("agent OK", "أداة القياس شغّالة") : T("agent not reachable", "أداة القياس ما ترد");
-                    Log(T("Relay ", "الوسيط ") + r.Name + ": " + Ms(r.Ping) + "، " + agent);
+                    foreach (var r in rels)
+                    {
+                        r.Ping = r.MeasurePing();
+                        string agent = !r.HasAgent ? T("no agent", "بدون أداة قياس")
+                            : r.ProbeFromRelay(new Endpoint("1.1.1.1", 443)) >= 0 ? T("agent OK", "أداة القياس شغّالة") : T("agent not reachable", "أداة القياس ما ترد");
+                        Log(T("Relay ", "الوسيط ") + r.Name + ": " + Ms(r.Ping) + "، " + agent);
+                    }
+                    Ui(() => { RefreshRelays(); SetStatus(T("Relay test done, details in Tools & Log.", "خلص فحص الوسطاء، التفاصيل في «أدوات وسجل».")); });
                 }
-                Ui(() => { RefreshRelays(); SetStatus(T("Relay test done, details in Tools & Log.", "خلص فحص الوسطاء، التفاصيل في «أدوات وسجل».")); });
+                catch (Exception ex)
+                {
+                    ReportCrash("relay test", ex);
+                    SetStatus(T("The relay test stopped with an error.", "فحص الوسطاء وقف بخطأ."));
+                }
             });
         }
 
@@ -2700,12 +2840,12 @@ namespace PingBoost
 
         void FlushDns()
         {
-            var psi = new ProcessStartInfo("ipconfig", "/flushdns") { UseShellExecute = false, CreateNoWindow = true };
-            using (var p = Process.Start(psi))
+            Task.Run(() =>
             {
-                p.WaitForExit(10000);
-                Log(p.ExitCode == 0 ? T("DNS cache cleared.", "مسحنا كاش DNS.") : T("Couldn't clear the DNS cache.", "ما قدرت أمسح كاش DNS."));
-            }
+                string output;
+                int code = Proc.Run("ipconfig", "/flushdns", 10000, out output);
+                Log(code == 0 ? T("DNS cache cleared.", "مسحنا كاش DNS.") : T("Couldn't clear the DNS cache.", "ما قدرت أمسح كاش DNS."));
+            });
         }
 
         // ---------------------------------------------------------------- developer mode
@@ -2938,10 +3078,8 @@ namespace PingBoost
             ShowPage(3);
             Task.Run(() =>
             {
-                var psi = new ProcessStartInfo("netsh", "advfirewall firewall show rule name=\"2XPing-RegionLock\" verbose")
-                { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true };
                 string text;
-                using (var proc = Process.Start(psi)) { text = proc.StandardOutput.ReadToEnd(); proc.WaitForExit(15000); }
+                Proc.Run("netsh", "advfirewall firewall show rule name=\"2XPing-RegionLock\" verbose", 15000, out text);
                 var rules = text.Split(new[] { "Rule Name:" }, StringSplitOptions.RemoveEmptyEntries).Skip(1).ToList();
                 DevOut("---- firewall rules: " + rules.Count);
                 foreach (var r in rules)
