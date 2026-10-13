@@ -25,18 +25,6 @@ namespace PingBoost
             {"SAmerica", new[] {"South America", "أمريكا الجنوبية"}},
         };
 
-        // Valve datacenter -> Deadlock matchmaking region it serves (only the clear ones).
-        public static readonly Dictionary<string, string> PopToMm = new Dictionary<string, string>
-        {
-            {"ams","Europe"}, {"fra","Europe"}, {"dfra","Europe"}, {"lhr","Europe"}, {"par","Europe"}, {"mad","Europe"},
-            {"vie","Europe"}, {"dvie","Europe"}, {"waw","Europe"}, {"sto","Europe"}, {"sto2","Europe"}, {"hel","Europe"},
-            {"iad","Row"}, {"atl","Row"}, {"ord","Row"}, {"dfw","Row"}, {"lax","Row"}, {"sea","Row"},
-            {"sgp","SEAsia"}, {"hkg","SEAsia"}, {"tyo","SEAsia"}, {"seo","SEAsia"}, {"bom","SEAsia"}, {"bom2","SEAsia"},
-            {"maa","SEAsia"}, {"maa2","SEAsia"}, {"gum","SEAsia"},
-            {"gru","SAmerica"}, {"eze","SAmerica"}, {"lim","SAmerica"}, {"scl","SAmerica"},
-            {"syd","Oceania"},
-        };
-
         public const int PlayersPerMatch = 12;
         // average of all modes (deadlock-api, one day: normal 36 min, Street Brawl 14 min)
         public const double AvgMatchMinutes = 32;
@@ -95,7 +83,8 @@ namespace PingBoost
                     deadlockPerDayAt = DateTime.Now;
                 }
                 double inMatches = deadlockPerDay / 24.0 * PlayersPerMatch * AvgMatchMinutes / 60.0;
-                // the day's average, scaled to how busy this hour is (about 0.5 at night, 1.5 at the evening peak)
+                // the day's average, scaled to how busy this hour is (about 0.5 at night, 1.5 at the evening peak) when
+                // Supabase has that factor; without it (null: no longer computed, see tools/supabase-setup.sql) the day's average
                 double busy = 1;
                 if (s != null && s.ContainsKey("now_factor") && s["now_factor"] != null)
                     busy = Math.Max(0.3, Math.Min(2.5, Convert.ToDouble(s["now_factor"], CultureInfo.InvariantCulture)));
@@ -108,6 +97,8 @@ namespace PingBoost
 
         // Deadlock matches started in the last hour per matchmaking region, among the top 200 live matches
         // (the game's Watch tab, tracked by deadlock-api.com): a sample, good for comparing regions.
+        // Supabase's shared copy first; without it this PC counts /v1/matches/active itself (allowed 100 requests a
+        // second and cached by deadlock-api for 2 minutes; the old /v1/sql query allowed 20 an hour and is going away).
         public static Dictionary<string, int> DeadlockActivity()
         {
             lock (MmRegions)
@@ -117,15 +108,8 @@ namespace PingBoost
                 if (regions != null)
                     return regions.ToDictionary(kv => kv.Key, kv => Convert.ToInt32(kv.Value, CultureInfo.InvariantCulture));
                 if (deadlockCache != null && DateTime.Now - deadlockAt < TimeSpan.FromMinutes(3)) return deadlockCache;
-                string sql = "SELECT toString(region_mode) AS region, uniq(match_id) AS matches FROM active_matches " +
-                             "WHERE start_time > now() - INTERVAL 1 HOUR GROUP BY region";
-                string json = Http.Get("https://api.deadlock-api.com/v1/sql?query=" + Uri.EscapeDataString(sql), 30000);
-                var result = new Dictionary<string, int>();
-                foreach (var row in (object[])new JavaScriptSerializer().DeserializeObject(json))
-                {
-                    var d = (Dictionary<string, object>)row;
-                    result[(string)d["region"]] = Convert.ToInt32(d["matches"], CultureInfo.InvariantCulture);
-                }
+                string json = Http.Get("https://api.deadlock-api.com/v1/matches/active", 30000);
+                var result = DeadlockData.CountRegions(json, DeadlockData.UnixNow());
                 deadlockCache = result;
                 deadlockAt = DateTime.Now;
                 return result;
@@ -138,12 +122,17 @@ namespace PingBoost
             return (int)Math.Round(matchesPerHour * PlayersPerMatch * AvgMatchMinutes / 60.0);
         }
 
-        // Rough queue-time bucket from how many matches a region starts per hour.
+        // The sample's thresholds for the wait buckets. The live list holds about 2.6 times fewer matches per region than
+        // the old /v1/sql count of the last hour (Europe 69 vs 189, North America 51 vs 121, measured together 2026-10-13),
+        // so the old 100 / 40 / 10 became 40 / 15 / 4.
+        public const int FastQueue = 40, MediumQueue = 15, SlowQueue = 4;
+
+        // Rough queue-time bucket from a region's matches in the live sample (DeadlockActivity).
         public static string EstimateWait(int matchesPerHour)
         {
-            if (matchesPerHour >= 100) return Lang.T("~1-3 min", "‎1-3‎ دقايق");
-            if (matchesPerHour >= 40) return Lang.T("~3-6 min", "‎3-6‎ دقايق");
-            if (matchesPerHour >= 10) return Lang.T("~6-12 min", "‎6-12‎ دقيقة");
+            if (matchesPerHour >= FastQueue) return Lang.T("~1-3 min", "‎1-3‎ دقايق");
+            if (matchesPerHour >= MediumQueue) return Lang.T("~3-6 min", "‎3-6‎ دقايق");
+            if (matchesPerHour >= SlowQueue) return Lang.T("~6-12 min", "‎6-12‎ دقيقة");
             if (matchesPerHour > 0) return Lang.T("12+ min", "فوق 12 دقيقة");
             return Lang.T("very slow", "بطيء مرة");
         }
@@ -290,9 +279,11 @@ namespace PingBoost
             return hits.Values.Where(h => h.Packets >= 20).OrderByDescending(h => h.Packets).Take(5).ToList();
         }
 
-        // Is the IPv4 address inside a.b.c.d/n ?
+        // Is the address inside a.b.c.d/n (or an IPv6 prefix)? An address and a range of different kinds never match.
         public static bool InCidr(string ip, string cidr)
         {
+            if (ip == null || cidr == null) return false;
+            if (RemoteAddress.IsV6(ip) || RemoteAddress.IsV6(cidr)) return InCidr6(ip, cidr);
             try
             {
                 var parts = cidr.Split('/');
@@ -302,6 +293,24 @@ namespace PingBoost
                 return (a & mask) == (n & mask);
             }
             catch { return false; }
+        }
+
+        static bool InCidr6(string ip, string cidr)
+        {
+            var parts = cidr.Split('/');
+            IPAddress a, n;
+            int bits = 128;
+            if (!RemoteAddress.IsV6(ip) || !RemoteAddress.IsV6(parts[0]) || !IPAddress.TryParse(ip, out a) || !IPAddress.TryParse(parts[0], out n) ||
+                (parts.Length > 1 && (!int.TryParse(parts[1], out bits) || bits < 0 || bits > 128)))
+                return false;
+            byte[] x = a.GetAddressBytes(), y = n.GetAddressBytes();
+            if (x.Length != 16 || y.Length != 16) return false;
+            for (int i = 0; i < 16 && bits > 0; i++, bits -= 8)
+            {
+                int mask = bits >= 8 ? 0xFF : (0xFF << (8 - bits)) & 0xFF;
+                if ((x[i] & mask) != (y[i] & mask)) return false;
+            }
+            return true;
         }
 
         static uint ToUInt(string ip)

@@ -23,6 +23,7 @@ namespace PingBoost
             { "region_down", "Datacenters that don't answer" },
             { "all_down", "No server answered the ping test" },
             { "servers_load_failed", "Server list didn't load" },
+            { "sdr_new_pop", "Valve lists a datacenter the Deadlock table doesn't know" },
             { "ip_lists_failed", "Official address list didn't download" },
             { "detect_failed", "Traffic capture (pktmon) failed" },
             { "leftover_lock", "Lock rules left from a previous session" },

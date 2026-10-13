@@ -133,14 +133,19 @@ namespace PingBoost
     }
 
     // Remote addresses for a firewall rule: 1.2.3.4, 1.2.3.0/24 or 1.2.3.4-1.2.3.9, with every octet 0-255,
-    // prefixes 0-32 and ranges that go up. One bad entry in a downloaded list would make netsh refuse the whole rule.
+    // prefixes 0-32 and ranges that go up; or the same in IPv6 (2001:db8::1, 2001:db8::/32, 2001:db8::1-2001:db8::9,
+    // prefixes 0-128), which Windows Firewall takes in the same remoteip list. One bad entry in a downloaded list would
+    // make netsh refuse the whole rule.
     static class RemoteAddress
     {
         static readonly Regex Shape = new Regex(@"^([0-9]{1,3}(?:\.[0-9]{1,3}){3})(?:/([0-9]{1,2})|-([0-9]{1,3}(?:\.[0-9]{1,3}){3}))?\z"); // [0-9], not \d (other scripts' digits)
+        // IPv6: hex digits and colons (an IPv4 tail allowed), no zone id (%), no brackets or spaces
+        static readonly Regex Shape6 = new Regex(@"^([0-9A-Fa-f:.]{2,45})(?:/([0-9]{1,3})|-([0-9A-Fa-f:.]{2,45}))?\z");
 
         public static bool Valid(string s)
         {
             if (s == null) return false;
+            if (s.IndexOf(':') >= 0) return Valid6(s);
             var m = Shape.Match(s);
             if (!m.Success) return false;
             uint a, b;
@@ -149,6 +154,35 @@ namespace PingBoost
             if (m.Groups[3].Success) return Ip(m.Groups[3].Value, out b) && b >= a;
             return true;
         }
+
+        static bool Valid6(string s)
+        {
+            var m = Shape6.Match(s);
+            if (!m.Success) return false;
+            byte[] a, b;
+            if (!Ip6(m.Groups[1].Value, out a)) return false;
+            if (m.Groups[2].Success) return int.Parse(m.Groups[2].Value) <= 128;
+            if (m.Groups[3].Success)
+            {
+                if (!Ip6(m.Groups[3].Value, out b)) return false;
+                for (int i = 0; i < 16; i++) if (a[i] != b[i]) return b[i] > a[i]; // the range goes up
+                return true;
+            }
+            return true;
+        }
+
+        static bool Ip6(string s, out byte[] bytes)
+        {
+            bytes = null;
+            System.Net.IPAddress ip;
+            if (s.IndexOf(':') < 0 || !System.Net.IPAddress.TryParse(s, out ip) ||
+                ip.AddressFamily != System.Net.Sockets.AddressFamily.InterNetworkV6) return false;
+            bytes = ip.GetAddressBytes();
+            return bytes.Length == 16;
+        }
+
+        // Is this address IPv6?
+        public static bool IsV6(string s) { return s != null && s.IndexOf(':') >= 0; }
 
         static bool Ip(string s, out uint v)
         {

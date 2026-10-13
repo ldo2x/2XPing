@@ -7,8 +7,8 @@ using System.Windows.Forms;
 namespace PingBoost
 {
     // The main screen's card: says the situation in plain words (CardView from CardLogic.Decide), offers region tiles
-    // to choose from (the featured two or three, or every region in rows of three after "Other regions"), one main
-    // button and up to three small links. Everything is centred; in Arabic the first tile and the "Other regions" link
+    // to choose from (the featured two or three, or every region in rows of three after "Other regions") with an
+    // optional footnote under them, one main button and up to three small links. Everything is centred; in Arabic the first tile and the "Other regions" link
     // sit on the right. The links flank the button, or sit in a row under it where "Test ping" is offered.
     class StateCard : Card
     {
@@ -18,11 +18,11 @@ namespace PingBoost
         readonly List<RegionTile> tiles = new List<RegionTile>();
         readonly RoundButton button;
         readonly CardLink other, manual, test;
-        readonly Font titleFont = Fonts.Semi(16f), subFont = Fonts.Ui(10f);
+        readonly Font titleFont = Fonts.Semi(16f), subFont = Fonts.Ui(10f), noteFont = Fonts.Ui(9f);
         readonly Timer dots = new Timer { Interval = 380 };
         int dotPhase;
         bool laying, hasButton, hasLinks, hasTest, showTiles, otherAvailable = true, manualAvailable = true, testAvailable = true; // Visible reads false until the window shows, so the layout keeps its own flags
-        Rectangle titleRect, subRect, dotsRect;
+        Rectangle titleRect, subRect, dotsRect, noteRect;
 
         public event EventHandler ButtonPressed, OtherRegions, Manual, TestPing, SelectionChanged;
 
@@ -182,8 +182,13 @@ namespace PingBoost
             subH = view.Sub != null ? Measure(view.Sub, subFont, w) : Waiting ? 14 : 0;
             tileH = TilesHeight(Rows());
             bool actions = hasButton || Links().Count > 0;
-            return titleH + (subH > 0 ? 6 + subH : 0) + (tileH > 0 ? 16 + tileH : 0) + (actions ? 18 + button.Height : 0) + (LinksBelow ? button.Height : 0);
+            int noteH = NoteHeight(w, tileH);
+            return titleH + (subH > 0 ? 6 + subH : 0) + (tileH > 0 ? 16 + tileH : 0) + (noteH > 0 ? 10 + noteH : 0) +
+                   (actions ? 18 + button.Height : 0) + (LinksBelow ? button.Height : 0);
         }
+
+        // The footnote sits under the tiles, so it only shows with them.
+        int NoteHeight(int w, int tileH) { return tileH > 0 && view.Note != null ? Measure(view.Note, noteFont, w) : 0; }
 
         // The height the card needs at this width to show everything with its normal margins.
         public int PreferredHeight(int width)
@@ -232,6 +237,14 @@ namespace PingBoost
                     }
                     y += rowH;
                 }
+            }
+            noteRect = Rectangle.Empty;
+            int noteH = NoteHeight(w, tileH);
+            if (noteH > 0)
+            {
+                y += 10;
+                noteRect = new Rectangle(Pad, y, w, noteH);
+                y += noteH;
             }
 
             if (actions)
@@ -290,6 +303,7 @@ namespace PingBoost
             var g = e.Graphics;
             TextRenderer.DrawText(g, view.Title, titleFont, titleRect, TitleColor, Flags);
             if (view.Sub != null) TextRenderer.DrawText(g, view.Sub, subFont, subRect, MainForm.Dim, Flags);
+            if (noteRect != Rectangle.Empty) TextRenderer.DrawText(g, view.Note, noteFont, noteRect, MainForm.Dim, Flags);
             if (dotsRect != Rectangle.Empty)
             {
                 g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
@@ -306,7 +320,7 @@ namespace PingBoost
 
         protected override void Dispose(bool disposing)
         {
-            if (disposing) { dots.Dispose(); titleFont.Dispose(); subFont.Dispose(); }
+            if (disposing) { dots.Dispose(); titleFont.Dispose(); subFont.Dispose(); noteFont.Dispose(); }
             base.Dispose(disposing);
         }
     }

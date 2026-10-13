@@ -23,12 +23,16 @@ namespace PingBoost
         public string ZoneWarning;
         // Overwatch: locked for a few minutes and still no match
         public bool NoMatchYet;
+        // Deadlock: Russia's own queue is explained under the region choices (it can't be a tile); its players, -1 = unknown
+        public bool RussiaNote;
+        public int RussiaPlayers = -1;
     }
 
     class CardView
     {
         public CardKind Kind;
         public string Title, Sub, Button;
+        public string Note; // a small footnote under the tiles, null = none
         public bool ShowTiles, ShowLinks, ShowTest; // ShowTest: the "Test ping" link
         public Color Accent;
     }
@@ -86,7 +90,12 @@ namespace PingBoost
             }
 
             var choices = i.Choices ?? new List<RegionChoice>();
-            if (i.CanLock && choices.Any(c => c.Ping < double.MaxValue)) return Choose(choices, i.Testing, i.ZoneWarning);
+            if (i.CanLock && choices.Any(c => c.Ping < double.MaxValue))
+            {
+                var v = Choose(choices, i.Testing, i.ZoneWarning);
+                if (i.RussiaNote) v.Note = RussiaNote(i.RussiaPlayers);
+                return v;
+            }
 
             // nothing to choose from yet
             if (i.Testing) return Searching();
@@ -128,6 +137,20 @@ namespace PingBoost
                                    "البنق بين " + known.Min() + " و" + known.Max() + "، والبحث أسرع");
             }
             return v;
+        }
+
+        // Deadlock's footnote under the region choices: Russia is its own queue, played on the European servers, so no
+        // lock can choose it (and locking Europe doesn't keep Russian-queue players out). players < 0 = not known.
+        public static string RussiaNote(int players)
+        {
+            string en = "Russia is a separate queue played on the European servers; the lock can't choose it",
+                   ar = "روسيا قيم لحاله يلعب على سيرفرات أوروبا، والتثبيت ما يقدر يختاره";
+            if (players >= 0)
+            {
+                en += " (" + Stats.Approx(players) + " players)";
+                ar += " (تقريباً " + Stats.Approx(players) + " لاعب)";
+            }
+            return Lang.T(en + ".", ar + ".");
         }
 
         // Arabic: "A وB وC"; English: "A, B and C".

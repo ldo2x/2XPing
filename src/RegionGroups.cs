@@ -256,14 +256,16 @@ namespace PingBoost
             return Lang.T("few players", "لاعبين قليل");
         }
 
-        // Deadlock's regions are Valve's matchmaking regions; each takes the datacenters that serve it. Relay-only
-        // locations (Dubai, Johannesburg) are in no region, so they never show up as a choice.
+        // Deadlock's regions are Valve's matchmaking regions; each takes the datacenters that serve it (DeadlockData.Hosting,
+        // Johannesburg in Europe). Relay-only locations (Dubai, Fujairah, India, Guam) are in no region, hosts without a
+        // relay (Helsinki, Falkenstein, US West) can't be locked so they are never members, and Russia has no datacenter
+        // of its own: none of them shows up as a choice.
         public static List<RegionDef> DeadlockMap(Game g)
         {
             var map = new List<RegionDef>();
             foreach (var mm in Stats.MmRegions)
             {
-                var ids = g.Regions.Where(r => g.Hosts(r) && Stats.PopToMm.ContainsKey(r.Id) && Stats.PopToMm[r.Id] == mm.Key)
+                var ids = g.Regions.Where(r => g.Hosts(r) && DeadlockData.Hosting.ContainsKey(r.Id) && DeadlockData.Hosting[r.Id] == mm.Key)
                                    .Select(r => r.Id).ToArray();
                 if (ids.Length > 0) map.Add(RegionDef.Of(mm.Key, mm.Value[0], mm.Value[1], ids));
             }

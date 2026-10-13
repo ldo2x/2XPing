@@ -18,7 +18,8 @@ namespace PingBoost
         // Entries of the last Apply that were not valid addresses (skipped instead of failing the whole lock).
         public static int Skipped;
 
-        // The valid, distinct remote addresses of the list (1.2.3.0/24, 1.2.3.4 or 1.2.3.4-1.2.3.9); bad entries are skipped.
+        // The valid, distinct remote addresses of the list (1.2.3.0/24, 1.2.3.4, 1.2.3.4-1.2.3.9, or the IPv6 forms such as
+        // 2001:db8::1/128, which netsh takes in the same list); bad entries are skipped.
         public static List<string> ValidAddresses(IEnumerable<string> cidrs, out int skipped)
         {
             var list = new List<string>();

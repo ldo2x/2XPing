@@ -23,6 +23,9 @@ namespace PingBoost
         public bool Picked; // "play on this server" (Valve region lock)
         public bool Detected; // found by live capture
         public bool Here;     // the game is connected to this region right now
+        // Valve: hosts matches, but Valve lists no relay there, so nothing can be pinged or blocked. Such places are
+        // shown in the server list as "can't be locked" (Game.NoRelayHosts), never in Game.Regions.
+        public bool NoRelay;
         public string Flag;   // ISO country code for the flag image (assets/flags)
         public List<Endpoint> Endpoints = new List<Endpoint>();
         public List<string> Cidrs = new List<string>();
@@ -52,8 +55,11 @@ namespace PingBoost
         public Dictionary<string, string[]> LockGroups; // "Play on it" picks the whole group, so matches are found quickly
         // Valve: the datacenters that host this game's matches (null = all). The others are only relays: the game
         // enters Valve's network through the closest one (e.g. Dubai for Saudi players) and rides it to the match
-        // server, so blocking them gains nothing and makes the route longer.
+        // server. The lock leaves them open today; an open relay can still carry a route to a blocked datacenter
+        // (Deadlock audit 2026-10-13, B1).
         public HashSet<string> HostPops;
+        // Valve: hosting datacenters without relays (Deadlock: Helsinki, Falkenstein, US West): display-only rows
+        public List<Region> NoRelayHosts = new List<Region>();
         // The regions the player chooses between on the main screen (null = none, e.g. Arena Breakout). Deadlock fills it at load.
         public List<RegionDef> RegionMap;
         public bool Hosts(Region r) { return HostPops == null || HostPops.Contains(r.Id); }
@@ -262,7 +268,8 @@ namespace PingBoost
             {"ams", "أمستردام - هولندا"}, {"lhr", "لندن - بريطانيا"}, {"par", "باريس - فرنسا"},
             {"mad", "مدريد - إسبانيا"}, {"vie", "فيينا - النمسا"}, {"dvie", "فيينا (Datapacket) - النمسا"},
             {"waw", "وارسو - بولندا"}, {"sto", "ستوكهولم (Kista) - السويد"}, {"sto2", "ستوكهولم (Bromma) - السويد"},
-            {"hel", "هلسنكي - فنلندا"}, {"bom", "مومباي - الهند"}, {"bom2", "مومباي - الهند"},
+            {"hel", "هلسنكي - فنلندا"}, {"fsn", "فالكنشتاين - ألمانيا"}, {"eat", "ويناتشي - أمريكا"},
+            {"dfjr", "الفجيرة (Datapacket) - الإمارات"}, {"bom", "مومباي - الهند"}, {"bom2", "مومباي - الهند"},
             {"maa", "تشيناي - الهند"}, {"maa2", "تشيناي - الهند"}, {"sgp", "سنغافورة"},
             {"hkg", "هونغ كونغ"}, {"tyo", "طوكيو - اليابان"}, {"seo", "سيول - كوريا"},
             {"syd", "سيدني - أستراليا"}, {"gum", "غوام"}, {"jnb", "جوهانسبرغ - جنوب أفريقيا"},
@@ -289,7 +296,7 @@ namespace PingBoost
             return new List<Game>
             {
                 new Game { Name = "Deadlock", Icon = "deadlock", Released = true, Provider = Provider.Valve, AppId = "1422450", Processes = new[] {"deadlock", "project8"},
-                    HostPops = new HashSet<string>(Stats.PopToMm.Keys),
+                    HostPops = new HashSet<string>(DeadlockData.Hosting.Keys),
                     NoteEn = "Tick the servers you want to play on, then press Lock my servers.",
                     NoteAr = "علّم (✓) على السيرفرات اللي تبغى تلعب عليها، وبعدين اضغط «ثبّت سيرفراتي»." },
                 new Game { Name = "Counter-Strike 2", Icon = "cs2", Provider = Provider.Valve, AppId = "730", SteamAppId = "730", Processes = new[] {"cs2"},
@@ -337,7 +344,7 @@ namespace PingBoost
             {"us-east-1","us"}, {"us-east-2","us"}, {"us-west-1","us"}, {"us-west-2","us"}, {"ap-east-1","hk"}, {"ca-central-1","ca"}, {"sa-east-1","br"},
             // Valve
             {"ams","nl"}, {"fra","de"}, {"dfra","de"}, {"lhr","gb"}, {"par","fr"}, {"mad","es"}, {"vie","at"}, {"dvie","at"},
-            {"waw","pl"}, {"sto","se"}, {"sto2","se"}, {"hel","fi"}, {"bom","in"}, {"bom2","in"}, {"maa","in"}, {"maa2","in"},
+            {"waw","pl"}, {"sto","se"}, {"sto2","se"}, {"hel","fi"}, {"fsn","de"}, {"eat","us"}, {"dfjr","ae"}, {"bom","in"}, {"bom2","in"}, {"maa","in"}, {"maa2","in"},
             {"sgp","sg"}, {"hkg","hk"}, {"tyo","jp"}, {"seo","kr"}, {"syd","au"}, {"gum","gu"}, {"jnb","za"}, {"dxb","ae"},
             {"iad","us"}, {"atl","us"}, {"ord","us"}, {"dfw","us"}, {"lax","us"}, {"sea","us"}, {"okc","us"},
             {"gru","br"}, {"eze","ar"}, {"lim","pe"}, {"scl","cl"},
@@ -394,9 +401,12 @@ namespace PingBoost
             }
             else if (g.Provider == Provider.Valve)
             {
-                list = LoadValve(g.AppId, g.Backbone);
+                var cfg = ParseValve(Http.Get("https://api.steampowered.com/ISteamApps/GetSDRConfig/v1/?appid=" + g.AppId, 10000), g.Backbone);
+                list = cfg.Regions;
                 var picks = Storage.LoadPicks(g.AppId);
                 foreach (var r in list) r.Picked = picks.Contains(r.Id);
+                g.NoRelayHosts = NoRelayHostsOf(g, cfg);
+                if (g.Icon == "deadlock") ReportNewPops(g, cfg);
             }
             else if (g.Provider == Provider.Blizzard)
             {
@@ -429,11 +439,33 @@ namespace PingBoost
             return e == null || o is string ? Enumerable.Empty<object>() : e.Cast<object>();
         }
 
-        static List<Region> LoadValve(string appId, Dictionary<string, int> backbone)
+        // Valve's relay network for one game (GetSDRConfig), read from its JSON.
+        public class ValveConfig
         {
-            string json = Http.Get("https://api.steampowered.com/ISteamApps/GetSDRConfig/v1/?appid=" + appId, 10000);
+            public List<Region> Regions = new List<Region>();  // datacenters with relays (pinged, lockable)
+            public List<Region> NoRelay = new List<Region>();  // datacenters listed without any relay
+            public List<string> PopIds = new List<string>();   // every datacenter id in the config
+            public string Revision;
+        }
+
+        // A plain address (no range or prefix) of the given kind: IPv4 for "ipv4", IPv6 for "ipv6".
+        static string RelayAddress(Dictionary<string, object> relay, string key)
+        {
+            object v;
+            var s = relay.TryGetValue(key, out v) ? v as string : null;
+            if (s == null || !RemoteAddress.Valid(s) || s.IndexOfAny(new[] { '/', '-' }) >= 0) return null;
+            return (s.IndexOf(':') >= 0) == (key == "ipv6") ? s : null;
+        }
+
+        // Reads GetSDRConfig: each datacenter with its relays' addresses (IPv4 for the ping, IPv4 and IPv6 for the
+        // lock), the ones without relays apart, and the usual pings between datacenters (into backbone).
+        public static ValveConfig ParseValve(string json, Dictionary<string, int> backbone)
+        {
             var root = (Dictionary<string, object>)new JavaScriptSerializer { MaxJsonLength = int.MaxValue }.DeserializeObject(json);
             var pops = (Dictionary<string, object>)root["pops"];
+            var cfg = new ValveConfig();
+            object rev;
+            if (root.TryGetValue("revision", out rev) && rev != null) cfg.Revision = Convert.ToString(rev, System.Globalization.CultureInfo.InvariantCulture);
             object typical;
             backbone.Clear();
             if (root.TryGetValue("typical_pings", out typical))
@@ -444,12 +476,11 @@ namespace PingBoost
                     string a = t[0].ToString(), b = t[1].ToString();
                     backbone[string.CompareOrdinal(a, b) < 0 ? a + " " + b : b + " " + a] = Convert.ToInt32(t[2], System.Globalization.CultureInfo.InvariantCulture);
                 }
-            var list = new List<Region>();
             foreach (var kv in pops)
             {
+                cfg.PopIds.Add(kv.Key);
                 var pop = kv.Value as Dictionary<string, object>;
-                object relays;
-                if (pop == null || !pop.TryGetValue("relays", out relays)) continue;
+                if (pop == null) continue;
                 object desc;
                 pop.TryGetValue("desc", out desc);
                 string ar;
@@ -459,20 +490,57 @@ namespace PingBoost
                     NameEn = (desc as string ?? kv.Key) + "  [" + kv.Key + "]",
                     NameAr = ValveAr.TryGetValue(kv.Key, out ar) ? ar + "  [" + kv.Key + "]" : null
                 };
-                foreach (var rel in Arr(relays))
-                {
-                    var d = rel as Dictionary<string, object>;
-                    object ip;
-                    if (d == null || !d.TryGetValue("ipv4", out ip)) continue;
-                    if (r.Endpoints.Count < 2) r.Endpoints.Add(new Endpoint((string)ip, 0));
-                    r.Cidrs.Add(ip + "/32");
-                }
+                object relays;
+                string firstV6 = null;
+                if (pop.TryGetValue("relays", out relays))
+                    foreach (var rel in Arr(relays))
+                    {
+                        var d = rel as Dictionary<string, object>;
+                        if (d == null) continue;
+                        string v4 = RelayAddress(d, "ipv4"), v6 = RelayAddress(d, "ipv6");
+                        if (v4 != null)
+                        {
+                            if (r.Endpoints.Count < 2) r.Endpoints.Add(new Endpoint(v4, 0));
+                            r.Cidrs.Add(v4 + "/32");
+                        }
+                        // IPv6 relays are blocked too, so a PC with IPv6 can't reach a blocked datacenter around the lock
+                        if (v6 != null)
+                        {
+                            if (firstV6 == null) firstV6 = v6;
+                            r.Cidrs.Add(v6 + "/128");
+                        }
+                    }
+                // a datacenter with IPv6 relays only: ping one of those
+                if (r.Endpoints.Count == 0 && firstV6 != null) r.Endpoints.Add(new Endpoint(firstV6, 0));
                 object ranges;
                 if (pop.TryGetValue("service_address_ranges", out ranges))
                     foreach (var c in Arr(ranges)) r.Cidrs.Add(c.ToString());
-                if (r.Endpoints.Count > 0) list.Add(r);
+                if (r.Endpoints.Count > 0) cfg.Regions.Add(r);
+                else { r.NoRelay = true; r.Cidrs.Clear(); cfg.NoRelay.Add(r); }
             }
-            return list.OrderBy(x => x.NameEn).ToList();
+            cfg.Regions = cfg.Regions.OrderBy(x => x.NameEn).ToList();
+            cfg.NoRelay = cfg.NoRelay.OrderBy(x => x.NameEn).ToList();
+            return cfg;
+        }
+
+        // The datacenters of the config that host this game's matches but have no relay (display-only rows, with flags).
+        public static List<Region> NoRelayHostsOf(Game g, ValveConfig cfg)
+        {
+            if (g.HostPops == null) return new List<Region>();
+            var list = cfg.NoRelay.Where(r => g.HostPops.Contains(r.Id)).ToList();
+            foreach (var r in list) if (r.Flag == null) r.Flag = FlagFor(r.Id, r.NameEn);
+            return list;
+        }
+
+        // Deadlock: a datacenter in Valve's config that isn't in the app's table (DeadlockData) is treated as a relay and
+        // never blocked, which is how a new hosting site would slip through unnoticed: reported once per session, so the
+        // table gets updated.
+        static void ReportNewPops(Game g, ValveConfig cfg)
+        {
+            var unknown = DeadlockData.UnknownPops(cfg.PopIds);
+            if (unknown.Count == 0) return;
+            Issues.Report("sdr_new_pop", g.Name + ": Valve's config has datacenters the app doesn't know: " + string.Join(", ", unknown.ToArray()),
+                new Dictionary<string, object> { { "game", g.Name }, { "pops", unknown.ToArray() }, { "revision", cfg.Revision ?? "" } });
         }
 
         // EC2 address ranges of an AWS region (where the game servers live). Cached for 3 days.
@@ -644,7 +712,7 @@ namespace PingBoost
             {
                 var f = line.Split('\t');
                 // a damaged line (not a plain address) is skipped instead of breaking the game's whole server list
-                if (f.Length < 3 || f[0] != game || !RemoteAddress.Valid(f[1]) || f[1].IndexOfAny(new[] { '/', '-' }) >= 0) continue;
+                if (f.Length < 3 || f[0] != game || !RemoteAddress.Valid(f[1]) || f[1].IndexOfAny(new[] { '/', '-', ':' }) >= 0) continue; // IPv4 only (the /24 below)
                 list.Add(MakeDetected(f[1], f[2]));
             }
             return list;

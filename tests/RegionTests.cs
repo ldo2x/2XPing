@@ -84,12 +84,13 @@ namespace PingBoost
             Check(g.RegionMap != null && g.RegionMap.Count > 0, "Deadlock has a RegionMap after load");
             foreach (var d in g.RegionMap)
             {
-                Check(!d.Ids.Contains("dxb") && !d.Ids.Contains("jnb"), d.Key + " contains a relay-only datacenter");
+                Check(!d.Ids.Contains("dxb") && !d.Ids.Contains("dfjr") && !d.Ids.Contains("bom2"), d.Key + " contains a relay-only datacenter");
                 foreach (var id in d.Ids)
                     Check(g.Regions.Any(r => r.Id == id && g.Hosts(r)), d.Key + " has " + id + " which is not a hosting datacenter");
             }
             var eu = Def(g, "Europe");
             Check(eu != null && eu.Ids.Contains("fra") && eu.Ids.Contains("par"), "Europe contains fra and par");
+            Check(!g.Regions.Any(r => r.Id == "jnb") || eu.Ids.Contains("jnb"), "Johannesburg is in Europe");
             var na = Def(g, "Row");
             Check(na != null && na.En == "North America", "Row is shown as North America");
         }
@@ -264,6 +265,7 @@ namespace PingBoost
             Run("PickIdsSkipsNonHostingAndDuplicates", PickIdsSkipsNonHostingAndDuplicates);
             Run("ChosenOtherRegionIsNamedAndLocked", ChosenOtherRegionIsNamedAndLocked);
             RunCardTests();
+            RunDeadlockTests();
             RunLockTestTests();
             RunZoneTests();
             RunSafetyTests();

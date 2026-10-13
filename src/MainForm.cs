@@ -76,7 +76,7 @@ namespace PingBoost
         Dictionary<string, int> activity; // Deadlock matches/hour per matchmaking region
 
         Game CurrentGame { get { return gameList.SelectedItem as Game; } }
-        bool LockedOut(Game g, Region r) { return lockSummary != null && g != null && g.CanLock && !r.Picked && g.Hosts(r); }
+        bool LockedOut(Game g, Region r) { return lockSummary != null && g != null && g.CanLock && !r.Picked && !r.NoRelay && g.Hosts(r); }
 
         public MainForm()
         {
@@ -579,7 +579,7 @@ namespace PingBoost
                 clickedCheck = false;
                 var item = serverList.GetItemAt(e.X, e.Y);
                 var g = CurrentGame;
-                if (item == null || g == null || !g.CanLock || !(item.Tag is Region)) return;
+                if (item == null || g == null || !g.CanLock || !(item.Tag is Region) || ((Region)item.Tag).NoRelay) return;
                 var cell = FirstCell(serverList, item, item.Bounds);
                 bool onBox = Lang.Ar ? e.X >= cell.Right - CheckArea && e.X <= cell.Right : e.X >= cell.X && e.X <= cell.X + CheckArea;
                 if (!onBox) return;
@@ -589,7 +589,7 @@ namespace PingBoost
             serverList.KeyDown += (s, e) =>
             {
                 if (e.KeyCode != Keys.Space || CurrentGame == null || !CurrentGame.CanLock) return;
-                foreach (ListViewItem item in serverList.SelectedItems) { var r = item.Tag as Region; if (r != null) TogglePick(r); }
+                foreach (ListViewItem item in serverList.SelectedItems) { var r = item.Tag as Region; if (r != null && !r.NoRelay) TogglePick(r); }
                 e.Handled = true;
             };
             serverList.DoubleClick += delegate { if (!clickedCheck && !simple) Boost(); };
@@ -827,7 +827,7 @@ namespace PingBoost
             using (var b = new SolidBrush(RowBack(e.Item, e.ItemIndex))) e.Graphics.FillRectangle(b, rc);
             var g = CurrentGame;
             var textRc = Rectangle.Inflate(rc, -8, 0);
-            if (g != null && g.CanLock && g.Hosts((Region)e.Item.Tag))
+            if (g != null && g.CanLock && g.Hosts((Region)e.Item.Tag) && !((Region)e.Item.Tag).NoRelay)
             {
                 var r = (Region)e.Item.Tag;
                 var box = CheckBox(rc);
@@ -1205,7 +1205,7 @@ namespace PingBoost
         string RegionKey(Region r)
         {
             string mm;
-            return Stats.PopToMm.TryGetValue(r.Id, out mm) && activity != null && activity.ContainsKey(mm) ? mm : "";
+            return DeadlockData.Hosting.TryGetValue(r.Id, out mm) && activity != null && activity.ContainsKey(mm) ? mm : "";
         }
 
         // Deadlock players online (in matches, the queue, the menus or away), -1 when unknown
@@ -1224,27 +1224,45 @@ namespace PingBoost
         {
             serverList.BeginUpdate();
             serverList.Items.Clear();
+            // the datacenters that host matches but can't be locked (no relay) are listed too, after the others
+            var rows = g.Regions.Concat(g.NoRelayHosts).ToList();
             if (Grouped(g))
             {
-                var groups = g.Regions.GroupBy(RegionKey)
+                var groups = rows.GroupBy(RegionKey)
                     .OrderBy(gr => gr.Key == "" ? 1 : 0)
                     .ThenByDescending(gr => gr.Key == "" ? 0 : activity[gr.Key]).ToList();
-                bool first = true;
+                bool first = true, russia = false;
                 foreach (var gr in groups)
                 {
-                    var h = new GroupHeader { Key = gr.Key, Matches = gr.Key == "" ? 0 : activity[gr.Key], Top = first && gr.Key != "" };
+                    if (gr.Key == "" && !russia) russia = AddRussiaHeader();
+                    AddHeader(new GroupHeader { Key = gr.Key, Matches = gr.Key == "" ? 0 : activity[gr.Key], Top = first && gr.Key != "" });
                     first = false;
-                    var hi = new ListViewItem("") { Tag = h };
-                    for (int i = 0; i < 7; i++) hi.SubItems.Add("");
-                    serverList.Items.Add(hi);
-                    foreach (var r in gr.OrderBy(x => LockedOut(g, x) ? 1 : 0).ThenBy(BestLatency)) AddRegionRow(r);
+                    foreach (var r in gr.OrderBy(x => x.NoRelay ? 2 : LockedOut(g, x) ? 1 : 0).ThenBy(BestLatency)) AddRegionRow(r);
                 }
+                if (!russia) AddRussiaHeader();
             }
             else
-                foreach (var r in g.Regions) AddRegionRow(r);
+                foreach (var r in rows) AddRegionRow(r);
             serverList.EndUpdate();
             RebuildChoices();
             UpdateCard();
+        }
+
+        void AddHeader(GroupHeader h)
+        {
+            var hi = new ListViewItem("") { Tag = h };
+            for (int i = 0; i < 7; i++) hi.SubItems.Add("");
+            serverList.Items.Add(hi);
+        }
+
+        // Deadlock: Russia has no datacenter of its own (its queue plays on the European ones), so it gets a header line
+        // of its own with its players and why it can't be picked. false when there are no numbers for it.
+        bool AddRussiaHeader()
+        {
+            int matches;
+            if (activity == null || !activity.TryGetValue(DeadlockData.Russia, out matches)) return false;
+            AddHeader(new GroupHeader { Key = DeadlockData.Russia, Matches = matches });
+            return true;
         }
 
         void AddRegionRow(Region r)
@@ -1260,6 +1278,9 @@ namespace PingBoost
         {
             if (h.Key == "") return T("Other regions (no player data)", "مناطق ثانية (ما عندنا أرقامها)");
             string name = Stats.MmRegions.ContainsKey(h.Key) ? Lang.T(Stats.MmRegions[h.Key][0], Stats.MmRegions[h.Key][1]) : h.Key;
+            if (h.Key == DeadlockData.Russia)
+                return name + "   ·   " + Stats.Approx(PlayersOf(h.Matches)) + T(" online", " أونلاين") + "   ·   " +
+                       T("separate queue on the European servers, the lock can't choose it", "قيم لحاله على سيرفرات أوروبا، والتثبيت ما يقدر يختاره");
             return name + "   ·   " + Stats.Approx(PlayersOf(h.Matches)) + T(" online", " أونلاين") +
                    "   ·   " + T("wait ", "الانتظار ") + Stats.EstimateWait(h.Matches);
         }
@@ -1270,7 +1291,7 @@ namespace PingBoost
             using (var b = new SolidBrush(Color.FromArgb(40, 30, 60))) e.Graphics.FillRectangle(b, row);
             var font = Fonts.Semi(10.5f);
             var text = Rectangle.Inflate(row, -14, 0);
-            TextRenderer.DrawText(e.Graphics, HeaderText(h), font, text, h.Key == "" ? Dim : Lavender,
+            TextRenderer.DrawText(e.Graphics, HeaderText(h), font, text, h.Key == "" || h.Key == DeadlockData.Russia ? Dim : Lavender,
                 TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | Align);
             if (h.Top)
             {
@@ -1390,8 +1411,11 @@ namespace PingBoost
                 MatchViaRelay = matchViaRelay,
                 CurrentServer = currentServer,
                 CurrentMs = currentMs,
-                NoMatchYet = noMatchLong && lockSummary != null && lockGame == g
+                NoMatchYet = noMatchLong && lockSummary != null && lockGame == g,
+                RussiaNote = g.AppId == "1422450"
             };
+            int russia;
+            if (input.RussiaNote && activity != null && activity.TryGetValue(DeadlockData.Russia, out russia)) input.RussiaPlayers = PlayersOf(russia);
             // Overwatch: the picked regions are all outside the game regions the player's matches were on
             if (g.CanLock && HasZones(g)) input.ZoneWarning = Zones.Warning(RegionGroups.Chosen(everyChoice), SeenZones(g));
             if (!g.CanLock)
@@ -1529,16 +1553,17 @@ namespace PingBoost
             var g = CurrentGame;
             item.SubItems[ColRegion].Text = (r.Here ? T("» ", "« ") : "") + r.Name + (r.Here ? T("  (you are here)", "  (إنت هنا)") : "") +
                                             (g != null && !g.Hosts(r) ? T("   ·  relay only", "   ·  وسيط بس") : "") +
+                                            (r.NoRelay ? T("   ·  can't be locked (Valve lists no relay here)", "   ·  ما ينثبّت (Valve ما تعطي وسيط له)") : "") +
                                             (devMode ? "   ·  ‎" + r.Cidrs.Count + " ranges‎" : "");
             item.SubItems[ColRegion].ForeColor = r.Here || r.Picked ? Accent : (r.Detected ? Warn : TextC);
 
             string mm;
             int matches;
-            if (g != null && g.AppId == "1422450" && activity != null && Stats.PopToMm.TryGetValue(r.Id, out mm) &&
+            if (g != null && g.AppId == "1422450" && activity != null && DeadlockData.Hosting.TryGetValue(r.Id, out mm) &&
                 activity.TryGetValue(mm, out matches))
             {
                 SetSub(item, ColPlayers, Stats.Approx(PlayersOf(matches)), TextC);
-                SetSub(item, ColWait, Stats.EstimateWait(matches), matches >= 100 ? Accent : matches >= 40 ? Warn : Bad);
+                SetSub(item, ColWait, Stats.EstimateWait(matches), matches >= Stats.FastQueue ? Accent : matches >= Stats.MediumQueue ? Warn : Bad);
             }
             else
             {
@@ -1546,6 +1571,13 @@ namespace PingBoost
                 SetSub(item, ColWait, "-", Dim);
             }
 
+            // hosts matches but has no relay: nothing to ping, and the lock never blocks it (it never says "blocked")
+            if (r.NoRelay)
+            {
+                item.SubItems[ColRegion].ForeColor = Dim;
+                foreach (int i in new[] { ColPing, ColJitter, ColLoss, ColVia, ColRoute }) SetSub(item, i, "-", Dim);
+                return;
+            }
             if (LockedOut(g, r))
             {
                 SetSub(item, ColPing, T("blocked", "محجوب"), Dim);
@@ -2571,7 +2603,7 @@ namespace PingBoost
             var g = CurrentGame;
             if (g == null || !btnBoost.Enabled) return;
             Region region = serverList.SelectedItems.Count > 0 ? serverList.SelectedItems[0].Tag as Region : null;
-            if (region == null || LockedOut(g, region))
+            if (region == null || region.NoRelay || LockedOut(g, region))
             {
                 region = g.Regions.Where(r => !LockedOut(g, r) && BestLatency(r) < double.MaxValue).OrderBy(BestLatency).FirstOrDefault();
                 if (region == null) { Msg(T("Press Test ping first, or pick a server from the list.", "اضغط «افحص البنق» أول، أو اختار سيرفر من القائمة."), ToastKind.Warn); return; }
@@ -2628,7 +2660,8 @@ namespace PingBoost
                 {
                     cidrs = new List<string>();
                     if (g.Provider == Provider.Aws) cidrs.AddRange(GameDb.AwsCidrs(region.Id));
-                    else cidrs.AddRange(region.Cidrs);
+                    // the relay tunnel carries IPv4 only (setup-relay.sh): IPv6 relay addresses stay on the normal route
+                    else cidrs.AddRange(region.Cidrs.Where(c => !RemoteAddress.IsV6(c)));
                     foreach (var ep in region.Endpoints)
                     {
                         var ip = Pinger.TryResolve(ep.Host);
