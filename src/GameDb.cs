@@ -65,7 +65,6 @@ namespace PingBoost
         public string[] LockAllow; // never blocked (the game's own services that aren't match servers)
         public string[] DetectIgnore; // never the server the player is on (voice chat, services): the server check skips them
         public string LockPorts;   // remote ports the lock covers (null = all)
-        public Dictionary<string, string[]> LockGroups; // "Play on it" picks the whole group, so matches are found quickly
         // Valve: the datacenters that host this game's matches (null = all). The others are only relays: the game
         // enters Valve's network through the closest one (e.g. Dubai for Saudi players) and rides it to the match
         // server. An open relay can carry a route to a blocked datacenter, so the lock closes the ones that reach a
@@ -197,18 +196,6 @@ namespace PingBoost
         // Practice Range host, the service hosts): none of them is a match server.
         static readonly string[] OwIgnore = new[] { "85.236.96.0/21" }.Concat(OwAllow).ToArray();
 
-        // Datacenters that make up one region. Allowing a whole region keeps queues short: Overwatch spreads players
-        // over all of them (the MINA server selector's queue tests passed 5 of 5 per region this way).
-        static readonly Dictionary<string, string[]> OwGroups = Groups(
-            new[] { "GMEC2", "GMEC1", "MES1" },          // Middle East
-            new[] { "GEW3", "AMS1", "CDG1", "GEN1" },    // Europe
-            new[] { "GUE4", "ORD1" },                    // North America east
-            new[] { "LAX1", "ORD1" },                    // North America west
-            new[] { "GBR1" },                            // Brazil
-            new[] { "ICN1", "GTK1", "TPE1" },            // East Asia
-            new[] { "GSG1" },                            // Southeast Asia
-            new[] { "SYD2" });                           // Australia
-
         // The regions Overwatch players choose between (datacenters grouped as the spec lists them).
         static readonly List<RegionDef> OwRegionMap = new List<RegionDef>
         {
@@ -231,13 +218,6 @@ namespace PingBoost
             RegionDef.Of("au", "Australia", "أستراليا", "ap-southeast-2"),
             RegionDef.Of("sa", "South America", "أمريكا الجنوبية", "sa-east-1"),
         };
-
-        static Dictionary<string, string[]> Groups(params string[][] groups)
-        {
-            var d = new Dictionary<string, string[]>();
-            foreach (var g in groups) foreach (var id in g) if (!d.ContainsKey(id)) d[id] = g;
-            return d;
-        }
 
         static List<Region> LoadOverwatch(Game g)
         {
@@ -318,7 +298,7 @@ namespace PingBoost
                 new Game { Name = "Arena Breakout: Infinite", Icon = "abi", Released = true, Provider = Provider.Tencent, SteamAppId = "2073620", Processes = new[] {"UAGame"},
                     NoteEn = "The game picks your region from your account. Join a raid and press Which server am I on? to see your real server.",
                     NoteAr = "اللعبة تحدد منطقتك من حسابك. ادخل رايد واضغط «على أي سيرفر أنا؟» عشان تعرف سيرفرك الحقيقي." },
-                new Game { Name = "Overwatch 2", Icon = "overwatch", Released = true, InDevelopment = true, Provider = Provider.Blizzard, SteamAppId = "2357570", Processes = new[] {"Overwatch"}, LockSpace = OwSpace, LockAllow = OwAllow, DetectIgnore = OwIgnore, LockGroups = OwGroups, RegionMap = OwRegionMap,
+                new Game { Name = "Overwatch 2", Icon = "overwatch", Released = true, InDevelopment = true, Provider = Provider.Blizzard, SteamAppId = "2357570", Processes = new[] {"Overwatch"}, LockSpace = OwSpace, LockAllow = OwAllow, DetectIgnore = OwIgnore, RegionMap = OwRegionMap,
                     LockPorts = "1-3723,3725-65535", // 3724 is Blizzard's own port: never block it
                     NoteEn = "Try a normal match first: if the game still picks a blocked region, the match won't load.",
                     NoteAr = "جرّبه في مباراة عادية أول: لو اللعبة اختارت منطقة محجوبة، المباراة ما تفتح." },
@@ -763,16 +743,6 @@ namespace PingBoost
                     AtomicFile.WriteAllLines(DetectedFile, lines);
                 }
                 catch { }
-        }
-
-        public static void AddCustom(string name, string endpoints, string cidrs)
-        {
-            lock (fileGate)
-            {
-                var lines = File.Exists(CustomFile) ? File.ReadAllLines(CustomFile).ToList() : new List<string>();
-                lines.Add(string.Join("\t", Clean(name), Clean(endpoints), Clean(cidrs)));
-                AtomicFile.WriteAllLines(CustomFile, lines);
-            }
         }
     }
 }

@@ -28,7 +28,7 @@ namespace PingBoost
         public static readonly Color Warn = Color.FromArgb(255, 198, 92);      // sparkle gold
 
         const double RelayMarginMs = 3; // a relay must beat direct by this much to be chosen
-        const int CheckArea = 34;       // width of the "play here" tick box in the region column
+        const int CheckArea = 34;       // width of the pick tick box in the region column
 
         // server list columns
         const int ColRegion = 0, ColPing = 1, ColJitter = 2, ColLoss = 3, ColPlayers = 4, ColWait = 5, ColVia = 6, ColRoute = 7;
@@ -1115,7 +1115,9 @@ namespace PingBoost
         // LRM marks keep "74 ms" in order inside right-to-left text.
         static string Ms(double v) { return v < 0 ? T("no reply", "ما يرد") : "‎" + Math.Round(v) + " ms‎"; }
 
-        static string ShortName(Region r) { return r.Name.Split(new[] { "  [", "  (" }, StringSplitOptions.None)[0]; }
+        static string ShortName(Region r) { return ShortName(r.Name); }
+
+        static string ShortName(string name) { return name.Split(new[] { "  [", "  (" }, StringSplitOptions.None)[0]; }
 
         static Color PingColor(double v)
         {
@@ -1565,8 +1567,6 @@ namespace PingBoost
             return def != null ? Lang.T(def.En, def.Ar) : ShortName(dc);
         }
 
-        static string Short(string name) { return name.Split(new[] { "  [", "  (" }, StringSplitOptions.None)[0]; }
-
         // A Valve relay's place in a word or two, for "via Dubai" / «عن طريق دبي».
         static string PlaceName(Region r)
         {
@@ -1665,7 +1665,7 @@ namespace PingBoost
                 return RegionGroups.Build(g, g.AppId == "1422450" ? activity : null, PlayersOf, BestLatency);
             return g.Regions.Where(r => g.Hosts(r) && !r.Detected).Select(r => new RegionChoice
             {
-                Def = RegionDef.Of(r.Id, Short(r.NameEn), Short(r.NameAr ?? r.NameEn), r.Id),
+                Def = RegionDef.Of(r.Id, ShortName(r.NameEn), ShortName(r.NameAr ?? r.NameEn), r.Id),
                 Members = new List<Region> { r },
                 Ping = BestLatency(r)
             }).ToList();
@@ -2222,12 +2222,6 @@ namespace PingBoost
             });
         }
 
-        // Region of a Valve game that owns this IP (relay or game server range), or null.
-        static Region ValveRegionOf(Game g, string ip)
-        {
-            return g.DatacenterOf(ip);
-        }
-
         // The addresses that can be the game's server: voice chat and service hosts (Game.DetectIgnore) are left out.
         internal static List<Detector.Hit> ServerHits(Game g, List<Detector.Hit> hits)
         {
@@ -2277,7 +2271,7 @@ namespace PingBoost
         internal static Region HostRegionOf(Game g, List<Detector.Hit> hits)
         {
             return hits.Where(h => g.Provider != Provider.Valve || Detector.CarriesMatch(h))
-                       .Select(h => ValveRegionOf(g, h.Ip)).FirstOrDefault(r => r != null && g.Hosts(r));
+                       .Select(h => g.DatacenterOf(h.Ip)).FirstOrDefault(r => r != null && g.Hosts(r));
         }
 
         // Where the game enters Valve's network when no address carries the match: Valve, the busiest of its addresses
@@ -2288,8 +2282,8 @@ namespace PingBoost
         // names the server itself; HostRegionOf's answer is the best the capture can do.
         internal static Region RelayRegionOf(Game g, List<Detector.Hit> hits)
         {
-            if (g.Provider == Provider.Valve) return hits.Select(h => ValveRegionOf(g, h.Ip)).FirstOrDefault(r => r != null);
-            return hits.Select(h => ValveRegionOf(g, h.Ip)).FirstOrDefault(r => r != null && !g.Hosts(r));
+            if (g.Provider == Provider.Valve) return hits.Select(h => g.DatacenterOf(h.Ip)).FirstOrDefault(r => r != null);
+            return hits.Select(h => g.DatacenterOf(h.Ip)).FirstOrDefault(r => r != null && !g.Hosts(r));
         }
 
         void DetectServer()
@@ -2328,7 +2322,7 @@ namespace PingBoost
                     {
                         File.AppendAllLines(Path.Combine(Storage.Dir, "traffic.txt"), hits.Select(h =>
                         {
-                            var dc = g.CanLock ? ValveRegionOf(g, h.Ip) : null;
+                            var dc = g.CanLock ? g.DatacenterOf(h.Ip) : null;
                             return string.Join("\t", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"), g.Name, h.Ip + ":" + h.Port,
                                                h.Packets + " packets", ((int)Math.Round(h.Share * 100)) + "%", dc != null ? dc.Id : "-",
                                                lockSummary != null ? "locked: " + lockSummary : "not locked");
@@ -2345,7 +2339,7 @@ namespace PingBoost
                             { "hits", hits.Take(8).Select(h => h.Ip + ":" + h.Port + " x" + h.Packets).ToArray() }
                         });
                     // games with known datacenters (Valve, Overwatch): name the datacenter and check it against the lock
-                    if (g.Provider == Provider.Valve || (g.CanLock && hits.Any(h => ValveRegionOf(g, h.Ip) != null)))
+                    if (g.Provider == Provider.Valve || (g.CanLock && hits.Any(h => g.DatacenterOf(h.Ip) != null)))
                         Ui(() =>
                         {
                             foreach (var h in hits)
@@ -2380,7 +2374,7 @@ namespace PingBoost
             btnDetect.Enabled = true;
             foreach (var r in g.Regions) r.Here = false;
             var found = hits.Where(h => g.Provider != Provider.Valve || Detector.CarriesMatch(h))
-                            .Select(h => ValveRegionOf(g, h.Ip)).Where(r => r != null && g.Hosts(r)).Distinct().ToList();
+                            .Select(h => g.DatacenterOf(h.Ip)).Where(r => r != null && g.Hosts(r)).Distinct().ToList();
             var relay = found.Count == 0 ? RelayRegionOf(g, hits) : null;
             if (relay != null)
             {
@@ -2558,7 +2552,7 @@ namespace PingBoost
                         hits = ServerHits(g, Detector.Capture(g.Processes, 8, out matched)); // never voice chat or services
                         logDc = ReadGameLog(g, out gameStart, out readAt); // Deadlock with -condebug: the real answer
                         // games without a datacenter list: the main server's city
-                        if (hits.Count > 0 && !hits.Any(h => ValveRegionOf(g, h.Ip) != null)) where = Stats.Locate(hits[0].Ip);
+                        if (hits.Count > 0 && !hits.Any(h => g.DatacenterOf(h.Ip) != null)) where = Stats.Locate(hits[0].Ip);
                         // games that can't be locked: the card shows that server's ping too
                         if (where != null && !g.CanLock)
                         {
@@ -2876,6 +2870,7 @@ namespace PingBoost
                                       "جرّبه في مباراة عادية أول (مو رانكد): لو اللعبة اختارت سيرفر محجوب المباراة ما تفتح، وفي الرانكد تنحسب منسحب."), ToastKind.Warn);
                             AdvancedMsg(T("If the game is open, restart it (or wait a minute) before you queue.",
                                   "لو اللعبة مفتوحة، اقفلها وافتحها من جديد (أو استنى دقيقة) قبل ما تدوّر مباراة."));
+                            // once: the minimize tip (the key keeps its old name from the tray icon days, so it never shows twice)
                             if (Storage.GetSetting("tip_tray") != "1")
                             {
                                 Storage.SetSetting("tip_tray", "1");
@@ -3612,7 +3607,6 @@ namespace PingBoost
         void DevResetFirstRun()
         {
             foreach (var k in new[] { "beta_ack", "tip_tray" }) Storage.SetSetting(k, "");
-            foreach (var g in games) Storage.SetSetting("tip_" + g.Icon, "");
             DevOut("first-run notices and tips will show again (the welcome screen needs consent=0 in settings.txt)");
         }
 
