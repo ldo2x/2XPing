@@ -957,9 +957,10 @@ namespace PingBoost
         }
 
         // A notice the simple layout leaves out because the state card already says it; the advanced layout keeps it.
+        // While the window is hidden or minimized the card can't be seen, so the notice still goes through (as a tray balloon).
         void AdvancedMsg(string text, ToastKind kind = ToastKind.Info)
         {
-            if (!simple) Msg(text, kind);
+            if (!simple || !Visible || WindowState == FormWindowState.Minimized) Msg(text, kind);
         }
 
         // LRM marks keep "74 ms" in order inside right-to-left text.
