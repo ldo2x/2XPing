@@ -37,6 +37,8 @@ namespace PingBoost
         public int RussiaPlayers = -1;
         // Valve: what the strict lock on the chosen regions costs (StrictLock), told on the card; null = nothing to tell
         public RouteNote Route;
+        // the pings shown are from an earlier session: the game was open, so no test ran on its own (performance audit item 4)
+        public bool OldPings;
     }
 
     // The "-condebug" hint: None (the log is on, or not Deadlock); Link (simple layout: a small link, only while the
@@ -129,6 +131,7 @@ namespace PingBoost
                                 "أحسن سيرفر لك: " + i.BestServer + PingPart(i.BestMs, "your ping is about ", "بنقك تقريباً ")),
                         Lang.T("Pick it from inside the game.", "اختاره من داخل اللعبة."), null);
                     best.ShowTest = !i.Testing;
+                    if (i.OldPings && !i.Testing) best.Sub += " " + OldPingsText(i.Game);
                     return best;
                 }
             }
@@ -141,6 +144,7 @@ namespace PingBoost
                 if (i.Route != null && i.ZoneWarning == null && v.Button != null) v.Sub = RouteText(i.Route);
                 if (i.RussiaNote) v.Note = RussiaNote(i.RussiaPlayers);
                 else if (i.InDevelopment) v.Note = InDevelopmentNote();
+                if (i.OldPings && !i.Testing) v.Note = OldPingsText(i.Game) + (v.Note != null ? "\n" + v.Note : "");
                 return v;
             }
 
@@ -280,6 +284,13 @@ namespace PingBoost
         {
             if (ms < 0) return "";
             return " · " + Lang.T(en, ar) + ms;
+        }
+
+        // Why the pings shown are old, and how to refresh them.
+        public static string OldPingsText(string game)
+        {
+            return Lang.T("Pings from last time. " + game + " is open; press Test ping to refresh them.",
+                          "البنق من آخر مرة. " + game + " مفتوحة، اضغط «افحص البنق» عشان تحدّثه.");
         }
 
         static CardView Searching()

@@ -42,9 +42,16 @@ namespace PingBoost
                 string file = ReleasesFile, etag, fresh;
                 string saved = ReadSaved(file, out etag);
                 string json = Http.GetIfChanged(ReleasesUrl, 10000, saved != null ? etag : null, out fresh);
-                if (json == null) json = saved; // 304: the same releases as last time
-                else Save(file, fresh, json);
-                return Newest(json);
+                if (json == null)
+                {
+                    // 304: the same releases as last time. A saved copy that doesn't read is dropped, so the next check
+                    // asks for the whole answer again instead of getting 304 for it forever.
+                    try { return Newest(saved); }
+                    catch { Save(file, null, null); throw; }
+                }
+                var r = Newest(json);
+                Save(file, fresh, json); // only an answer that reads is kept
+                return r;
             }
             catch { return null; }
         }

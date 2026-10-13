@@ -75,7 +75,8 @@ namespace PingBoost
             int calls = 0;
             Func<string, string> ok = x => { calls++; return "Germany - Frankfurt"; };
             var t = new DateTime(2026, 10, 13, 12, 0, 0, DateTimeKind.Utc);
-            string ip = "203.0.113." + new Random().Next(1, 250); // never one another test remembered
+            Stats.ClearLocated(); // nothing remembered from before
+            string ip = "203.0.113.7";
             Check(Stats.Locate(ip, t, ok) == "Germany - Frankfurt", "first answer");
             Check(Stats.Locate(ip, t.AddMinutes(30), ok) == "Germany - Frankfurt" && calls == 1, "remembered for the hour: " + calls);
             Stats.Locate(ip, t.AddMinutes(61), ok);
@@ -83,7 +84,7 @@ namespace PingBoost
 
             int fails = 0;
             Func<string, string> down = x => { fails++; return null; };
-            string other = "198.51.100." + new Random().Next(1, 250);
+            string other = "198.51.100.7";
             Check(Stats.Locate(other, t, down) == null, "failed lookup is null");
             Stats.Locate(other, t.AddMinutes(5), down);
             Check(fails == 1, "a failure isn't retried every check: " + fails);
@@ -155,8 +156,45 @@ namespace PingBoost
             Check(Telemetry.OnlineWindow > Telemetry.HeartbeatEvery + Telemetry.HeartbeatEvery, "online window covers two beats");
         }
 
+        static void HeartbeatKeepsItsConnection()
+        {
+            Check(Telemetry.KeepConnection > Telemetry.HeartbeatEvery, "the connection outlives the gap between beats: " + Telemetry.KeepConnection);
+            Telemetry.KeepConnectionOpen();
+            var sp = System.Net.ServicePointManager.FindServicePoint(new Uri(Telemetry.SupabaseUrl));
+            Check(sp.MaxIdleTime == (int)Telemetry.KeepConnection.TotalMilliseconds, "Supabase's service point keeps it: " + sp.MaxIdleTime);
+        }
+
+        // The game was open, so no test ran on its own: the card says the pings are old and how to refresh them,
+        // in both layouts' cards (tiles: the note; "best server": the line under it), never while a test runs
+        static void CardSaysOldPingsWhileTheGameIsOpen()
+        {
+            Lang.Ar = true;
+            var i = Lockable(Choice("eu", "Europe", "أوروبا", 60, true));
+            i.OldPings = true;
+            var v = CardLogic.Decide(i);
+            Check(v.Kind == CardKind.Choose && v.Note == "البنق من آخر مرة. Deadlock مفتوحة، اضغط «افحص البنق» عشان تحدّثه.", "Arabic note: " + v.Note);
+            Check(v.ShowTest, "the test link is there to press");
+            i.RussiaNote = true;
+            v = CardLogic.Decide(i);
+            Check(v.Note.StartsWith("البنق من آخر مرة.") && v.Note.Contains("\n") && v.Note.Contains("روسيا"), "Russia's note stays under it: " + v.Note);
+            Lang.Ar = false;
+            i.RussiaNote = false;
+            Check(CardLogic.Decide(i).Note == "Pings from last time. Deadlock is open; press Test ping to refresh them.", "English note");
+            i.Testing = true;
+            Check(CardLogic.Decide(i).Note == null, "no old-pings note while the test runs");
+            i.Testing = false;
+            i.OldPings = false;
+            Check(CardLogic.Decide(i).Note == null, "fresh pings: no note");
+
+            var best = new CardInput { Game = "Overwatch 2", Loaded = true, BestServer = "Saudi Arabia", BestMs = 30, OldPings = true };
+            v = CardLogic.Decide(best);
+            Check(v.Kind == CardKind.BestOnly && v.Sub.EndsWith("Overwatch 2 is open; press Test ping to refresh them."), "best-server card: " + v.Sub);
+        }
+
         static void RunPerfTests()
         {
+            Run("HeartbeatKeepsItsConnection", HeartbeatKeepsItsConnection);
+            Run("CardSaysOldPingsWhileTheGameIsOpen", CardSaysOldPingsWhileTheGameIsOpen);
             Run("IpListParsedOnceForEveryRegion", IpListParsedOnceForEveryRegion);
             Run("IpListParsersOfGoogleAndRipe", IpListParsersOfGoogleAndRipe);
             Run("LocateAsksOncePerAddress", LocateAsksOncePerAddress);

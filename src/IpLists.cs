@@ -59,7 +59,8 @@ namespace PingBoost
         // How many times a list file was parsed (tests and measurements).
         internal static int ParseCount;
 
-        internal static void ClearParsed() { lock (parsed) parsed.Clear(); }
+        // Forgets the parsed lists (the developer "Refresh IP lists" button, tests): the next lookup reads the files again.
+        public static void ClearParsed() { lock (parsed) parsed.Clear(); }
 
         static Dictionary<string, List<string>> Grouped(string name, string url, Func<string, Dictionary<string, List<string>>> parse)
         {

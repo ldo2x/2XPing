@@ -68,6 +68,7 @@ namespace PingBoost
 
         bool busy, boosting, clickedCheck;
         readonly HashSet<Game> tested = new HashSet<Game>(); // games tested since the app opened
+        readonly HashSet<Game> notAutoTested = new HashSet<Game>(); // the automatic test was skipped: the game was open
         volatile bool tunnelActive;
         int monitorGen;     // read by the monitor thread: always through Volatile/Interlocked
         int boostGen;       // bumped by Stop: a relay route still being built then goes away instead of starting
@@ -1188,7 +1189,8 @@ namespace PingBoost
                     try { GameDb.Load(g); err = null; break; }
                     catch (Exception ex) { err = ex.Message; Thread.Sleep(1500); }
                 }
-                // the game is open (maybe in a match): no automatic test, only the Test ping button (performance audit item 4)
+                // the game is open (maybe in a match): no automatic test (performance audit item 4); the card says the pings
+                // are from last time and how to refresh them (CardInput.OldPings)
                 bool gameOpen = false;
                 try { gameOpen = err == null && Prefs.AutoTest && Detector.IsRunning(g.Processes); } catch { }
                 Ui(() =>
@@ -1224,8 +1226,12 @@ namespace PingBoost
                         RunTest();
                     }
                     else if (gameOpen && !tested.Contains(g))
+                    {
+                        notAutoTested.Add(g);
+                        UpdateCard();
                         SetStatus(T(g.Name + " is open, so we didn't test on our own (it would add traffic to your match). Press Test ping when you want.",
                                     g.Name + " مفتوحة، فما فحصنا من نفسنا عشان ما نزحم اتصال مباراتك. اضغط «افحص البنق» لما تبغى."));
+                    }
                     else
                         SetStatus(g.Regions.Count + T(" regions ready. Press Test ping.", " منطقة جاهزة، اضغط «افحص البنق»."));
                 });
@@ -1724,7 +1730,8 @@ namespace PingBoost
                 CurrentServer = currentServer,
                 CurrentMs = currentMs,
                 NoMatchYet = noMatchLong && lockSummary != null && lockGame == g,
-                RussiaNote = g.AppId == "1422450"
+                RussiaNote = g.AppId == "1422450",
+                OldPings = notAutoTested.Contains(g) && !tested.Contains(g)
             };
             int russia;
             if (input.RussiaNote && activity != null && activity.TryGetValue(DeadlockData.Russia, out russia)) input.RussiaPlayers = PlayersOf(russia);
@@ -1937,8 +1944,8 @@ namespace PingBoost
                 if (item.Tag == r) { UpdateRow(item); serverList.Invalidate(item.Bounds); return; }
         }
 
-        // Regions pinged at the same time in a test. Deadlock's 32 regions (63 addresses): about 1.9 s at 16 against 1.5-2.0 s
-        // at 64, with at most 32 probes in flight instead of 43-63 (measured 2026-10-13).
+        // Regions pinged at the same time in a test. Deadlock's 32 regions (63 addresses): 1.85-1.88 s at 16 against 1.49-1.72 s
+        // at 64 (a little slower), with at most 32 probes in flight instead of 43 (measured 2026-10-13).
         internal const int TestParallel = 16;
 
         void RunTest()
@@ -2571,6 +2578,7 @@ namespace PingBoost
                     if (!running)
                     {
                         lastObservedCheck = DateTime.MinValue; // time with the game closed is never "no match yet"
+                        if (notAutoTested.Remove(g)) UpdateCard(); // the card no longer says the game is open
                         if (lastAutoServer != null) ResetDetectButton();
                         if (matchRegion != null || matchViaRelay || currentServer != null) { ClearMatch(); UpdateCard(); }
                         return;
@@ -3562,6 +3570,7 @@ namespace PingBoost
         void DevRefreshLists()
         {
             try { Directory.Delete(Path.Combine(Storage.Dir, "cache"), true); } catch { }
+            IpLists.ClearParsed(); // the lists parsed in memory would otherwise stay for up to a day
             foreach (var g in games) g.Loaded = false;
             DevOut("IP list cache cleared, reloading the current game");
             OnGameChanged();

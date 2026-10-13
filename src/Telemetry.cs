@@ -24,10 +24,27 @@ namespace PingBoost
         public static int Ping = -1;
 
         static System.Threading.Timer heartbeat;
-        // "still open" every 2 minutes (ruling R2, was every minute: about 54 KB an hour instead of 108); the developer
-        // panel counts an install as online for OnlineWindow after its last one: two beats and a margin
+        // "still open" every 2 minutes (ruling R2, was every minute); the developer panel counts an install as online for
+        // OnlineWindow after its last one: two beats and a margin
         public static readonly TimeSpan HeartbeatEvery = TimeSpan.FromSeconds(120);
         public static readonly TimeSpan OnlineWindow = TimeSpan.FromMinutes(4.5);
+        // .NET closes a connection after 100 s idle by default, so every 2-minute beat would pay a new TCP + TLS handshake
+        // (about 5 KB). Kept open a little longer than one beat, one connection carries them all: measured 1 connection
+        // for 3 posts 120 s apart instead of 3 (loopback listener, 2026-10-13); Supabase itself kept an idle TLS connection
+        // open for 125 s.
+        public static readonly TimeSpan KeepConnection = HeartbeatEvery + TimeSpan.FromSeconds(30);
+        static System.Net.ServicePoint supabasePoint; // held, so the setting lives as long as the app
+
+        // The Supabase connection is kept open across heartbeats (KeepConnection).
+        internal static void KeepConnectionOpen()
+        {
+            try
+            {
+                if (supabasePoint == null) supabasePoint = System.Net.ServicePointManager.FindServicePoint(new Uri(SupabaseUrl));
+                supabasePoint.MaxIdleTime = (int)KeepConnection.TotalMilliseconds;
+            }
+            catch { }
+        }
         static string country, city, isp, asn;
         static readonly DateTime sessionStart = DateTime.UtcNow;
         // one random id per launch, so the events of a session can be grouped
@@ -65,6 +82,7 @@ namespace PingBoost
         public static void Start(List<Game> games, long startupMs)
         {
             if (!Configured || !HasConsent) return;
+            KeepConnectionOpen();
             ThreadPool.QueueUserWorkItem(delegate
             {
                 // offline, or the statistics server paused: never a reason to crash (an exception here would end the app)

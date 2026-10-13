@@ -185,6 +185,8 @@ namespace PingBoost
             return place;
         }
 
+        internal static void ClearLocated() { lock (located) located.Clear(); } // tests
+
         static string LocateOnline(string ip)
         {
             try
