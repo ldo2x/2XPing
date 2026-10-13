@@ -24,6 +24,10 @@ namespace PingBoost
         public static int Ping = -1;
 
         static System.Threading.Timer heartbeat;
+        // "still open" every 2 minutes (ruling R2, was every minute: about 54 KB an hour instead of 108); the developer
+        // panel counts an install as online for OnlineWindow after its last one: two beats and a margin
+        public static readonly TimeSpan HeartbeatEvery = TimeSpan.FromSeconds(120);
+        public static readonly TimeSpan OnlineWindow = TimeSpan.FromMinutes(4.5);
         static string country, city, isp, asn;
         static readonly DateTime sessionStart = DateTime.UtcNow;
         // one random id per launch, so the events of a session can be grouped
@@ -73,7 +77,7 @@ namespace PingBoost
                 }
                 catch { }
             });
-            if (heartbeat == null) heartbeat = new System.Threading.Timer(delegate { Send("heartbeat", null, -1, null); }, null, 60000, 60000);
+            if (heartbeat == null) heartbeat = new System.Threading.Timer(delegate { Send("heartbeat", null, -1, null); }, null, HeartbeatEvery, HeartbeatEvery);
         }
 
         // Sent right away and waited for (a few seconds at most): for reports made just before the app dies.
@@ -527,7 +531,7 @@ namespace PingBoost
         void Fill()
         {
             var now = DateTime.Now;
-            var on = installs.Where(r => now - T(r, "last_seen") < TimeSpan.FromMinutes(2.5)).ToList();
+            var on = installs.Where(r => now - T(r, "last_seen") < Telemetry.OnlineWindow).ToList();
             int today = installs.Count(r => T(r, "last_seen").Date == now.Date);
             int week = installs.Count(r => now - T(r, "last_seen") < TimeSpan.FromDays(7));
             summary.Text = "Online now: " + on.Count + "     Today: " + today + "     7 days: " + week + "     All users: " + installs.Length +

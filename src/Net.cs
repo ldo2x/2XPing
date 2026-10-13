@@ -196,6 +196,35 @@ namespace PingBoost
             using (var sr = new StreamReader(resp.GetResponseStream()))
                 return sr.ReadToEnd();
         }
+
+        // A GET that sends the ETag of the copy already held (If-None-Match): null when the server answers 304 (nothing
+        // changed, about 1.5 KB of headers and no body), otherwise the body and its new ETag (null if it sent none).
+        public static string GetIfChanged(string url, int timeout, string etag, out string newEtag)
+        {
+            var req = (HttpWebRequest)WebRequest.Create(url);
+            req.Timeout = timeout;
+            req.ReadWriteTimeout = timeout;
+            req.UserAgent = "2XPing/" + Brand.Version;
+            req.AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate;
+            if (!string.IsNullOrEmpty(etag)) req.Headers[HttpRequestHeader.IfNoneMatch] = etag;
+            try
+            {
+                using (var resp = (HttpWebResponse)req.GetResponse())
+                using (var sr = new StreamReader(resp.GetResponseStream()))
+                {
+                    newEtag = resp.Headers[HttpResponseHeader.ETag];
+                    return sr.ReadToEnd();
+                }
+            }
+            catch (WebException ex)
+            {
+                var resp = ex.Response as HttpWebResponse;
+                if (resp == null || resp.StatusCode != HttpStatusCode.NotModified) throw;
+                resp.Close();
+                newEtag = etag;
+                return null;
+            }
+        }
     }
 
     class Relay

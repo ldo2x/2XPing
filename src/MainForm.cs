@@ -200,7 +200,8 @@ namespace PingBoost
         {
             if (gameList.Items.Count == 0) return;
             var list = gameList.Items.Cast<Game>().ToList();
-            var pick = list.FirstOrDefault(g => g.Processes.Length > 0 && Detector.IsRunning(g.Processes));
+            var running = Detector.Processes(); // one look at the process list for every game
+            var pick = list.FirstOrDefault(g => g.Processes.Length > 0 && Detector.IsRunning(running, g.Processes));
             if (pick != null) Log(T(pick.Name + " is running, so it's selected.", pick.Name + " مفتوحة، فاخترتها لك."));
             else pick = list.FirstOrDefault(g => g.Icon == Storage.GetSetting("last_game"));
             gameList.SelectedItem = pick ?? list[0];
@@ -1187,6 +1188,9 @@ namespace PingBoost
                     try { GameDb.Load(g); err = null; break; }
                     catch (Exception ex) { err = ex.Message; Thread.Sleep(1500); }
                 }
+                // the game is open (maybe in a match): no automatic test, only the Test ping button (performance audit item 4)
+                bool gameOpen = false;
+                try { gameOpen = err == null && Prefs.AutoTest && Detector.IsRunning(g.Processes); } catch { }
                 Ui(() =>
                 {
                     if (CurrentGame != g) return;
@@ -1214,11 +1218,14 @@ namespace PingBoost
                     LoadStats(g);
                     if (g.Regions.Count == 0)
                         SetStatus(T("No servers for this game right now. Try again in a bit.", "ما لقينا سيرفرات لهادي اللعبة دحين، جرّب بعد شوي."));
-                    else if ((Prefs.AutoTest && !tested.Contains(g)) || retestGame == g)
+                    else if ((Prefs.AutoTest && !tested.Contains(g) && !gameOpen) || retestGame == g)
                     {
                         retestGame = null;
                         RunTest();
                     }
+                    else if (gameOpen && !tested.Contains(g))
+                        SetStatus(T(g.Name + " is open, so we didn't test on our own (it would add traffic to your match). Press Test ping when you want.",
+                                    g.Name + " مفتوحة، فما فحصنا من نفسنا عشان ما نزحم اتصال مباراتك. اضغط «افحص البنق» لما تبغى."));
                     else
                         SetStatus(g.Regions.Count + T(" regions ready. Press Test ping.", " منطقة جاهزة، اضغط «افحص البنق»."));
                 });
@@ -1930,6 +1937,10 @@ namespace PingBoost
                 if (item.Tag == r) { UpdateRow(item); serverList.Invalidate(item.Bounds); return; }
         }
 
+        // Regions pinged at the same time in a test. Deadlock's 32 regions (63 addresses): about 1.9 s at 16 against 1.5-2.0 s
+        // at 64, with at most 32 probes in flight instead of 43-63 (measured 2026-10-13).
+        internal const int TestParallel = 16;
+
         void RunTest()
         {
             var g = CurrentGame;
@@ -1959,8 +1970,9 @@ namespace PingBoost
                     Ui(RefreshRelays);
 
                     int done = 0;
-                    // every region (and each of its addresses) at once: the whole test takes about as long as the slowest server
-                    Parallel.ForEach(regions, new ParallelOptions { MaxDegreeOfParallelism = 64 }, r =>
+                    // TestParallel regions (and each one's addresses) at a time: fewer probes at once for about the same
+                    // test time (performance audit item 4)
+                    Parallel.ForEach(regions, new ParallelOptions { MaxDegreeOfParallelism = TestParallel }, r =>
                     {
                         var results = r.Endpoints.AsParallel().AsOrdered().Select(ep => Pinger.Measure(ep, 3, 1000)).ToList();
                         PingResult best = null;
@@ -2081,7 +2093,7 @@ namespace PingBoost
                     if (Updater.Forced(r))
                     {
                         // don't pull the rug in the middle of a match: force it on the next launch instead
-                        if (!atStart && games.Any(g => g.Processes.Length > 0 && Detector.IsRunning(g.Processes))) return;
+                        if (!atStart) { var running = Detector.Processes(); if (games.Any(g => Detector.IsRunning(running, g.Processes))) return; }
                         ForceUpdate(r);
                     }
                     else if (!updatePrompted)
@@ -2568,10 +2580,29 @@ namespace PingBoost
             });
         }
 
+        // Is one of the listed games the window in front (someone is playing)?
+        bool GameInFront()
+        {
+            uint pid;
+            GetWindowThreadProcessId(GetForegroundWindow(), out pid);
+            if (pid == 0 || pid == myPid) return false;
+            try
+            {
+                using (var p = Process.GetProcessById((int)pid))
+                {
+                    string name = p.ProcessName;
+                    return allGames.Any(g => g.Processes.Any(n => string.Equals(n, name, StringComparison.OrdinalIgnoreCase)));
+                }
+            }
+            catch { return false; } // it closed meanwhile, or Windows wouldn't say
+        }
+
         // The lock's firewall rules can vanish (antivirus, another tool, a firewall reset): check every 2 minutes.
         void CheckLockRules()
         {
             if (lockSummary == null || DateTime.Now - lastRulesCheck < TimeSpan.FromMinutes(2)) return;
+            // never a netsh start while the player is in the game; it runs once they look at anything else (audit item 9)
+            if (GameInFront()) return;
             lastRulesCheck = DateTime.Now;
             string locked = lockSummary;
             FirewallWorker.Run(() =>

@@ -280,6 +280,7 @@ namespace PingBoost
             RunLockTestTests();
             RunZoneTests();
             RunSafetyTests();
+            RunPerfTests();
             Console.WriteLine(failures == 0 ? "ALL PASS" : failures + " FAILED");
             return failures == 0 ? 0 : 1;
         }

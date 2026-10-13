@@ -18,24 +18,113 @@ namespace PingBoost
     {
         static string CacheDir { get { return Path.Combine(Storage.Dir, "cache"); } }
 
-        static string Cached(string name, string url)
+        // The text of a list (downloaded at most once a day) and until when it counts as current: a day after the file
+        // was written, or an hour when a failed download fell back to an older copy (then it is asked again sooner).
+        static string Cached(string name, string url, out DateTime validUntil)
         {
             Directory.CreateDirectory(CacheDir);
             string file = Path.Combine(CacheDir, name);
-            if (File.Exists(file) && File.GetLastWriteTimeUtc(file) > DateTime.UtcNow.AddHours(-24)) return File.ReadAllText(file);
+            if (File.Exists(file))
+            {
+                DateTime written = File.GetLastWriteTimeUtc(file);
+                if (written > DateTime.UtcNow.AddHours(-24)) { validUntil = written.AddHours(24); return File.ReadAllText(file); }
+            }
             try
             {
                 string text = Http.Get(url, 30000);
                 // a good download is used even if the cache can't be written this time
                 try { AtomicFile.WriteAllText(file, text); } catch { }
+                validUntil = DateTime.UtcNow.AddHours(24);
                 return text;
             }
             catch (Exception ex)
             {
-                if (File.Exists(file)) return File.ReadAllText(file); // offline: yesterday's list is fine
+                // offline: yesterday's list is fine
+                if (File.Exists(file)) { validUntil = DateTime.UtcNow.AddHours(1); return File.ReadAllText(file); }
                 Issues.Report("ip_lists_failed", name + ": " + ex.Message, null, name);
                 throw;
             }
+        }
+
+        // Each list file is parsed once and its prefixes grouped by region (scope): the AWS file is 2.7 MB, and a game
+        // with 15 regions used to parse it 15 times on every load, lock and boost (performance audit item 1).
+        class Parsed
+        {
+            public DateTime ValidUntil;
+            public Dictionary<string, List<string>> ByKey;
+        }
+
+        static readonly Dictionary<string, Parsed> parsed = new Dictionary<string, Parsed>();
+
+        // How many times a list file was parsed (tests and measurements).
+        internal static int ParseCount;
+
+        internal static void ClearParsed() { lock (parsed) parsed.Clear(); }
+
+        static Dictionary<string, List<string>> Grouped(string name, string url, Func<string, Dictionary<string, List<string>>> parse)
+        {
+            lock (parsed)
+            {
+                Parsed p;
+                if (parsed.TryGetValue(name, out p) && DateTime.UtcNow < p.ValidUntil) return p.ByKey;
+                DateTime validUntil;
+                string text = Cached(name, url, out validUntil);
+                p = new Parsed { ValidUntil = validUntil, ByKey = parse(text) };
+                ParseCount++;
+                parsed[name] = p;
+                return p.ByKey;
+            }
+        }
+
+        static void Add(Dictionary<string, List<string>> by, string key, string cidr)
+        {
+            List<string> list;
+            if (!by.TryGetValue(key ?? "", out list)) by[key ?? ""] = list = new List<string>();
+            list.Add(cidr);
+        }
+
+        // Google Cloud: "*" holds every IPv4 prefix, each scope (region) its own.
+        internal static Dictionary<string, List<string>> ParseGcp(string text)
+        {
+            var by = new Dictionary<string, List<string>> { { "*", new List<string>() } };
+            var root = (Dictionary<string, object>)Json(text);
+            foreach (var p in Items(root["prefixes"]))
+            {
+                string cidr = S(p, "ipv4Prefix");
+                if (cidr == null) continue;
+                by["*"].Add(cidr);
+                Add(by, S(p, "scope"), cidr);
+            }
+            return by;
+        }
+
+        // Amazon: EC2 only, "*" every region together, each region its own.
+        internal static Dictionary<string, List<string>> ParseAws(string text)
+        {
+            var by = new Dictionary<string, List<string>> { { "*", new List<string>() } };
+            var root = (Dictionary<string, object>)Json(text);
+            foreach (var p in Items(root["prefixes"]))
+            {
+                if (S(p, "service") != "EC2") continue;
+                string cidr = S(p, "ip_prefix");
+                by["*"].Add(cidr);
+                Add(by, S(p, "region"), cidr);
+            }
+            return by;
+        }
+
+        // RIPEstat announced prefixes of one network: IPv4 only, all under "*".
+        internal static Dictionary<string, List<string>> ParseAsn(string text)
+        {
+            var list = new List<string>();
+            var root = (Dictionary<string, object>)Json(text);
+            var data = (Dictionary<string, object>)root["data"];
+            foreach (var p in Items(data["prefixes"]))
+            {
+                string cidr = S(p, "prefix");
+                if (cidr != null && cidr.IndexOf(':') < 0) list.Add(cidr);
+            }
+            return new Dictionary<string, List<string>> { { "*", list } };
         }
 
         static object Json(string text)
@@ -63,39 +152,22 @@ namespace PingBoost
             return all;
         }
 
+        // A new list on every call (callers add to it); the parsed lists behind it are shared and never changed.
         public static List<string> Resolve(string spec)
         {
             int i = spec.IndexOf(':');
             string kind = i > 0 ? spec.Substring(0, i) : "", arg = i > 0 ? spec.Substring(i + 1) : spec;
-            var list = new List<string>();
-            if (kind == "gcp")
-            {
-                var root = (Dictionary<string, object>)Json(Cached("google-cloud.json", "https://www.gstatic.com/ipranges/cloud.json"));
-                foreach (var p in Items(root["prefixes"]))
-                {
-                    string cidr = S(p, "ipv4Prefix");
-                    if (cidr != null && (arg == "*" || S(p, "scope") == arg)) list.Add(cidr);
-                }
-            }
-            else if (kind == "aws")
-            {
-                var root = (Dictionary<string, object>)Json(Cached("aws-ip-ranges.json", "https://ip-ranges.amazonaws.com/ip-ranges.json"));
-                foreach (var p in Items(root["prefixes"]))
-                    if (S(p, "service") == "EC2" && (arg == "*" || S(p, "region") == arg)) list.Add(S(p, "ip_prefix"));
-            }
+            Dictionary<string, List<string>> by;
+            if (kind == "gcp") by = Grouped("google-cloud.json", "https://www.gstatic.com/ipranges/cloud.json", ParseGcp);
+            else if (kind == "aws") by = Grouped("aws-ip-ranges.json", "https://ip-ranges.amazonaws.com/ip-ranges.json", ParseAws);
             else if (kind == "asn")
             {
-                var root = (Dictionary<string, object>)Json(Cached("asn-" + arg + ".json",
-                    "https://stat.ripe.net/data/announced-prefixes/data.json?resource=AS" + arg));
-                var data = (Dictionary<string, object>)root["data"];
-                foreach (var p in Items(data["prefixes"]))
-                {
-                    string cidr = S(p, "prefix");
-                    if (cidr != null && cidr.IndexOf(':') < 0) list.Add(cidr);
-                }
+                by = Grouped("asn-" + arg + ".json", "https://stat.ripe.net/data/announced-prefixes/data.json?resource=AS" + arg, ParseAsn);
+                arg = "*";
             }
-            else list.Add(spec);
-            return list;
+            else return new List<string> { spec };
+            List<string> list;
+            return by.TryGetValue(arg, out list) ? new List<string>(list) : new List<string>();
         }
 
         // ---------------------------------------------------------------- IPv4 ranges

@@ -28,39 +28,83 @@ namespace PingBoost
 
         static Version Mine { get { return new Version(Brand.VersionNumber.Major, Brand.VersionNumber.Minor, Brand.VersionNumber.Build); } }
 
+        // The three newest releases are enough (GitHub lists the newest first), and the answer is asked for with the ETag of
+        // the last one: when nothing changed GitHub sends a 304 with no body (performance audit item 6).
+        const string ReleasesUrl = "https://api.github.com/repos/" + Brand.Repo + "/releases?per_page=3";
+
+        static string ReleasesFile { get { return Path.Combine(Path.Combine(Storage.Dir, "cache"), "releases.txt"); } }
+
         // The newest release on GitHub that is newer than this one (pre-releases included), or null.
         public static Release Latest()
         {
             try
             {
-                string json = Http.Get("https://api.github.com/repos/" + Brand.Repo + "/releases?per_page=10", 10000);
-                Release best = null;
-                foreach (var o in (object[])new JavaScriptSerializer().DeserializeObject(json))
-                {
-                    var d = (Dictionary<string, object>)o;
-                    if (d.ContainsKey("draft") && true.Equals(d["draft"])) continue;
-                    var tag = d["tag_name"] as string;
-                    var m = Regex.Match(tag ?? "", @"(\d+)\.(\d+)\.(\d+)");
-                    if (!m.Success) continue;
-                    var r = new Release
-                    {
-                        Tag = tag,
-                        Ver = new Version(int.Parse(m.Groups[1].Value), int.Parse(m.Groups[2].Value), int.Parse(m.Groups[3].Value)),
-                        Optional = ((d.ContainsKey("body") ? d["body"] as string : null) ?? "").Contains("#optional")
-                    };
-                    var assets = d.ContainsKey("assets") ? d["assets"] as object[] : null;
-                    foreach (var a in assets ?? new object[0])
-                    {
-                        var ad = (Dictionary<string, object>)a;
-                        string name = ad["name"] as string ?? "", url = ad["browser_download_url"] as string;
-                        if (name.EndsWith(".zip")) r.ZipUrl = url;
-                        else if (name.EndsWith(".zip.sha256")) r.ShaUrl = url;
-                    }
-                    if (best == null || r.Ver > best.Ver) best = r;
-                }
-                return best != null && best.Ver > Mine ? best : null;
+                string file = ReleasesFile, etag, fresh;
+                string saved = ReadSaved(file, out etag);
+                string json = Http.GetIfChanged(ReleasesUrl, 10000, saved != null ? etag : null, out fresh);
+                if (json == null) json = saved; // 304: the same releases as last time
+                else Save(file, fresh, json);
+                return Newest(json);
             }
             catch { return null; }
+        }
+
+        // The saved answer (its ETag on the first line, the JSON after it), or null when there is none.
+        internal static string ReadSaved(string file, out string etag)
+        {
+            etag = null;
+            try
+            {
+                if (!File.Exists(file)) return null;
+                string all = File.ReadAllText(file);
+                int nl = all.IndexOf('\n');
+                if (nl <= 0) return null;
+                etag = all.Substring(0, nl).Trim();
+                return etag.Length > 0 ? all.Substring(nl + 1) : null;
+            }
+            catch { return null; }
+        }
+
+        // Kept only with an ETag: without one there is nothing to ask "changed?" with.
+        internal static void Save(string file, string etag, string json)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(etag) || etag.IndexOf('\n') >= 0) { if (File.Exists(file)) File.Delete(file); return; }
+                Directory.CreateDirectory(Path.GetDirectoryName(file));
+                AtomicFile.WriteAllText(file, etag + "\n" + json);
+            }
+            catch { }
+        }
+
+        // The newest non-draft release in GitHub's answer that is newer than this version, or null.
+        internal static Release Newest(string json)
+        {
+            Release best = null;
+            foreach (var o in (object[])new JavaScriptSerializer().DeserializeObject(json))
+            {
+                var d = (Dictionary<string, object>)o;
+                if (d.ContainsKey("draft") && true.Equals(d["draft"])) continue;
+                var tag = d["tag_name"] as string;
+                var m = Regex.Match(tag ?? "", @"(\d+)\.(\d+)\.(\d+)");
+                if (!m.Success) continue;
+                var r = new Release
+                {
+                    Tag = tag,
+                    Ver = new Version(int.Parse(m.Groups[1].Value), int.Parse(m.Groups[2].Value), int.Parse(m.Groups[3].Value)),
+                    Optional = ((d.ContainsKey("body") ? d["body"] as string : null) ?? "").Contains("#optional")
+                };
+                var assets = d.ContainsKey("assets") ? d["assets"] as object[] : null;
+                foreach (var a in assets ?? new object[0])
+                {
+                    var ad = (Dictionary<string, object>)a;
+                    string name = ad["name"] as string ?? "", url = ad["browser_download_url"] as string;
+                    if (name.EndsWith(".zip")) r.ZipUrl = url;
+                    else if (name.EndsWith(".zip.sha256")) r.ShaUrl = url;
+                }
+                if (best == null || r.Ver > best.Ver) best = r;
+            }
+            return best != null && best.Ver > Mine ? best : null;
         }
 
         // The grace period starts the first time this PC sees the release.

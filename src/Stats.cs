@@ -160,8 +160,32 @@ namespace PingBoost
             catch { return -1; }
         }
 
-        // "Country - City" of an IP (ip-api.com, free).
-        public static string Locate(string ip)
+        // Each address's place, remembered for an hour (a failed lookup for 10 minutes): the automatic check asks every
+        // 30-90 s for the same server, and ip-api.com allows 45 requests a minute (performance audit item 7).
+        static readonly Dictionary<string, KeyValuePair<DateTime, string>> located = new Dictionary<string, KeyValuePair<DateTime, string>>();
+        public static readonly TimeSpan LocateKeep = TimeSpan.FromHours(1), LocateRetry = TimeSpan.FromMinutes(10);
+
+        // "Country - City" of an IP (ip-api.com, free), or null.
+        public static string Locate(string ip) { return Locate(ip, DateTime.UtcNow, LocateOnline); }
+
+        internal static string Locate(string ip, DateTime now, Func<string, string> lookup)
+        {
+            if (ip == null) return null;
+            lock (located)
+            {
+                KeyValuePair<DateTime, string> e;
+                if (located.TryGetValue(ip, out e) && now < e.Key) return e.Value;
+            }
+            string place = lookup(ip);
+            lock (located)
+            {
+                if (located.Count >= 256) located.Clear(); // a long session never grows it without end
+                located[ip] = new KeyValuePair<DateTime, string>(now + (place != null ? LocateKeep : LocateRetry), place);
+            }
+            return place;
+        }
+
+        static string LocateOnline(string ip)
         {
             try
             {
@@ -210,17 +234,47 @@ namespace PingBoost
             "spotify", "steam", "steamwebhelper", "teams", "ms-teams", "zoom", "whatsapp", "telegram", "skype", "onedrive"
         };
 
+        // Process ids by name (any case), from one look at the process list: each GetProcessesByName call reads the
+        // whole list again (about 11 ms), and one check used to make 40 of them (performance audit item 2).
+        public static Dictionary<string, List<int>> Processes()
+        {
+            var by = new Dictionary<string, List<int>>(StringComparer.OrdinalIgnoreCase);
+            foreach (var p in Process.GetProcesses())
+                using (p)
+                {
+                    string name;
+                    try { name = p.ProcessName; } catch { continue; } // it ended meanwhile
+                    List<int> ids;
+                    if (!by.TryGetValue(name, out ids)) by[name] = ids = new List<int>();
+                    ids.Add(p.Id);
+                }
+            return by;
+        }
+
+        public static bool IsRunning(Dictionary<string, List<int>> processes, string[] processNames)
+        {
+            return processNames.Any(processes.ContainsKey);
+        }
+
         public static bool IsRunning(string[] processNames)
         {
-            return processNames.Any(n => Process.GetProcessesByName(n).Length > 0);
+            return processNames.Length > 0 && IsRunning(Processes(), processNames);
         }
 
         // Local UDP ports opened by the given processes.
         static HashSet<int> PortsOf(string[] processNames)
         {
-            var pids = new HashSet<int>(processNames.SelectMany(n => Process.GetProcessesByName(n)).Select(p => p.Id));
+            var all = Processes();
+            var pids = new HashSet<int>(processNames.Where(all.ContainsKey).SelectMany(n => all[n]));
             var ports = new HashSet<int>();
             if (pids.Count == 0) return ports;
+            // Windows' own socket table; netstat (a process start) only if that call fails
+            var sockets = UdpSockets();
+            if (sockets != null)
+            {
+                foreach (var s in sockets) if (pids.Contains(s.Key)) ports.Add(s.Value);
+                return ports;
+            }
             foreach (var line in Run("netstat", "-ano -p UDP").Split('\n'))
             {
                 var f = line.Split(new[] { ' ', '\t', '\r' }, StringSplitOptions.RemoveEmptyEntries);
@@ -232,6 +286,54 @@ namespace PingBoost
                 }
             }
             return ports;
+        }
+
+        [System.Runtime.InteropServices.DllImport("iphlpapi.dll")]
+        static extern uint GetExtendedUdpTable(IntPtr table, ref int size, bool sorted, int family, int tableClass, uint reserved);
+
+        // (process id, local port) of every IPv4 UDP socket (what "netstat -ano -p UDP" lists), or null when Windows
+        // wouldn't give the table. MIB_UDPTABLE_OWNER_PID: a count, then rows of local address, port, owner pid.
+        internal static List<KeyValuePair<int, int>> UdpSockets()
+        {
+            const int AfInet = 2, OwnerPid = 1, TooSmall = 122;
+            int size = 0;
+            GetExtendedUdpTable(IntPtr.Zero, ref size, false, AfInet, OwnerPid, 0);
+            for (int attempt = 0; attempt < 3; attempt++)
+            {
+                size += 1024; // sockets opened between the two calls
+                IntPtr buf = System.Runtime.InteropServices.Marshal.AllocHGlobal(size);
+                try
+                {
+                    uint r = GetExtendedUdpTable(buf, ref size, false, AfInet, OwnerPid, 0);
+                    if (r == TooSmall) continue;
+                    if (r != 0) return null;
+                    int n = System.Runtime.InteropServices.Marshal.ReadInt32(buf);
+                    var list = new List<KeyValuePair<int, int>>(n);
+                    for (int i = 0; i < n; i++)
+                    {
+                        int row = 4 + i * 12;
+                        int port = System.Runtime.InteropServices.Marshal.ReadInt32(buf, row + 4);
+                        int pid = System.Runtime.InteropServices.Marshal.ReadInt32(buf, row + 8);
+                        list.Add(new KeyValuePair<int, int>(pid, ((port & 0xFF) << 8) | ((port >> 8) & 0xFF))); // network byte order
+                    }
+                    return list;
+                }
+                catch { return null; }
+                finally { System.Runtime.InteropServices.Marshal.FreeHGlobal(buf); }
+            }
+            return null;
+        }
+
+        // At most this many port filters; a game with more sockets is captured with the plain UDP filter.
+        public const int MaxPortFilters = 8;
+
+        // The pktmon filters for a capture: one per local UDP port the game owns, so only its packets are copied
+        // (performance audit item 3); every UDP packet when no port is known yet or there are too many.
+        public static List<string> CaptureFilters(IEnumerable<int> ports)
+        {
+            var list = ports.Distinct().OrderBy(p => p).ToList();
+            if (list.Count == 0 || list.Count > MaxPortFilters) return new List<string> { "2XPingUDP -t UDP" };
+            return list.Select(p => "2XPingUDP" + p + " -t UDP -p " + p).ToList();
         }
 
         public static bool IsPublic(string ip)
@@ -255,10 +357,22 @@ namespace PingBoost
             if (File.Exists(txt)) File.Delete(txt);
 
             bool knownGame = processNames.Length > 0;
-            var gamePorts = PortsOf(processNames);
-            var noisyPorts = PortsOf(Noisy);
+            // a known game: its own ports, nothing else is looked at; custom servers: the chat/browser apps' ports to skip
+            var watched = knownGame ? processNames : Noisy;
+            var ports = PortsOf(watched);
             Run("pktmon", "filter remove");
-            Run("pktmon", "filter add 2XPingUDP -t UDP");
+            bool filtered = true;
+            foreach (var f in knownGame ? CaptureFilters(ports) : CaptureFilters(new int[0]))
+            {
+                string o;
+                if (Proc.Run("pktmon", "filter add " + f, 60000, out o) != 0) { filtered = false; break; }
+            }
+            if (!filtered)
+            {
+                // a port filter pktmon didn't take: every UDP packet, as before
+                Run("pktmon", "filter remove");
+                Run("pktmon", "filter add 2XPingUDP -t UDP");
+            }
             try
             {
                 Run("pktmon", "start --capture --comp nics --pkt-size 96 --file-name \"" + etl + "\"");
@@ -273,9 +387,9 @@ namespace PingBoost
             if (!File.Exists(txt)) throw new Exception("pktmon produced no output.");
 
             // also refresh after capture: the game may have opened its socket during it
-            gamePorts.UnionWith(PortsOf(processNames));
-            noisyPorts.UnionWith(PortsOf(Noisy));
-            matchedGame = gamePorts.Count > 0;
+            // (with a port filter only the ports known before were captured; a new one counts once it is seen next time)
+            ports.UnionWith(PortsOf(watched));
+            matchedGame = knownGame && ports.Count > 0;
             if (knownGame && !matchedGame)
             {
                 try { File.Delete(etl); File.Delete(txt); } catch { }
@@ -294,7 +408,7 @@ namespace PingBoost
                 else if (IsPublic(a) && !IsPublic(b)) { remote = a; rport = pa; lport = pb; }
                 else continue;
                 if (rport == 53 || rport == 123 || rport == 443) continue; // DNS, time sync, QUIC web traffic
-                if (knownGame ? !gamePorts.Contains(lport) : noisyPorts.Contains(lport)) continue;
+                if (knownGame ? !ports.Contains(lport) : ports.Contains(lport)) continue;
                 Hit h;
                 if (!hits.TryGetValue(remote, out h)) hits[remote] = h = new Hit { Ip = remote, Port = rport };
                 h.Packets++;
