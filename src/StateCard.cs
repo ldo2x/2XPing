@@ -8,8 +8,8 @@ namespace PingBoost
 {
     // The main screen's card: says the situation in plain words (CardView from CardLogic.Decide), offers region tiles
     // to choose from (the featured two or three, or every region in rows of three after "Other regions"), one main
-    // button and two small links. Everything is centred; in Arabic the first tile and the "Other regions" link sit on
-    // the right.
+    // button and up to three small links. Everything is centred; in Arabic the first tile and the "Other regions" link
+    // sit on the right. The links flank the button, or sit in a row under it where "Test ping" is offered.
     class StateCard : Card
     {
         const int Pad = 24, TileGap = 14, RowGap = 12, PerRow = 3, TileMaxW = 236, LinkGap = 28;
@@ -17,14 +17,14 @@ namespace PingBoost
         CardView view;
         readonly List<RegionTile> tiles = new List<RegionTile>();
         readonly RoundButton button;
-        readonly CardLink other, manual;
+        readonly CardLink other, manual, test;
         readonly Font titleFont = Fonts.Semi(16f), subFont = Fonts.Ui(10f);
         readonly Timer dots = new Timer { Interval = 380 };
         int dotPhase;
-        bool laying, hasButton, hasLinks, showTiles, otherAvailable = true, manualAvailable = true; // Visible reads false until the window shows, so the layout keeps its own flags
+        bool laying, hasButton, hasLinks, hasTest, showTiles, otherAvailable = true, manualAvailable = true, testAvailable = true; // Visible reads false until the window shows, so the layout keeps its own flags
         Rectangle titleRect, subRect, dotsRect;
 
-        public event EventHandler ButtonPressed, OtherRegions, Manual, SelectionChanged;
+        public event EventHandler ButtonPressed, OtherRegions, Manual, TestPing, SelectionChanged;
 
         public StateCard()
         {
@@ -39,8 +39,11 @@ namespace PingBoost
             other.Click += delegate { Raise(OtherRegions); };
             manual = new CardLink { Text = Lang.T("Pick by hand", "اختيار يدوي"), Visible = false };
             manual.Click += delegate { Raise(Manual); };
+            test = new CardLink { Text = Lang.T("Test ping", "افحص البنق"), Visible = false };
+            test.Click += delegate { Raise(TestPing); };
             Controls.Add(button);
             Controls.Add(other);
+            Controls.Add(test);
             Controls.Add(manual);
             dots.Tick += delegate { dotPhase = (dotPhase + 1) % 3; Invalidate(dotsRect); };
         }
@@ -48,14 +51,17 @@ namespace PingBoost
         public CardView View { get { return view; } }
 
         // "Other regions" only shows when there are more regions than the featured ones (once open it reads "Fewer
-        // regions"); "Pick by hand" only where the server list is hidden.
-        public void SetLinks(bool otherRegions, bool expanded, bool pickByHand)
+        // regions"); "Pick by hand" and "Test ping" only where the server list and the test button are hidden.
+        public void SetLinks(bool otherRegions, bool expanded, bool pickByHand, bool testPing)
         {
             otherAvailable = otherRegions;
             manualAvailable = pickByHand;
+            testAvailable = testPing;
             other.Text = expanded ? Lang.T("Fewer regions", "مناطق أقل") : Lang.T("Other regions", "مناطق ثانية");
             other.Visible = hasLinks && otherAvailable;
             manual.Visible = hasLinks && manualAvailable;
+            hasTest = view != null && view.ShowTest && testAvailable;
+            test.Visible = hasTest;
         }
 
         // Shows a state. choices are the tiles to show, in rows of three (their Selected flags are the selection); the
@@ -90,6 +96,8 @@ namespace PingBoost
             hasLinks = v != null && v.ShowLinks;
             other.Visible = hasLinks && otherAvailable;
             manual.Visible = hasLinks && manualAvailable;
+            hasTest = v != null && v.ShowTest && testAvailable;
+            test.Visible = hasTest;
 
             var accent = v != null ? v.Accent : MainForm.Accent;
             Border = accent == MainForm.Good || accent == MainForm.Warn ? Shapes.Blend(accent, MainForm.Panel1, 0.6f) : Color.Empty;
@@ -99,11 +107,25 @@ namespace PingBoost
             Invalidate();
         }
 
-        // Loading and searching show three soft dots instead of a sub-line.
+        // Loading, searching and locking show three soft dots instead of a sub-line.
         bool Waiting
         {
-            get { return view != null && (view.Kind == CardKind.Loading || view.Kind == CardKind.Testing) && view.Button == null && view.Sub == null; }
+            get { return view != null && (view.Kind == CardKind.Loading || view.Kind == CardKind.Testing || view.Kind == CardKind.Locking) && view.Button == null && view.Sub == null; }
         }
+
+        // The links shown, in reading order.
+        List<CardLink> Links()
+        {
+            var list = new List<CardLink>();
+            if (hasLinks && otherAvailable) list.Add(other);
+            if (hasTest) list.Add(test);
+            if (hasLinks && manualAvailable) list.Add(manual);
+            return list;
+        }
+
+        // Where "Test ping" is offered (the simple layout) the links sit in a row under the button, also while a test
+        // runs and the link is away, so the card doesn't jump; otherwise up to two links flank the button.
+        bool LinksBelow { get { return hasButton && hasLinks && testAvailable && Links().Count > 0; } }
 
         bool Rtl { get { return RightToLeft == RightToLeft.Yes; } }
         bool LeadRight { get { return Rtl && !IsMirrored; } }
@@ -159,8 +181,8 @@ namespace PingBoost
             titleH = Measure(view.Title, titleFont, w);
             subH = view.Sub != null ? Measure(view.Sub, subFont, w) : Waiting ? 14 : 0;
             tileH = TilesHeight(Rows());
-            bool actions = hasButton || hasLinks;
-            return titleH + (subH > 0 ? 6 + subH : 0) + (tileH > 0 ? 16 + tileH : 0) + (actions ? 18 + button.Height : 0);
+            bool actions = hasButton || Links().Count > 0;
+            return titleH + (subH > 0 ? 6 + subH : 0) + (tileH > 0 ? 16 + tileH : 0) + (actions ? 18 + button.Height : 0) + (LinksBelow ? button.Height : 0);
         }
 
         // The height the card needs at this width to show everything with its normal margins.
@@ -177,7 +199,8 @@ namespace PingBoost
             var rows = Rows();
             int titleH, subH, tileH;
             int total = ContentHeight(w, out titleH, out subH, out tileH);
-            bool actions = hasButton || hasLinks;
+            var links = Links();
+            bool actions = hasButton || links.Count > 0;
             int y = Math.Max(Pad - 6, (ClientSize.Height - total) / 2);
 
             titleRect = new Rectangle(Pad, y, w, titleH);
@@ -214,35 +237,41 @@ namespace PingBoost
             if (actions)
             {
                 y += 18;
-                int ow = LinkWidth(other), mw = LinkWidth(manual);
-                int side = hasLinks ? Math.Max(ow, mw) : 0;
-                if (hasButton)
+                if (!hasButton || LinksBelow)
                 {
-                    int bw = TextRenderer.MeasureText(button.Text, button.Font).Width + 64;
-                    int room = w - (hasLinks ? 2 * (side + LinkGap) : 0);
-                    bw = Math.Max(Math.Min(200, room), Math.Min(bw, room));
-                    int bx = (ClientSize.Width - bw) / 2;
-                    button.Bounds = new Rectangle(bx, y, bw, button.Height);
-                    if (hasLinks)
+                    if (hasButton)
                     {
-                        // "Other regions" before the button in reading order, "Pick by hand" after it
-                        var before = new Rectangle(bx - LinkGap - ow, y, ow, button.Height);
-                        var after = new Rectangle(bx + bw + LinkGap, y, mw, button.Height);
-                        other.Bounds = LeadRight ? new Rectangle(bx + bw + LinkGap, y, ow, button.Height) : before;
-                        manual.Bounds = LeadRight ? new Rectangle(bx - LinkGap - mw, y, mw, button.Height) : after;
+                        int bw = Math.Min(w, Math.Max(200, TextRenderer.MeasureText(button.Text, button.Font).Width + 64));
+                        button.Bounds = new Rectangle((ClientSize.Width - bw) / 2, y, bw, button.Height);
+                        y += button.Height;
                     }
+                    LinkRow(links, y);
+                    return;
                 }
-                else if (hasLinks)
-                {
-                    int cx = ClientSize.Width / 2;
-                    // only one of the two links: it sits in the middle
-                    if (!otherAvailable) manual.Bounds = new Rectangle(cx - mw / 2, y, mw, button.Height);
-                    if (!manualAvailable) other.Bounds = new Rectangle(cx - ow / 2, y, ow, button.Height);
-                    if (!otherAvailable || !manualAvailable) return;
-                    var near = new Rectangle(cx - LinkGap / 2 - ow, y, ow, button.Height);
-                    other.Bounds = LeadRight ? new Rectangle(cx + LinkGap / 2, y, ow, button.Height) : near;
-                    manual.Bounds = LeadRight ? new Rectangle(cx - LinkGap / 2 - mw, y, mw, button.Height) : new Rectangle(cx + LinkGap / 2, y, mw, button.Height);
-                }
+                // the button with up to two links: the first before it in reading order, the second after it
+                CardLink first = links.Count > 0 ? links[0] : null, second = links.Count > 1 ? links[1] : null;
+                int side = Math.Max(first != null ? LinkWidth(first) : 0, second != null ? LinkWidth(second) : 0);
+                int bw2 = TextRenderer.MeasureText(button.Text, button.Font).Width + 64;
+                int room = w - (side > 0 ? 2 * (side + LinkGap) : 0);
+                bw2 = Math.Max(Math.Min(200, room), Math.Min(bw2, room));
+                int bx = (ClientSize.Width - bw2) / 2;
+                button.Bounds = new Rectangle(bx, y, bw2, button.Height);
+                CardLink left = LeadRight ? second : first, right = LeadRight ? first : second;
+                if (left != null) left.Bounds = new Rectangle(bx - LinkGap - LinkWidth(left), y, LinkWidth(left), button.Height);
+                if (right != null) right.Bounds = new Rectangle(bx + bw2 + LinkGap, y, LinkWidth(right), button.Height);
+            }
+        }
+
+        // Links side by side and centred, the first on the reading side.
+        void LinkRow(List<CardLink> links, int y)
+        {
+            int x = (ClientSize.Width - (links.Sum(l => LinkWidth(l)) + LinkGap * Math.Max(0, links.Count - 1))) / 2;
+            var order = LeadRight ? Enumerable.Reverse(links).ToList() : links;
+            foreach (var l in order)
+            {
+                int lw = LinkWidth(l);
+                l.Bounds = new Rectangle(x, y, lw, button.Height);
+                x += lw + LinkGap;
             }
         }
 

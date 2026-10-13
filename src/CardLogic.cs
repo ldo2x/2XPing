@@ -5,13 +5,14 @@ using System.Linq;
 
 namespace PingBoost
 {
-    enum CardKind { Loading, Testing, Choose, Locked, InMatchOk, InMatchRelay, Outside, BestOnly, OnServer, Offline }
+    enum CardKind { Loading, Testing, Locking, Choose, Locked, InMatchOk, InMatchRelay, Outside, BestOnly, OnServer, Offline }
 
     // What the app knows right now; CardLogic.Decide turns it into the words on the main card.
     class CardInput
     {
         public string Game;
         public bool Loaded, LoadFailed, Testing, Tested, CanLock;
+        public bool Locking;                  // a lock is being applied right now
         public List<RegionChoice> Choices;
         public string LockedNames;            // null = not locked
         public string MatchRegion;            // where the running match is, null = not in a match
@@ -24,7 +25,7 @@ namespace PingBoost
     {
         public CardKind Kind;
         public string Title, Sub, Button;
-        public bool ShowTiles, ShowLinks;
+        public bool ShowTiles, ShowLinks, ShowTest; // ShowTest: the "Test ping" link
         public Color Accent;
     }
 
@@ -32,9 +33,9 @@ namespace PingBoost
     {
         public static CardView Decide(CardInput i)
         {
-            if (i.LoadFailed) return Offline();
-            if (!i.Loaded) return Make(CardKind.Loading, Lang.T("Getting " + i.Game + " servers...", "أجيب سيرفرات " + i.Game + "..."), null, null);
-
+            // a lock being applied, or one that is on, always shows: never hidden behind "Offline" or "Loading"
+            if (i.CanLock && i.Locking)
+                return Make(CardKind.Locking, Lang.T("Locking your servers...", "أثبّت سيرفراتك..."), null, null);
             if (i.CanLock && i.LockedNames != null)
             {
                 string unlock = Lang.T("Unlock", "فك التثبيت");
@@ -49,30 +50,37 @@ namespace PingBoost
                 }
                 if (i.MatchViaRelay)
                     return Good(Make(CardKind.InMatchRelay,
-                        Lang.T("You're playing in one of your regions now ✓ (" + i.LockedNames + ")", "تلعب الحين في واحد من مناطقك ✓ (" + i.LockedNames + ")"), working, unlock));
+                        Lang.T("You're playing in one of your regions now ✓ (" + i.LockedNames + ")", "تلعب دحين في واحد من مناطقك ✓ (" + i.LockedNames + ")"), working, unlock));
                 if (i.MatchRegion != null)
                     return Good(Make(CardKind.InMatchOk,
-                        Lang.T("You're playing in " + i.MatchRegion + " now ✓", "تلعب الحين في " + i.MatchRegion + " ✓"), working, unlock));
+                        Lang.T("You're playing in " + i.MatchRegion + " now ✓", "تلعب دحين في " + i.MatchRegion + " ✓"), working, unlock));
                 return Good(Make(CardKind.Locked,
                     Lang.T("✓ Locked to " + i.LockedNames, "✓ مثبّت على " + i.LockedNames),
                     Lang.T("Open the game and find a match. Try a normal match first.", "افتح اللعبة ودوّر مباراة. جرّب مباراة عادية أول."), unlock));
             }
+
+            if (i.LoadFailed) return Offline();
+            if (!i.Loaded) return Make(CardKind.Loading, Lang.T("Getting " + i.Game + " servers...", "أجيب سيرفرات " + i.Game + "..."), null, null);
 
             if (!i.CanLock)
             {
                 if (i.CurrentServer != null)
                     return Make(CardKind.OnServer,
                         Lang.T("You're on: " + i.CurrentServer + PingPart(i.CurrentMs, "your ping is ", "بنقك "),
-                                "إنت الحين على: " + i.CurrentServer + PingPart(i.CurrentMs, "your ping is ", "بنقك ")), null, null);
+                                "إنت دحين على: " + i.CurrentServer + PingPart(i.CurrentMs, "your ping is ", "بنقك ")), null, null);
                 if (i.BestServer != null)
-                    return Make(CardKind.BestOnly,
+                {
+                    var best = Make(CardKind.BestOnly,
                         Lang.T("Best server for you: " + i.BestServer + PingPart(i.BestMs, "your ping is about ", "بنقك تقريباً "),
                                 "أحسن سيرفر لك: " + i.BestServer + PingPart(i.BestMs, "your ping is about ", "بنقك تقريباً ")),
                         Lang.T("Pick it from inside the game.", "اختاره من داخل اللعبة."), null);
+                    best.ShowTest = !i.Testing;
+                    return best;
+                }
             }
 
             var choices = i.Choices ?? new List<RegionChoice>();
-            if (i.CanLock && choices.Any(c => c.Ping < double.MaxValue)) return Choose(choices);
+            if (i.CanLock && choices.Any(c => c.Ping < double.MaxValue)) return Choose(choices, i.Testing);
 
             // nothing to choose from yet
             if (i.Testing) return Searching();
@@ -83,12 +91,13 @@ namespace PingBoost
             return Offline();
         }
 
-        static CardView Choose(List<RegionChoice> choices)
+        static CardView Choose(List<RegionChoice> choices, bool testing)
         {
             var picked = choices.Where(c => c.Selected).ToList();
-            var v = Make(CardKind.Choose, Lang.T("Where do you want to play?", "وين تبغا تلعب؟"), null, null);
+            var v = Make(CardKind.Choose, Lang.T("Where do you want to play?", "وين تبغى تلعب؟"), null, null);
             v.ShowTiles = true;
             v.ShowLinks = true;
+            v.ShowTest = !testing; // a test is already running: nothing to press
             if (picked.Count == 0)
             {
                 v.Sub = Lang.T("Pick at least one region", "اختار منطقة وحدة على الأقل");
@@ -98,7 +107,9 @@ namespace PingBoost
             if (picked.Count > 1)
             {
                 var known = picked.Where(c => c.Ping < double.MaxValue).Select(c => (int)Math.Round(c.Ping)).ToList();
-                if (known.Count > 0)
+                if (known.Count > 0 && known.Min() == known.Max())
+                    v.Sub = Lang.T("Ping " + known.Min() + ", and a faster queue", "البنق " + known.Min() + "، والبحث أسرع");
+                else if (known.Count > 0)
                     v.Sub = Lang.T("Ping between " + known.Min() + " and " + known.Max() + ", and a faster queue",
                                    "البنق بين " + known.Min() + " و" + known.Max() + "، والبحث أسرع");
             }

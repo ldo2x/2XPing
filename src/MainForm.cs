@@ -468,6 +468,7 @@ namespace PingBoost
                 if (manualOpen) Telemetry.Send("use", null, -1, "pick by hand");
                 ApplyCardLayout();
             };
+            stateCard.TestPing += delegate { Telemetry.Send("use", null, -1, "test link"); RunTest(); };
             cardHost.Controls.Add(stateCard);
             cardHost.Resize += delegate { FitCard(stateCard.PreferredHeight(cardHost.Width)); };
             choicesGame = null;
@@ -1010,13 +1011,9 @@ namespace PingBoost
         {
             var g = CurrentGame;
             if (g == null) return;
+            // the advanced layout's note line; the simple layout leaves the note out, since it talks about the list
+            // and buttons only the advanced layout shows
             gameNote.Text = g.Note;
-            // the simple layout hides the note line, so the first visit to each game shows it as a chat line
-            if (simple && Storage.GetSetting("tip_" + g.Icon) != "1")
-            {
-                Storage.SetSetting("tip_" + g.Icon, "1");
-                Msg(g.Note);
-            }
             Telemetry.Game = g.Name;
             Telemetry.Server = null;
             Storage.SetSetting("last_game", g.Icon);
@@ -1170,6 +1167,7 @@ namespace PingBoost
         bool userPicked;    // the player clicked a tile: keep their selection when the numbers change
         bool expanded, manualOpen;
         Game testGame, testNext, retestGame, loadFailed, lockGame;
+        Game lockingGame;   // a lock for this game is being applied right now (the card says so)
         readonly HashSet<Game> loadedGames = new HashSet<Game>();
         string lockNames;   // the lock in the card's words: region names, or the picked server names
         // what the automatic check saw: the region of the running match, or (games that can't be locked) the server
@@ -1257,6 +1255,7 @@ namespace PingBoost
                 Testing = testGame == g || (testGame != null && !tested.Contains(g) && (Prefs.AutoTest || testNext == g)),
                 Tested = tested.Contains(g),
                 CanLock = g.CanLock,
+                Locking = lockingGame == g,
                 // every region, shown or folded away: the button names and locks all the selected ones
                 Choices = everyChoice,
                 LockedNames = lockSummary != null && lockGame == g ? lockNames : null,
@@ -1275,8 +1274,8 @@ namespace PingBoost
                     input.BestMs = (int)Math.Round(BestLatency(best));
                 }
             }
-            // "Pick by hand" only in the simple layout: the advanced one always shows the list
-            stateCard.SetLinks(everyChoice.Count > featured.Count, expanded, simple);
+            // "Pick by hand" and "Test ping" only in the simple layout: the advanced one always shows the list and the test button
+            stateCard.SetLinks(everyChoice.Count > featured.Count, expanded, simple, simple);
             stateCard.Show(CardLogic.Decide(input), expanded ? everyChoice : featured);
             ApplyCardLayout();
         }
@@ -2117,7 +2116,9 @@ namespace PingBoost
             WarnLongerRoute(g, picked);
             string cardNames = CardLockNames(g, picked);
             btnLock.Enabled = false;
+            lockingGame = g; // the status bar is hidden in the simple layout: the card says it too
             SetStatus(T("Locking your servers...", "أثبّت سيرفراتك..."));
+            UpdateCard();
             Task.Run(() =>
             {
                 try
@@ -2138,6 +2139,7 @@ namespace PingBoost
                     if (!firewallOn) Issues.Report("firewall_off", "while locking " + g.Name);
                     Ui(() =>
                     {
+                        lockingGame = null;
                         lockSummary = names;
                         lockGame = g;
                         lockNames = cardNames;
@@ -2172,7 +2174,9 @@ namespace PingBoost
                 {
                     Ui(() =>
                     {
+                        lockingGame = null;
                         btnLock.Enabled = true;
+                        UpdateCard();
                         Log(T("Lock failed: ", "ما زبط التثبيت: ") + ex.Message);
                         Issues.Report("lock_apply_failed", g.Name + ": " + ex.Message, null, g.Icon);
                         Msg(T("Lock failed: ", "ما زبط التثبيت: ") + ex.Message, ToastKind.Bad);

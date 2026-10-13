@@ -79,11 +79,66 @@ namespace PingBoost
             Lang.Ar = true;
             var v = CardLogic.Decide(Lockable(Choice("eu", "Europe", "أوروبا", 78, true), Choice("ru", "Russia", "روسيا", 110, false)));
             Check(v.Kind == CardKind.Choose, "Choose kind");
-            Check(v.Title == "وين تبغا تلعب؟", "Choose title: " + v.Title);
+            Check(v.Title == "وين تبغى تلعب؟", "Choose title: " + v.Title);
             Check(v.ShowTiles && v.ShowLinks, "tiles and links shown");
             Check(v.Button == "العب على أوروبا", "button: " + v.Button);
             Check(v.Sub == null, "one selected = no sub");
             Check(v.Accent == MainForm.Accent, "Choose accent");
+            Check(v.ShowTest, "Choose offers \"Test ping\"");
+        }
+
+        static void CardChooseTestLinkHiddenWhileTesting()
+        {
+            Lang.Ar = true;
+            var i = Lockable(Choice("eu", "Europe", "أوروبا", 78, true));
+            i.Testing = true;
+            var v = CardLogic.Decide(i);
+            Check(v.Kind == CardKind.Choose && v.ShowLinks, "still Choose with links while a retest runs");
+            Check(!v.ShowTest, "no \"Test ping\" while one is running");
+        }
+
+        static void CardChooseSamePing()
+        {
+            Lang.Ar = true;
+            var i = Lockable(Choice("eu", "Europe", "أوروبا", 78.2, true), Choice("de", "Germany", "ألمانيا", 77.9, true));
+            var v = CardLogic.Decide(i);
+            Check(v.Sub == "البنق 78، والبحث أسرع", "same ping sub: " + v.Sub);
+            Lang.Ar = false;
+            v = CardLogic.Decide(i);
+            Check(v.Sub == "Ping 78, and a faster queue", "english same ping sub: " + v.Sub);
+            Lang.Ar = true;
+        }
+
+        static void CardLocking()
+        {
+            Lang.Ar = true;
+            var i = Lockable(Choice("eu", "Europe", "أوروبا", 78, true));
+            i.Locking = true;
+            var v = CardLogic.Decide(i);
+            Check(v.Kind == CardKind.Locking, "Locking kind");
+            Check(v.Title == "أثبّت سيرفراتك...", "Locking title: " + v.Title);
+            Check(v.Sub == null && v.Button == null && !v.ShowTiles && !v.ShowLinks && !v.ShowTest, "Locking: no sub, button, tiles or links");
+            i.LockedNames = "أوروبا"; // re-locking while a lock is on
+            Check(CardLogic.Decide(i).Kind == CardKind.Locking, "Locking beats Locked");
+            i.LoadFailed = true;
+            Check(CardLogic.Decide(i).Kind == CardKind.Locking, "Locking beats Offline");
+            Lang.Ar = false;
+            Check(CardLogic.Decide(i).Title == "Locking your servers...", "english Locking title");
+            Lang.Ar = true;
+            var ow = new CardInput { Game = "Overwatch 2", Loaded = true, Locking = true, BestServer = "السعودية" };
+            Check(CardLogic.Decide(ow).Kind == CardKind.BestOnly, "Locking only for games that lock");
+        }
+
+        static void CardLockBeatsOfflineAndLoading()
+        {
+            Lang.Ar = true;
+            var i = LockedInput();
+            i.LoadFailed = true;
+            Check(CardLogic.Decide(i).Kind == CardKind.Locked, "lock on + load failed = Locked");
+            i.LoadFailed = false; i.Loaded = false;
+            Check(CardLogic.Decide(i).Kind == CardKind.Locked, "lock on + loading = Locked");
+            i.MatchRegion = "أوروبا"; i.MatchOnPicked = true;
+            Check(CardLogic.Decide(i).Kind == CardKind.InMatchOk, "lock on + loading + in match = InMatchOk");
         }
 
         static void CardChooseTwo()
@@ -145,7 +200,7 @@ namespace PingBoost
             i.MatchRegion = "أوروبا"; i.MatchOnPicked = true;
             var v = CardLogic.Decide(i);
             Check(v.Kind == CardKind.InMatchOk, "InMatchOk kind");
-            Check(v.Title == "تلعب الحين في أوروبا ✓", "title: " + v.Title);
+            Check(v.Title == "تلعب دحين في أوروبا ✓", "title: " + v.Title);
             Check(v.Sub == "التثبيت شغّال. البنق داخل اللعبة هو الأدق.", "sub: " + v.Sub);
             Check(v.Button == "فك التثبيت" && v.Accent == MainForm.Good, "button and accent");
         }
@@ -157,7 +212,7 @@ namespace PingBoost
             i.MatchRegion = "أوروبا"; i.MatchOnPicked = true; i.MatchViaRelay = true;
             var v = CardLogic.Decide(i);
             Check(v.Kind == CardKind.InMatchRelay, "InMatchRelay kind");
-            Check(v.Title == "تلعب الحين في واحد من مناطقك ✓ (أوروبا)", "title: " + v.Title);
+            Check(v.Title == "تلعب دحين في واحد من مناطقك ✓ (أوروبا)", "title: " + v.Title);
             Check(v.Sub == "التثبيت شغّال. البنق داخل اللعبة هو الأدق.", "sub");
             Check(v.Button == "فك التثبيت" && v.Accent == MainForm.Good, "button and accent");
         }
@@ -194,6 +249,8 @@ namespace PingBoost
             Check(v.Kind == CardKind.BestOnly, "BestOnly kind");
             Check(v.Title == "أحسن سيرفر لك: السعودية · بنقك تقريباً 30", "title: " + v.Title);
             Check(v.Sub == "اختاره من داخل اللعبة." && v.Button == null, "sub, no button");
+            Check(v.ShowTest && !v.ShowLinks && !v.ShowTiles, "BestOnly offers only \"Test ping\"");
+            Check(!CardLogic.Decide(new CardInput { Game = "Overwatch 2", Loaded = true, Testing = true, BestServer = "السعودية" }).ShowTest, "no test link while testing");
             v = CardLogic.Decide(new CardInput { Game = "Overwatch 2", Loaded = true, BestServer = "السعودية" });
             Check(v.Title == "أحسن سيرفر لك: السعودية", "no ping part when unknown: " + v.Title);
         }
@@ -203,10 +260,10 @@ namespace PingBoost
             Lang.Ar = true;
             var v = CardLogic.Decide(new CardInput { Game = "Overwatch 2", Loaded = true, BestServer = "السعودية", BestMs = 30, CurrentServer = "السعودية", CurrentMs = 32 });
             Check(v.Kind == CardKind.OnServer, "OnServer kind");
-            Check(v.Title == "إنت الحين على: السعودية · بنقك 32", "title: " + v.Title);
+            Check(v.Title == "إنت دحين على: السعودية · بنقك 32", "title: " + v.Title);
             Check(v.Button == null, "no button");
             v = CardLogic.Decide(new CardInput { Game = "Overwatch 2", Loaded = true, CurrentServer = "السعودية" });
-            Check(v.Title == "إنت الحين على: السعودية", "no ping part when unknown: " + v.Title);
+            Check(v.Title == "إنت دحين على: السعودية", "no ping part when unknown: " + v.Title);
         }
 
         static void CardNotLockableNothingKnown()
@@ -226,6 +283,10 @@ namespace PingBoost
             Run("CardNotTestedYetAsksForTest", CardNotTestedYetAsksForTest);
             Run("CardTestedButNoPingIsOffline", CardTestedButNoPingIsOffline);
             Run("CardChooseOne", CardChooseOne);
+            Run("CardChooseTestLinkHiddenWhileTesting", CardChooseTestLinkHiddenWhileTesting);
+            Run("CardChooseSamePing", CardChooseSamePing);
+            Run("CardLocking", CardLocking);
+            Run("CardLockBeatsOfflineAndLoading", CardLockBeatsOfflineAndLoading);
             Run("CardChooseTwo", CardChooseTwo);
             Run("CardChooseThreeNamesAndEnglish", CardChooseThreeNamesAndEnglish);
             Run("CardChooseNoneSelected", CardChooseNoneSelected);
