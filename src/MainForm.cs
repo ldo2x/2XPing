@@ -1267,8 +1267,11 @@ namespace PingBoost
                 MatchOnPicked = matchOnPicked,
                 MatchViaRelay = matchViaRelay,
                 CurrentServer = currentServer,
-                CurrentMs = currentMs
+                CurrentMs = currentMs,
+                NoMatchYet = noMatchLong && lockSummary != null && lockGame == g
             };
+            // Overwatch: the picked regions are all outside the game regions the player's matches were on
+            if (g.CanLock && HasZones(g)) input.ZoneWarning = Zones.Warning(RegionGroups.Chosen(everyChoice), SeenZones(g));
             if (!g.CanLock)
             {
                 var best = CardBest(g);
@@ -1707,7 +1710,30 @@ namespace PingBoost
         // Region of a Valve game that owns this IP (relay or game server range), or null.
         static Region ValveRegionOf(Game g, string ip)
         {
-            return g.Regions.FirstOrDefault(r => r.Cidrs.Any(c => Detector.InCidr(ip, c)));
+            return g.DatacenterOf(ip);
+        }
+
+        // The addresses that can be the game's server: voice chat and service hosts (Game.DetectIgnore) are left out.
+        internal static List<Detector.Hit> ServerHits(Game g, List<Detector.Hit> hits)
+        {
+            return hits.Where(h => !g.Ignored(h.Ip)).ToList();
+        }
+
+        // Overwatch: the game regions (Zones) the player's matches were on, learned from the server checks; never shrinks.
+        static string ZonesKey(Game g) { return "zones_seen_" + g.Icon; }
+
+        static bool HasZones(Game g) { return g.RegionMap != null && g.RegionMap.Any(d => d.Zone != null); }
+
+        static List<string> SeenZones(Game g)
+        {
+            return Zones.Parse(Storage.GetSetting(ZonesKey(g)));
+        }
+
+        static void LearnZones(Game g, IEnumerable<Region> datacenters)
+        {
+            string saved = Storage.GetSetting(ZonesKey(g)), now = saved;
+            foreach (var dc in datacenters) now = Zones.Add(now, Zones.Of(g, dc.Id));
+            if (now != (saved ?? "") && now.Length > 0) Storage.SetSetting(ZonesKey(g), now);
         }
 
         // The datacenter the game is on, from the addresses it talks to: one that hosts matches, or null when the game
@@ -1766,6 +1792,8 @@ namespace PingBoost
                     {
                         { "hits", hits.Take(8).Select(h => h.Ip + ":" + h.Port + " x" + h.Packets).ToArray() }
                     });
+                    // voice chat and service hosts are never the server the player is on
+                    hits = ServerHits(g, hits);
                     // games with known datacenters (Valve, Overwatch): name the datacenter and check it against the lock
                     if (g.Provider == Provider.Valve || (g.CanLock && hits.Any(h => ValveRegionOf(g, h.Ip) != null)))
                         Ui(() => ShowValveResult(g, hits));
@@ -1815,8 +1843,11 @@ namespace PingBoost
                 return;
             }
             foreach (var r in found) r.Here = true;
+            LearnZones(g, found);
             if (CurrentGame == g)
             {
+                dcSinceLock = true;
+                noMatchLong = false;
                 SetMatch(RegionNameOf(g, found[0]), found.All(r => r.Picked), false);
                 FillServers(g);
                 foreach (ListViewItem item in serverList.Items)
@@ -1889,6 +1920,9 @@ namespace PingBoost
         // then every 90 s. Problems found on the way are reported silently (see Issues).
         System.Windows.Forms.Timer autoDetectTimer;
         bool autoDetecting, matchSinceLock;
+        // since the lock: a match datacenter was seen; and (Overwatch) none for NoMatchMinutes while the game ran
+        bool dcSinceLock, noMatchLong;
+        const int NoMatchMinutes = 3;
         DateTime lastAutoDetect = DateTime.MinValue, lockChangedAt = DateTime.MinValue, lastRulesCheck = DateTime.MinValue;
         string lastAutoServer;
 
@@ -1921,7 +1955,7 @@ namespace PingBoost
         void LockChanged(Game g)
         {
             lockChangedAt = DateTime.Now;
-            matchSinceLock = false;
+            matchSinceLock = dcSinceLock = noMatchLong = false;
             lastAutoServer = null;
             lastAutoDetect = DateTime.MinValue;
             ClearMatch(); // a match from before the change says nothing about the new lock
@@ -1951,7 +1985,7 @@ namespace PingBoost
                     try
                     {
                         bool matched;
-                        hits = Detector.Capture(g.Processes, 8, out matched);
+                        hits = ServerHits(g, Detector.Capture(g.Processes, 8, out matched)); // never voice chat or services
                         // games without a datacenter list: the main server's city
                         if (hits.Count > 0 && !hits.Any(h => ValveRegionOf(g, h.Ip) != null)) where = Stats.Locate(hits[0].Ip);
                         // games that can't be locked: the card shows that server's ping too
@@ -2002,6 +2036,21 @@ namespace PingBoost
 
         void ShowAutoDetect(Game g, List<Detector.Hit> hits, string where, int whereMs)
         {
+            var seenDc = hits.Count > 0 ? HostRegionOf(g, hits) : null;
+            if (seenDc != null)
+            {
+                dcSinceLock = true;
+                LearnZones(g, new[] { seenDc });
+            }
+            // Overwatch: locked for a few minutes with the game open and no match datacenter in sight. The picked
+            // regions may be outside the game's region, where it never finds a match (see Zones)
+            bool noMatch = lockSummary != null && lockGame == g && HasZones(g) && !dcSinceLock &&
+                           DateTime.Now - lockChangedAt > TimeSpan.FromMinutes(NoMatchMinutes);
+            if (noMatch != noMatchLong)
+            {
+                noMatchLong = noMatch;
+                UpdateCard();
+            }
             if (hits.Count == 0)
             {
                 // not in a match (any more)
@@ -2018,7 +2067,7 @@ namespace PingBoost
             }
             matchSinceLock = true;
             var top = hits[0];
-            var dc = HostRegionOf(g, hits);
+            var dc = seenDc;
             var relay = dc == null ? RelayRegionOf(g, hits) : null;
             if (relay != null)
             {
@@ -2108,9 +2157,7 @@ namespace PingBoost
             // other games: only the game's own UDP (its match traffic) is blocked, so login, voice chat and the
             // rest of the PC are untouched; the exe must be known for that
             string exe = null;
-            // developer experiment: block like owMENA (every protocol, both directions, the whole PC, all ports)
-            bool full = g.LockSpace != null && FullBlock;
-            if (g.LockSpace != null && !full)
+            if (g.LockSpace != null)
             {
                 exe = SystemInfo.FindExe(g);
                 if (exe == null)
@@ -2146,11 +2193,11 @@ namespace PingBoost
                     {
                         Active = true, Picked = picked.Select(r => r.Id).ToList(), Block = block,
                         Allow = allow,
-                        Mode = full ? "full" : g.LockSpace != null ? "game-udp" : "valve-all",
-                        Program = full ? null : exe, Protocol = full || exe == null ? null : "UDP",
+                        Mode = g.LockSpace != null ? "game-udp" : "valve-all",
+                        Program = exe, Protocol = exe == null ? null : "UDP",
                     };
                     info.Ports = info.Protocol != null ? g.LockPorts : null;
-                    int n = full ? ServerLock.Apply(block) : ServerLock.Apply(block, exe, exe != null ? "UDP" : null, g.LockPorts);
+                    int n = ServerLock.Apply(block, exe, exe != null ? "UDP" : null, g.LockPorts);
                     info.Scope = LockScope(info, n);
                     bool firewallOn = ServerLock.FirewallOn();
                     if (!firewallOn) Issues.Report("firewall_off", "while locking " + g.Name);
@@ -2680,7 +2727,7 @@ namespace PingBoost
             add("Copy diagnostics", () => { Clipboard.SetText(ContactDialog.Diagnostics(logBox.Text)); DevOut("diagnostics copied"); });
             add("Reset first-run", DevResetFirstRun);
             add("Exit dev mode", () => SetDevMode(false));
-            // the two lock experiments take a whole row each
+            // the lock test takes a whole row
             Func<string, Action, RoundButton> wide = (text, act) =>
             {
                 var b = MakeButton(text, Panel2);
@@ -2691,7 +2738,6 @@ namespace PingBoost
                 return b;
             };
             devLockTestBtn = wide(LockTestIdleText, DevLockTest);
-            devFullBlockBtn = wide(FullBlockText, DevToggleFullBlock);
             devOut = new TextBox
             {
                 Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, BorderStyle = BorderStyle.None,
@@ -2709,10 +2755,10 @@ namespace PingBoost
             return p;
         }
 
-        // ---- lock experiments (developer mode only)
+        // ---- lock test (developer mode only)
 
         bool lockTesting;
-        RoundButton devLockTestBtn, devFullBlockBtn;
+        RoundButton devLockTestBtn;
         const int LockTestSeconds = 60;
 
         // A lock test reads the lock as it was when it started: lock, unlock and reset wait for it.
@@ -2723,18 +2769,6 @@ namespace PingBoost
             return true;
         }
 
-        // «حجب كامل (تجربة)»: only while developer mode is on
-        bool FullBlock { get { return devMode && Storage.GetSetting("lock_full_block") == "1"; } }
-
-        string FullBlockText
-        {
-            get
-            {
-                bool on = Storage.GetSetting("lock_full_block") == "1";
-                return T("Full block (experiment): ", "حجب كامل (تجربة): ") + (on ? T("ON", "شغّال") : T("off", "طافي"));
-            }
-        }
-
         string LockTestIdleText { get { return T("Record lock test (60 s)", "سجّل اختبار (60 ثانية)"); } }
 
         static string LockScope(LockTest.LockInfo info, int n)
@@ -2742,17 +2776,6 @@ namespace PingBoost
             return (info.Protocol ?? "any protocol") + ", in+out, " +
                    (info.Program != null ? "program " + info.Program : "whole PC (every program)") + ", " +
                    (info.Ports != null ? "remote ports " + info.Ports : "all ports") + ", " + n + " ranges";
-        }
-
-        void DevToggleFullBlock()
-        {
-            bool on = Storage.GetSetting("lock_full_block") != "1";
-            Storage.SetSetting("lock_full_block", on ? "1" : "0");
-            if (devFullBlockBtn != null) devFullBlockBtn.Text = FullBlockText;
-            DevOut("full block (experiment) " + (on ? "ON: when you lock a game with a lock space, its blocked ranges (whole cloud regions, e.g. Google/Amazon) " +
-                                                      "are blocked for EVERY app on this PC (every protocol, both directions, all ports) while the lock is on"
-                                                    : "off: back to the game's own UDP only"));
-            if (lockSummary != null) DevOut("the current lock was applied as " + (lockInfo != null ? lockInfo.Mode : "?") + ": unlock and lock again to switch, then restart the game");
         }
 
         // «سجّل اختبار»: a minute of every packet while the player starts the game and queues.

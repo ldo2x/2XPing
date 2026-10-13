@@ -9,10 +9,77 @@ namespace PingBoost
     {
         public string Key, En, Ar;
         public string[] Ids;
+        // Overwatch: the game region it belongs to ("am", "eu" or "as", see Zones); null for other games
+        public string Zone;
 
         public static RegionDef Of(string key, string en, string ar, params string[] ids)
         {
             return new RegionDef { Key = key, En = en, Ar = ar, Ids = ids };
+        }
+
+        public RegionDef In(string zone) { Zone = zone; return this; }
+    }
+
+    // Overwatch only matchmakes inside the game region set in the game (Americas, Europe or Asia): a lock on
+    // datacenters outside it finds no match, or a blocked server (lock tests 2026-10-13). The app learns the player's
+    // region from the datacenters their matches were on, and warns before a lock that can't find a match.
+    static class Zones
+    {
+        public const string Americas = "am", Europe = "eu", Asia = "as";
+
+        public static string Name(string zone)
+        {
+            if (zone == Americas) return Lang.T("Americas", "أمريكا");
+            if (zone == Europe) return Lang.T("Europe", "أوروبا");
+            if (zone == Asia) return Lang.T("Asia", "آسيا");
+            return zone;
+        }
+
+        // The game region of a datacenter (Region.Id), or null when the game has none or the datacenter is in no region.
+        public static string Of(Game g, string regionId)
+        {
+            if (g == null || g.RegionMap == null || regionId == null) return null;
+            var def = g.RegionMap.FirstOrDefault(d => d.Zone != null && d.Ids.Contains(regionId));
+            return def != null ? def.Zone : null;
+        }
+
+        // The persisted list ("am,eu") as a list; unknown entries are dropped.
+        public static List<string> Parse(string saved)
+        {
+            var list = new List<string>();
+            foreach (var z in (saved ?? "").Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                string t = z.Trim();
+                if ((t == Americas || t == Europe || t == Asia) && !list.Contains(t)) list.Add(t);
+            }
+            return list;
+        }
+
+        // The persisted list with a zone added (never removes one).
+        public static string Add(string saved, string zone)
+        {
+            var list = Parse(saved);
+            if (zone != null && (zone == Americas || zone == Europe || zone == Asia) && !list.Contains(zone)) list.Add(zone);
+            return string.Join(",", list.ToArray());
+        }
+
+        // The card's warning when none of the picked regions is in a game region the player's matches were on, or null:
+        // "Singapore is in Asia, and you play on Americas. ..." Regions without a zone (other games) never warn.
+        public static string Warning(List<RegionChoice> picked, ICollection<string> seen)
+        {
+            if (picked == null || picked.Count == 0 || seen == null || seen.Count == 0) return null;
+            if (picked.Any(c => c.Def.Zone == null || seen.Contains(c.Def.Zone))) return null;
+            var zones = picked.Select(c => c.Def.Zone).Distinct().ToList();
+            // "Singapore is in Asia" / "سنغافورة في منطقة آسيا", one part per zone
+            string where = CardLogic.JoinNames(zones.Select(z =>
+            {
+                var names = picked.Where(c => c.Def.Zone == z).Select(c => c.Name).ToList();
+                return CardLogic.JoinNames(names) + Lang.T(names.Count == 1 ? " is in " : " are in ", " في منطقة ") + Name(z);
+            }).ToList());
+            string played = CardLogic.JoinNames(seen.Select(Name).ToList());
+            string need = Lang.Ar ? string.Join(" أو ", zones.Select(Name).ToArray()) : string.Join(" or ", zones.Select(Name).ToArray());
+            return Lang.T(where + ", but you play on " + played + ". You'll only find a match if your game is set to " + need + ".",
+                          where + "، وإنت تلعب على " + played + ". ما بتلقى مباراة إلا لو كانت لعبتك على منطقة " + need + ".");
         }
     }
 

@@ -449,7 +449,7 @@ namespace PingBoost
             foreach (var row in cap.Rows.Values.OrderByDescending(r => r.Total + r.Wfp))
             {
                 var l = new Line { Row = row };
-                var dc = row.V6 ? null : g.Regions.FirstOrDefault(r => r.Cidrs.Any(c => Detector.InCidr(row.Ip, c)));
+                var dc = row.V6 ? null : g.DatacenterOf(row.Ip);
                 if (dc != null) l.Dc = dc.Id;
                 var names = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
                 if (owners != null)

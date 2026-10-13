@@ -19,6 +19,10 @@ namespace PingBoost
         public bool MatchOnPicked, MatchViaRelay;
         public string BestServer, CurrentServer;
         public int BestMs = -1, CurrentMs = -1;
+        // Overwatch: why the picked regions may find no match (Zones.Warning), shown before locking; null = no warning
+        public string ZoneWarning;
+        // Overwatch: locked for a few minutes and still no match
+        public bool NoMatchYet;
     }
 
     class CardView
@@ -54,9 +58,11 @@ namespace PingBoost
                 if (i.MatchRegion != null)
                     return Good(Make(CardKind.InMatchOk,
                         Lang.T("You're playing in " + i.MatchRegion + " now ✓", "تلعب دحين في " + i.MatchRegion + " ✓"), working, unlock));
-                return Good(Make(CardKind.Locked,
-                    Lang.T("✓ Locked to " + i.LockedNames, "✓ مثبّت على " + i.LockedNames),
-                    Lang.T("Open the game and find a match. Try a normal match first.", "افتح اللعبة ودوّر مباراة. جرّب مباراة عادية أول."), unlock));
+                string find = Lang.T("Open the game and find a match. Try a normal match first.", "افتح اللعبة ودوّر مباراة. جرّب مباراة عادية أول.");
+                if (i.NoMatchYet)
+                    find += Lang.T(" No match found? The region you picked may be outside your game's region.",
+                                   " ما لقيت مباراة؟ يمكن المنطقة اللي اخترتها برا منطقة لعبتك.");
+                return Good(Make(CardKind.Locked, Lang.T("✓ Locked to " + i.LockedNames, "✓ مثبّت على " + i.LockedNames), find, unlock));
             }
 
             if (i.LoadFailed) return Offline();
@@ -80,7 +86,7 @@ namespace PingBoost
             }
 
             var choices = i.Choices ?? new List<RegionChoice>();
-            if (i.CanLock && choices.Any(c => c.Ping < double.MaxValue)) return Choose(choices, i.Testing);
+            if (i.CanLock && choices.Any(c => c.Ping < double.MaxValue)) return Choose(choices, i.Testing, i.ZoneWarning);
 
             // nothing to choose from yet
             if (i.Testing) return Searching();
@@ -91,7 +97,15 @@ namespace PingBoost
             return Offline();
         }
 
-        static CardView Choose(List<RegionChoice> choices, bool testing)
+        static CardView Choose(List<RegionChoice> choices, bool testing, string zoneWarning)
+        {
+            var v = ChooseView(choices, testing);
+            // a lock that can't find a match: say so (the button still locks)
+            if (zoneWarning != null && v.Button != null) v.Sub = zoneWarning;
+            return v;
+        }
+
+        static CardView ChooseView(List<RegionChoice> choices, bool testing)
         {
             var picked = choices.Where(c => c.Selected).ToList();
             var v = Make(CardKind.Choose, Lang.T("Where do you want to play?", "وين تبغى تلعب؟"), null, null);

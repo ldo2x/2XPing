@@ -15,6 +15,8 @@
 - The app now asks Windows whether its window is in front, instead of relying on focus events that can be missed, so it never stays paused while you're looking at it
 - Player numbers are fetched once a minute by our database for every copy of the app (instead of each PC asking deadlock-api, which allows 2 queries a minute), and refresh by themselves every 5 minutes while the window is in front. If the shared numbers are ever more than 10 minutes old, the app asks deadlock-api itself. A copy is kept every 10 minutes, to learn each region's busy hours
 - While the game is in front, 2X Ping stays quiet: the automatic server check pauses and the live ping only refreshes every 15 s for the tray icon. Both refresh as soon as you come back to the window
+- **Overwatch 2: a lock only works inside your game's region** (Americas, Europe or Asia, as set in the game). Locking only regions outside it finds no match. 2X Ping learns your game's region from the servers your matches are on, warns before you lock outside it, and after 3 minutes locked without a match says the region may be the reason
+- Overwatch 2: two Blizzard service addresses (login and services) are no longer counted as match servers, so a lock never blocks them, and voice chat is never shown as the server you're on
 
 ## v0.11.0-beta (2026-10-12)
 

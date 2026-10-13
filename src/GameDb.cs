@@ -46,6 +46,7 @@ namespace PingBoost
         public bool Released;      // part of the public version; the rest only show in developer mode until fully tested
         public string[] LockSpace; // games locked by "everything except the picked datacenters" (see IpLists)
         public string[] LockAllow; // never blocked (the game's own services that aren't match servers)
+        public string[] DetectIgnore; // never the server the player is on (voice chat, services): the server check skips them
         public string LockPorts;   // remote ports the lock covers (null = all)
         public Dictionary<string, string[]> LockGroups; // "Play on it" picks the whole group, so matches are found quickly
         // Valve: the datacenters that host this game's matches (null = all). The others are only relays: the game
@@ -64,6 +65,13 @@ namespace PingBoost
             return Backbone.TryGetValue(string.CompareOrdinal(a, b) < 0 ? a + " " + b : b + " " + a, out ms) ? ms : -1;
         }
         public bool CanLock { get { return Provider == Provider.Valve || LockSpace != null; } }
+        public bool Ignored(string ip) { return DetectIgnore != null && DetectIgnore.Any(c => Detector.InCidr(ip, c)); }
+        // The datacenter (or Valve relay) an address belongs to, or null; ignored addresses never belong to one.
+        public Region DatacenterOf(string ip)
+        {
+            if (Ignored(ip)) return null;
+            return Regions.FirstOrDefault(r => r.Cidrs.Any(c => Detector.InCidr(ip, c)));
+        }
         public string LockKey { get { return AppId ?? Icon; } } // where the picks are saved
         public override string ToString() { return Name; }
     }
@@ -123,6 +131,7 @@ namespace PingBoost
         // Google Cloud regions, Amazon Bahrain, and Blizzard's own datacenters: every block of Blizzard's network
         // (RIPEstat, AS57976) placed by its location, plus the community lists of github.com/foryVERX/Overwatch-Server-Selector.
         // Blocks located in Irvine (Blizzard's headquarters: services, Practice Range) are left open. Mapped 2026-10-12.
+        // Two service hosts are cut out of the blocks around them (see OwServiceHosts): 66.40.191.0/24 (LAX1) and 137.221.104.0/24 (AMS1).
         // { code, English, Arabic, flag, ping (gcp:<region> | ip | host:port), sources... }
         static readonly string[][] OwDatacenters =
         {
@@ -134,7 +143,7 @@ namespace PingBoost
                    "24.105.53.0/24", "24.105.54.0/24", "37.244.0.0/24", "37.244.3.0/24", "37.244.8.0/23", "37.244.14.0/23", "37.244.16.0/24",
                    "37.244.20.0/24", "37.244.24.0/24", "37.244.26.0/24", "37.244.28.0/23", "37.244.30.0/23", "37.244.54.0/24", "66.40.184.0/24",
                    "137.221.64.0/24", "137.221.72.0/24", "137.221.77.0/24", "137.221.78.0/23", "137.221.80.0/24", "137.221.82.0/24",
-                   "137.221.86.0/24", "137.221.88.0/24", "137.221.95.0/24", "137.221.104.0/22", "137.221.108.0/22", "137.221.112.0/24",
+                   "137.221.86.0/24", "137.221.88.0/24", "137.221.95.0/24", "137.221.105.0/24", "137.221.106.0/23", "137.221.108.0/22", "137.221.112.0/24",
                    "158.115.219.0/24"},
             new[] {"CDG1", "Paris (France)", "باريس - فرنسا", "fr", "5.42.176.10", "5.42.176.0/23", "37.244.32.0/23", "37.244.44.0/22",
                    "37.244.50.0/24", "37.244.60.0/22"},
@@ -145,7 +154,7 @@ namespace PingBoost
                    "37.244.2.0/24", "37.244.17.0/24", "37.244.23.0/24", "37.244.36.0/23", "137.221.69.0/24", "137.221.74.0/24", "198.74.37.0/24"},
             new[] {"LAX1", "Los Angeles (US West)", "لوس أنجلوس - أمريكا", "us", "gcp:us-west2", "64.224.24.0/23", "24.105.8.0/21", "24.105.24.0/21",
                    "gcp:us-west2", "5.42.178.0/23", "24.105.18.0/24", "37.244.25.0/24", "37.244.38.0/24", "66.40.176.0/21", "66.40.185.0/24",
-                   "66.40.186.0/23", "66.40.188.0/22", "137.221.68.0/24", "137.221.70.0/24", "137.221.73.0/24", "137.221.89.0/24",
+                   "66.40.186.0/23", "66.40.188.0/23", "66.40.190.0/24", "137.221.68.0/24", "137.221.70.0/24", "137.221.73.0/24", "137.221.89.0/24",
                    "158.115.218.0/24", "158.115.220.0/23"},
             new[] {"GBR1", "Sao Paulo (Brazil)", "ساو باولو - البرازيل", "br", "gcp:southamerica-east1", "gcp:southamerica-east1"},
             new[] {"ICN1", "Seoul (Korea)", "سيول - كوريا", "kr", "121.254.137.1", "121.254.0.0/16", "117.52.0.0/16", "202.9.66.0/23",
@@ -163,8 +172,13 @@ namespace PingBoost
         // are blocked too). Everything else stays open: blocking all of Google's and Blizzard's networks also cut
         // services the game needs before a match (the Practice Range wouldn't even load), tested 2026-10-11.
         static readonly string[] OwSpace = OwDatacenters.SelectMany(dc => dc.Skip(5)).Distinct().ToArray();
-        // Blizzard's Irvine range: Practice Range and services live there, never block it
-        static readonly string[] OwAllow = { "64.224.0.0/21" };
+        // Never blocked: Blizzard's Irvine range (Practice Range and services live there), and two Blizzard service hosts
+        // inside the datacenter blocks (login: TCP 3724 to 66.40.191.x, TCP 443 to 137.221.104.171; blocking them broke
+        // login, lock test 2026-10-13). The service hosts are also left out of the datacenters' own lists.
+        static readonly string[] OwServiceHosts = { "66.40.191.0/24", "137.221.104.0/24" };
+        static readonly string[] OwAllow = new[] { "64.224.0.0/21" }.Concat(OwServiceHosts).ToArray();
+        // Never taken for the server the player is on: voice chat (Vivox) and the service hosts above.
+        static readonly string[] OwIgnore = new[] { "85.236.96.0/21" }.Concat(OwServiceHosts).ToArray();
 
         // Datacenters that make up one region. Allowing a whole region keeps queues short: Overwatch spreads players
         // over all of them (the MINA server selector's queue tests passed 5 of 5 per region this way).
@@ -181,13 +195,13 @@ namespace PingBoost
         // The regions Overwatch players choose between (datacenters grouped as the spec lists them).
         static readonly List<RegionDef> OwRegionMap = new List<RegionDef>
         {
-            RegionDef.Of("me", "Middle East", "الشرق الأوسط", "GMEC2", "GMEC1", "MES1"),
-            RegionDef.Of("eu", "Europe", "أوروبا", "GEW3", "AMS1", "CDG1", "GEN1"),
-            RegionDef.Of("na", "North America", "أمريكا الشمالية", "GUE4", "ORD1", "LAX1"),
-            RegionDef.Of("sa", "South America", "أمريكا الجنوبية", "GBR1"),
-            RegionDef.Of("ea", "East Asia", "شرق آسيا", "ICN1", "GTK1", "TPE1"),
-            RegionDef.Of("sg", "Singapore", "سنغافورة", "GSG1"),
-            RegionDef.Of("au", "Australia", "أستراليا", "SYD2"),
+            RegionDef.Of("me", "Middle East", "الشرق الأوسط", "GMEC2", "GMEC1", "MES1").In(Zones.Europe),
+            RegionDef.Of("eu", "Europe", "أوروبا", "GEW3", "AMS1", "CDG1", "GEN1").In(Zones.Europe),
+            RegionDef.Of("na", "North America", "أمريكا الشمالية", "GUE4", "ORD1", "LAX1").In(Zones.Americas),
+            RegionDef.Of("sa", "South America", "أمريكا الجنوبية", "GBR1").In(Zones.Americas),
+            RegionDef.Of("ea", "East Asia", "شرق آسيا", "ICN1", "GTK1", "TPE1").In(Zones.Asia),
+            RegionDef.Of("sg", "Singapore", "سنغافورة", "GSG1").In(Zones.Asia),
+            RegionDef.Of("au", "Australia", "أستراليا", "SYD2").In(Zones.Asia),
         };
 
         static readonly List<RegionDef> DbdRegionMap = new List<RegionDef>
@@ -285,7 +299,7 @@ namespace PingBoost
                 new Game { Name = "Arena Breakout: Infinite", Icon = "abi", Released = true, Provider = Provider.Tencent, SteamAppId = "2073620", Processes = new[] {"UAGame"},
                     NoteEn = "The game picks your region from your account. Join a raid and press Which server am I on? to see your real server.",
                     NoteAr = "اللعبة تحدد منطقتك من حسابك. ادخل رايد واضغط «على أي سيرفر أنا؟» عشان تعرف سيرفرك الحقيقي." },
-                new Game { Name = "Overwatch 2", Icon = "overwatch", Released = true, Provider = Provider.Blizzard, SteamAppId = "2357570", Processes = new[] {"Overwatch"}, LockSpace = OwSpace, LockAllow = OwAllow, LockGroups = OwGroups, RegionMap = OwRegionMap,
+                new Game { Name = "Overwatch 2", Icon = "overwatch", Released = true, Provider = Provider.Blizzard, SteamAppId = "2357570", Processes = new[] {"Overwatch"}, LockSpace = OwSpace, LockAllow = OwAllow, DetectIgnore = OwIgnore, LockGroups = OwGroups, RegionMap = OwRegionMap,
                     LockPorts = "1-3723,3725-65535", // 3724 is Blizzard's own port: never block it
                     NoteEn = "Tick the datacenters you want and press Lock my servers. Try it in Quick Play first: if the game still picks a blocked one, the match won't load.",
                     NoteAr = "علّم على المراكز اللي تبغاها واضغط «ثبّت سيرفراتي». جرّبه في الكويك أول: لو اللعبة اختارت مركز محجوب، المباراة ما تفتح." },
