@@ -27,7 +27,7 @@ namespace PingBoost
             {
                 if (!first)
                 {
-                    // already open (maybe next to the clock): bring that window up instead of showing a message
+                    // already open (maybe minimized): bring that window up instead of showing a message
                     try
                     {
                         AllowSetForegroundWindow(-1); // let the running copy take the foreground

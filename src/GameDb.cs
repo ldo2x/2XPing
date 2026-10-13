@@ -177,8 +177,9 @@ namespace PingBoost
         // login, lock test 2026-10-13). The service hosts are also left out of the datacenters' own lists.
         static readonly string[] OwServiceHosts = { "66.40.191.0/24", "137.221.104.0/24" };
         static readonly string[] OwAllow = new[] { "64.224.0.0/21" }.Concat(OwServiceHosts).ToArray();
-        // Never taken for the server the player is on: voice chat (Vivox) and the service hosts above.
-        static readonly string[] OwIgnore = new[] { "85.236.96.0/21" }.Concat(OwServiceHosts).ToArray();
+        // Never taken for the server the player is on: voice chat (Vivox), and everything in OwAllow (Irvine's menu and
+        // Practice Range host, the service hosts): none of them is a match server.
+        static readonly string[] OwIgnore = new[] { "85.236.96.0/21" }.Concat(OwAllow).ToArray();
 
         // Datacenters that make up one region. Allowing a whole region keeps queues short: Overwatch spreads players
         // over all of them (the MINA server selector's queue tests passed 5 of 5 per region this way).

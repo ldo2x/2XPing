@@ -29,16 +29,32 @@ namespace PingBoost
             Lang.Ar = true;
         }
 
-        static void ZonesListOnlyGrows()
+        static void ZonesRememberWhenSeen()
         {
-            Check(Zones.Add(null, "am") == "am", "first zone");
-            Check(Zones.Add("am", "as") == "am,as", "second zone");
-            Check(Zones.Add("am,as", "am") == "am,as", "no duplicate");
-            Check(Zones.Add("am", null) == "am", "a datacenter without a zone adds nothing");
-            Check(Zones.Add("am,junk", "xx") == "am", "unknown entries dropped");
-            var p = Zones.Parse(" eu , as,,eu");
-            Check(p.Count == 2 && p[0] == "eu" && p[1] == "as", "parse: " + string.Join("|", p.ToArray()));
-            Check(Zones.Parse(null).Count == 0 && Zones.Parse("").Count == 0, "nothing saved");
+            var now = new DateTime(2026, 10, 13, 12, 0, 0, DateTimeKind.Utc);
+            long t = now.Ticks;
+            Check(Zones.Add(null, "am", now) == "am:" + t, "first zone: " + Zones.Add(null, "am", now));
+            string two = Zones.Add("am:" + t, "as", now);
+            Check(two == "am:" + t + ",as:" + t, "second zone: " + two);
+            var later = now.AddDays(3);
+            Check(Zones.Add(two, "am", later) == "am:" + later.Ticks + ",as:" + t, "seeing a zone again moves its time");
+            Check(Zones.Add("am:" + t, null, later) == "am:" + t, "a datacenter without a zone adds nothing");
+            Check(Zones.Add("am:" + t + ",junk:5,xx", "xx", now) == "am:" + t, "unknown entries dropped");
+            Check(Zones.Add("eu:notanumber", null, now) == "", "a broken time is dropped");
+            Check(Zones.Parse(null, now).Count == 0 && Zones.Parse("", now).Count == 0, "nothing saved");
+
+            // the old plain list counts as seen now (migration), saved with the time
+            var old = Zones.Parse(" eu , as,,eu", now);
+            Check(old.Count == 2 && old["eu"] == now && old["as"] == now, "plain list migrates to now");
+            Check(Zones.Format(old) == "eu:" + t + ",as:" + t, "migrated form: " + Zones.Format(old));
+            Check(Zones.Recent("eu,as", now).SequenceEqual(new[] { "eu", "as" }), "migrated zones are fresh");
+
+            // only the last 14 days count for the warning
+            string saved = "am:" + now.AddDays(-20).Ticks + ",eu:" + now.AddDays(-13).Ticks;
+            var recent = Zones.Recent(saved, now);
+            Check(recent.Count == 1 && recent[0] == "eu", "20 days ago is stale, 13 days ago counts: " + string.Join(",", recent.ToArray()));
+            Check(Zones.Recent(saved, now.AddDays(2)).Count == 0, "both stale two days later");
+            Check(Zones.Recent("as:" + now.AddDays(-14).Ticks, now).Count == 1, "exactly 14 days still counts");
         }
 
         static void ZoneWarningText()
@@ -152,14 +168,27 @@ namespace PingBoost
             var server = MainForm.ServerHits(g, hits);
             Check(server.Count == 1 && server[0].Ip == "137.221.69.103", "only the match server is left: " + string.Join(",", server.Select(h => h.Ip).ToArray()));
             Check(MainForm.ServerHits(g, new List<Detector.Hit> { hits[0] }).Count == 0, "voice chat alone = not in a match (no unknown_server)");
+            // Irvine (the menu and Practice Range host, always allowed) is no match server either
+            Check(g.Ignored("64.224.0.10") && g.Ignored("64.224.7.200") && !g.Ignored("64.224.8.1"), "Irvine 64.224.0.0/21 is ignored");
+            var menu = new List<Detector.Hit> { new Detector.Hit { Ip = "64.224.3.9", Port = 1119, Packets = 300 }, hits[0] };
+            Check(MainForm.ServerHits(g, menu).Count == 0, "menu traffic to Irvine + voice chat = not in a match");
+            Check(g.LockAllow.All(c => g.DetectIgnore.Contains(c)), "everything the lock leaves open is ignored by the server check");
             var dbd = Find("Dead by Daylight");
             Check(!dbd.Ignored("85.236.97.1"), "other games ignore nothing");
         }
 
+        static void MinimizedTitle()
+        {
+            Check(MainForm.TitleFor("Normal", true, "locked on Europe · 78 ms") == Brand.Name + " · locked on Europe · 78 ms", "minimized: live status in the title");
+            Check(MainForm.TitleFor("Normal", false, "locked on Europe · 78 ms") == "Normal", "restored: the normal title");
+            Check(MainForm.TitleFor("Normal", true, null) == "Normal", "minimized, nothing running: the normal title");
+        }
+
         static void RunZoneTests()
         {
+            Run("MinimizedTitle", MinimizedTitle);
             Run("OverwatchRegionsHaveZones", OverwatchRegionsHaveZones);
-            Run("ZonesListOnlyGrows", ZonesListOnlyGrows);
+            Run("ZonesRememberWhenSeen", ZonesRememberWhenSeen);
             Run("ZoneWarningText", ZoneWarningText);
             Run("CardZoneWarning", CardZoneWarning);
             Run("CardNoMatchYet", CardNoMatchYet);

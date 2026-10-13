@@ -120,7 +120,7 @@ namespace PingBoost
             if (!Tunnel.Installed)
                 Log(T("WireGuard is not installed, so relay routing is off until you install it (Tools).",
                       "برنامج WireGuard مو مثبّت، فالوسيط مقفّل لين تثبّته (من «أدوات وسجل»)."));
-            BuildTray();
+            BuildWindowEvents();
             Shown += delegate
             {
                 // first launch: name + games + statistics notice; using the beta requires accepting it
@@ -147,7 +147,7 @@ namespace PingBoost
                 }
                 if (Updater.JustUpdated) ShowUpdatedNote();
                 CheckForUpdate(true);
-                // keep checking while the app stays open (it can run for days next to the clock)
+                // keep checking while the app stays open (it can run minimized for days)
                 var updates = new System.Windows.Forms.Timer { Interval = 3 * 60 * 60 * 1000 };
                 updates.Tick += delegate { CheckForUpdate(false); };
                 updates.Start();
@@ -158,7 +158,6 @@ namespace PingBoost
                 if (tunnelActive) Tunnel.Stop();
                 if (lockSummary != null) ServerLock.Remove();
                 if (lockTesting) Detector.Cleanup(); // the lock test's thread won't reach its finally once the app exits
-                tray.Visible = false;
                 Telemetry.Exit();
             };
         }
@@ -174,31 +173,27 @@ namespace PingBoost
             gameList.SelectedItem = pick ?? list[0];
         }
 
-        // ---------------------------------------------------------------- system tray
+        // ---------------------------------------------------------------- minimized window (taskbar)
 
-        NotifyIcon tray;
+        // Minimized, 2X Ping stays a normal window in the taskbar (no tray icon): its title shows the live status, so
+        // hovering the taskbar button shows it, and important notices flash the button and wait for the window to come back.
+        bool wasMinimized;
+        string liveStatus;                                          // e.g. "locked on Europe · 78 ms"; null = nothing yet
+        readonly List<KeyValuePair<string, ToastKind>> heldNotices = new List<KeyValuePair<string, ToastKind>>();
+        const int HeldMax = 4;
 
-        void BuildTray()
+        void BuildWindowEvents()
         {
-            tray = new NotifyIcon { Icon = Icon, Text = Brand.Name, Visible = false };
-            tray.DoubleClick += delegate { RestoreFromTray(); };
-            tray.BalloonTipClicked += delegate { RestoreFromTray(); };
-            BuildTrayMenu();
             Resize += delegate
             {
-                if (WindowState != FormWindowState.Minimized || tray.Visible) return;
-                // minimized: live next to the clock, so the lock keeps working without the window in the way
-                Hide();
-                tray.Visible = true;
-                Telemetry.Send("use", null, -1, "tray");
-                if (Storage.GetSetting("tray_tip") != "1")
-                {
-                    Storage.SetSetting("tray_tip", "1");
-                    tray.ShowBalloonTip(5000, Brand.Name, T("Still running here. Double-click to open it.",
-                                                             "البرنامج شغّال هنا. دبل كليك عشان يفتح."), ToolTipIcon.Info);
-                }
+                bool min = WindowState == FormWindowState.Minimized;
+                if (min == wasMinimized) return;
+                wasMinimized = min;
+                if (min) Telemetry.Send("use", null, -1, "minimized");
+                ApplyTitle();
+                if (!min) ShowHeldNotices();
             };
-            Disposed += delegate { tray.Dispose(); };
+            Shown += delegate { ShowHeldNotices(); };
             // while the player is in the game (this window not in front), the live ping and the automatic server
             // check pause, so nothing runs next to the match; coming back refreshes them right away
             Activated += delegate
@@ -239,45 +234,79 @@ namespace PingBoost
             LoadStats(g, true);
         }
 
-        void BuildTrayMenu()
-        {
-            var menu = new ContextMenuStrip { RightToLeft = Lang.Ar ? RightToLeft.Yes : RightToLeft.No, Font = Fonts.Ui(10f) };
-            menu.Items.Add(T("Open 2X Ping", "افتح البرنامج"), null, delegate { RestoreFromTray(); });
-            menu.Items.Add(T("Close 2X Ping", "اقفل البرنامج"), null, delegate { Close(); });
-            var old = tray.ContextMenuStrip;
-            tray.ContextMenuStrip = menu;
-            if (old != null) old.Dispose();
-        }
-
-        // Someone opened 2X Ping again while it runs: show this window on top (also from the tray).
+        // Someone opened 2X Ping again while it runs: show this window on top (also when minimized).
         public void BringUp()
         {
             if (IsDisposed) return;
-            RestoreFromTray();
+            RestoreWindow();
             TopMost = true; // a short TopMost flip gets it past the foreground lock
             TopMost = false;
             Activate();
         }
 
-        void RestoreFromTray()
+        void RestoreWindow()
         {
-            Show();
-            WindowState = FormWindowState.Normal;
-            tray.Visible = false;
+            if (!Visible) Show();
+            if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
             Activate();
         }
 
-        // Tooltip of the tray icon (at most 63 characters).
-        void SetTrayText(string text)
+        bool Minimized { get { return !Visible || WindowState == FormWindowState.Minimized; } }
+
+        // The live status for the taskbar title while minimized.
+        void SetLiveStatus(string text)
         {
-            text = Brand.Name + " · " + text;
-            tray.Text = text.Length > 63 ? text.Substring(0, 63) : text;
+            liveStatus = text;
+            if (Minimized) ApplyTitle();
+        }
+
+        // Minimized: "2X Ping · locked on Europe · 78 ms" (what hovering the taskbar button shows); otherwise the normal title.
+        void ApplyTitle()
+        {
+            // Brand.Caption starts with an LRM: keeps "2X" in Latin digits inside a right-to-left title bar
+            string normal = Brand.Caption + (Brand.IsBeta ? " (Beta)" : "") + "  -  by " + Brand.Developer + (devMode ? "   [DEV]" : "");
+            string title = TitleFor(normal, WindowState == FormWindowState.Minimized, liveStatus);
+            if (Text != title) Text = title;
+        }
+
+        internal static string TitleFor(string normal, bool minimized, string status)
+        {
+            return minimized && !string.IsNullOrEmpty(status) ? Brand.Name + " · " + status : normal;
+        }
+
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        struct FlashInfo { public uint Size; public IntPtr Hwnd; public uint Flags, Count, Timeout; }
+        [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool FlashWindowEx(ref FlashInfo info);
+
+        // Flash the taskbar button until the window comes to the front.
+        void FlashTaskbar()
+        {
+            if (!IsHandleCreated) return;
+            var fi = new FlashInfo { Hwnd = Handle, Flags = 2 | 12, Count = 0, Timeout = 0 }; // FLASHW_TRAY | FLASHW_TIMERNOFG
+            fi.Size = (uint)System.Runtime.InteropServices.Marshal.SizeOf(fi);
+            try { FlashWindowEx(ref fi); } catch { }
+        }
+
+        // An important notice while minimized: kept (the latest few) for when the window is back.
+        void HoldNotice(string text, ToastKind kind)
+        {
+            heldNotices.RemoveAll(n => n.Key == text);
+            heldNotices.Add(new KeyValuePair<string, ToastKind>(text, kind));
+            while (heldNotices.Count > HeldMax) heldNotices.RemoveAt(0);
+            FlashTaskbar();
+        }
+
+        void ShowHeldNotices()
+        {
+            if (Minimized || heldNotices.Count == 0) return;
+            var list = heldNotices.ToList();
+            heldNotices.Clear();
+            foreach (var n in list) Msg(n.Key, n.Value);
         }
 
         void ApplyDirection()
         {
-            // LRM first: keeps "2X" in Latin digits inside a right-to-left title bar
-            Text = Brand.Caption + (Brand.IsBeta ? " (Beta)" : "") + "  -  by " + Brand.Developer + (devMode ? "   [DEV]" : "");
+            ApplyTitle();
             RightToLeft = Lang.Ar ? RightToLeft.Yes : RightToLeft.No;
             RightToLeftLayout = Lang.Ar;
         }
@@ -916,7 +945,6 @@ namespace PingBoost
             ResumeLayout(true);
             if (wasSimple && !simple) FitAdvancedHeight(false);
             ShowUpdateBar();
-            BuildTrayMenu();
             RefreshRelays();
             btnBoost.Enabled = !boosting;
             btnStop.Enabled = boosting;
@@ -944,16 +972,15 @@ namespace PingBoost
         Panel centerPanel;
 
         // Notices appear as chat lines at the bottom of the window and fade out (no popups, no OK button).
-        // While the window is next to the clock, the important ones become a tray balloon instead.
+        // While the window is minimized, warnings and errors flash its taskbar button and show when it's back; the rest
+        // (information, good news the card already shows) is dropped.
         void Msg(string text, ToastKind kind = ToastKind.Info)
         {
             Ui(() =>
             {
-                if (!Visible || WindowState == FormWindowState.Minimized)
+                if (Minimized)
                 {
-                    if (kind != ToastKind.Info && tray.Visible)
-                        tray.ShowBalloonTip(5000, Brand.Name, text,
-                            kind == ToastKind.Bad ? ToolTipIcon.Error : kind == ToastKind.Warn ? ToolTipIcon.Warning : ToolTipIcon.Info);
+                    if (kind == ToastKind.Warn || kind == ToastKind.Bad) HoldNotice(text, kind);
                     return;
                 }
                 if (chat == null) chat = new ChatToasts(this, () => centerPanel.RectangleToScreen(centerPanel.ClientRectangle));
@@ -962,10 +989,11 @@ namespace PingBoost
         }
 
         // A notice the simple layout leaves out because the state card already says it; the advanced layout keeps it.
-        // While the window is hidden or minimized the card can't be seen, so the notice still goes through (as a tray balloon).
+        // While the window is minimized the card can't be seen, so a warning still goes through (flashing the taskbar
+        // button, shown when the window is back).
         void AdvancedMsg(string text, ToastKind kind = ToastKind.Info)
         {
-            if (!simple || !Visible || WindowState == FormWindowState.Minimized) Msg(text, kind);
+            if (!simple || Minimized) Msg(text, kind);
         }
 
         // LRM marks keep "74 ms" in order inside right-to-left text.
@@ -1631,7 +1659,7 @@ namespace PingBoost
         // The grace period is over: update or close (closing removes the lock and the relay route, as always).
         void ForceUpdate(Release r)
         {
-            if (!Visible) RestoreFromTray();
+            if (Minimized) RestoreWindow();
             if (UpdateDialog.Show(this, r, true)) CloseForUpdate();
             else Close();
         }
@@ -1724,16 +1752,33 @@ namespace PingBoost
 
         static bool HasZones(Game g) { return g.RegionMap != null && g.RegionMap.Any(d => d.Zone != null); }
 
+        // The zones seen in the last Zones.FreshDays days. An old plain list ("am,eu") is saved once with today's time.
         static List<string> SeenZones(Game g)
         {
-            return Zones.Parse(Storage.GetSetting(ZonesKey(g)));
+            var now = DateTime.UtcNow;
+            string saved = Storage.GetSetting(ZonesKey(g));
+            if (!string.IsNullOrEmpty(saved))
+            {
+                string migrated = Zones.Format(Zones.Parse(saved, now));
+                if (migrated != saved) Storage.SetSetting(ZonesKey(g), migrated);
+                saved = migrated;
+            }
+            return Zones.Recent(saved, now);
         }
 
         static void LearnZones(Game g, IEnumerable<Region> datacenters)
         {
-            string saved = Storage.GetSetting(ZonesKey(g)), now = saved;
-            foreach (var dc in datacenters) now = Zones.Add(now, Zones.Of(g, dc.Id));
-            if (now != (saved ?? "") && now.Length > 0) Storage.SetSetting(ZonesKey(g), now);
+            var now = DateTime.UtcNow;
+            string saved = Storage.GetSetting(ZonesKey(g)), next = saved;
+            var had = Zones.Parse(saved, now);
+            foreach (var dc in datacenters)
+            {
+                string z = Zones.Of(g, dc.Id);
+                DateTime at;
+                // the time only needs to be about right: write at most once an hour per zone, not at every check
+                if (z != null && (!had.TryGetValue(z, out at) || now - at > TimeSpan.FromHours(1))) next = Zones.Add(next, z, now);
+            }
+            if (next != (saved ?? "") && next.Length > 0) Storage.SetSetting(ZonesKey(g), next);
         }
 
         // The datacenter the game is on, from the addresses it talks to: one that hosts matches, or null when the game
@@ -2227,8 +2272,8 @@ namespace PingBoost
                         if (Storage.GetSetting("tip_tray") != "1")
                         {
                             Storage.SetSetting("tip_tray", "1");
-                            Msg(T("Minimize 2X Ping and it waits next to the clock; the lock stays on until you unlock or close it.",
-                                  "لو صغّرت البرنامج يروح جنب الساعة، والتثبيت يبقى شغّال لين تفكّه أو تقفل البرنامج."));
+                            Msg(T("You can minimize 2X Ping: the lock stays on until you unlock or close it.",
+                                  "تقدر تصغّر البرنامج، والتثبيت يبقى شغّال لين تفكّه أو تقفل البرنامج."));
                         }
                         // the lock can't work with the firewall off: this one the player has to know
                         if (!firewallOn)
@@ -2450,7 +2495,7 @@ namespace PingBoost
                 var last = DateTime.MinValue;
                 while (gen == monitorGen)
                 {
-                    // while the game is in front: one ping every 15 s, just for the tray icon
+                    // while the game is in front: one ping every 15 s, just for the taskbar title
                     if (!appActive && DateTime.Now - last < TimeSpan.FromSeconds(15)) { Thread.Sleep(500); continue; }
                     last = DateTime.Now;
                     double v = Pinger.Once(target, 1500);
@@ -2460,7 +2505,7 @@ namespace PingBoost
                         if (gen != monitorGen) return;
                         liveLabel.Text = T("Status: ", "الحالة: ") + label + "  ·  " + Ms(v);
                         liveLabel.ForeColor = PingColor(v);
-                        SetTrayText(label + " · " + Ms(v));
+                        SetLiveStatus(label + " · " + Ms(v));
                         Telemetry.Ping = v < 0 ? -1 : (int)Math.Round(v);
                         graph.Add(v);
                         TrackLoss(label, v);
@@ -2493,7 +2538,7 @@ namespace PingBoost
             Telemetry.Ping = -1;
             liveLabel.Text = StatusOff;
             liveLabel.ForeColor = Dim;
-            SetTrayText(T("ready", "جاهز"));
+            SetLiveStatus(null);
         }
 
         // While servers are locked, the status bar follows the ping of the locked server.
@@ -2930,7 +2975,7 @@ namespace PingBoost
 
         void DevResetFirstRun()
         {
-            foreach (var k in new[] { "beta_ack", "tray_tip", "tip_tray" }) Storage.SetSetting(k, "");
+            foreach (var k in new[] { "beta_ack", "tip_tray" }) Storage.SetSetting(k, "");
             foreach (var g in games) Storage.SetSetting("tip_" + g.Icon, "");
             DevOut("first-run notices and tips will show again (the welcome screen needs consent=0 in settings.txt)");
         }

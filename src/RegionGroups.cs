@@ -43,24 +43,54 @@ namespace PingBoost
             return def != null ? def.Zone : null;
         }
 
-        // The persisted list ("am,eu") as a list; unknown entries are dropped.
-        public static List<string> Parse(string saved)
+        static readonly string[] All = { Americas, Europe, Asia };
+
+        // Only zones seen this recently count: a player who moved their game to another region stops being warned
+        // about the old one after this long.
+        public const int FreshDays = 14;
+
+        // The saved list "am:<utc ticks>,eu:<utc ticks>" as zone -> when it was last seen (UTC). Entries of the old
+        // plain list ("am,eu") count as seen at nowUtc (migration); unknown entries are dropped.
+        public static Dictionary<string, DateTime> Parse(string saved, DateTime nowUtc)
         {
-            var list = new List<string>();
-            foreach (var z in (saved ?? "").Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
+            var d = new Dictionary<string, DateTime>();
+            foreach (var part in (saved ?? "").Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
             {
-                string t = z.Trim();
-                if ((t == Americas || t == Europe || t == Asia) && !list.Contains(t)) list.Add(t);
+                var f = part.Trim().Split(':');
+                string z = f[0].Trim();
+                if (!All.Contains(z)) continue;
+                long ticks;
+                DateTime at = nowUtc;
+                if (f.Length > 1)
+                {
+                    if (!long.TryParse(f[1].Trim(), out ticks) || ticks < DateTime.MinValue.Ticks || ticks > DateTime.MaxValue.Ticks) continue;
+                    at = new DateTime(ticks, DateTimeKind.Utc);
+                }
+                DateTime had;
+                if (!d.TryGetValue(z, out had) || at > had) d[z] = at;
             }
-            return list;
+            return d;
         }
 
-        // The persisted list with a zone added (never removes one).
-        public static string Add(string saved, string zone)
+        // The form saved in settings, always in the same order.
+        public static string Format(Dictionary<string, DateTime> seen)
         {
-            var list = Parse(saved);
-            if (zone != null && (zone == Americas || zone == Europe || zone == Asia) && !list.Contains(zone)) list.Add(zone);
-            return string.Join(",", list.ToArray());
+            return string.Join(",", All.Where(seen.ContainsKey).Select(z => z + ":" + seen[z].Ticks).ToArray());
+        }
+
+        // The saved list with a zone seen at nowUtc (others are kept as they are; a zone of null adds nothing).
+        public static string Add(string saved, string zone, DateTime nowUtc)
+        {
+            var d = Parse(saved, nowUtc);
+            if (zone != null && All.Contains(zone)) d[zone] = nowUtc;
+            return Format(d);
+        }
+
+        // The zones seen in the last FreshDays days, in a fixed order.
+        public static List<string> Recent(string saved, DateTime nowUtc)
+        {
+            var d = Parse(saved, nowUtc);
+            return All.Where(z => d.ContainsKey(z) && nowUtc - d[z] <= TimeSpan.FromDays(FreshDays)).ToList();
         }
 
         // The card's warning when none of the picked regions is in a game region the player's matches were on, or null:
