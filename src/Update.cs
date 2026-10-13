@@ -89,50 +89,103 @@ namespace PingBoost
 
         // Downloads the release, checks its SHA256, swaps the exe and starts the new version.
         // Returns null when the new version is starting (the caller then closes), otherwise what went wrong.
+        // Set when the new exe is in place but Windows (e.g. an antivirus) refused to start it: the update itself worked.
+        public static bool InstalledNotStarted;
+
         public static string Install(Release r, Action<int> progress)
         {
-            string fresh;
-            string err = Fetch(r, progress, out fresh);
+            InstalledNotStarted = false;
+            // the new exe is extracted next to the running one (same disk, so the swap below is a rename, never a copy)
+            string exe = Application.ExecutablePath, old = exe + ".old", fresh = exe + ".new";
+            string freshHash;
+            string err = Fetch(r, progress, fresh, out freshHash);
             if (err != null) return err;
 
+            // the file checked again right before the swap: nothing may have changed it since it was extracted
+            if (Sha256(fresh) != freshHash)
+            {
+                try { File.Delete(fresh); } catch { }
+                return Lang.T("the download is damaged (checksum mismatch)", "الملف وصل خربان (البصمة ما تطابق)");
+            }
+
             // a running exe can be renamed but not overwritten
-            string exe = Application.ExecutablePath, old = exe + ".old";
             try { if (File.Exists(old)) File.Delete(old); } catch { }
             File.Move(exe, old);
             try { File.Move(fresh, exe); }
-            catch { File.Move(old, exe); throw; }
+            catch
+            {
+                // never leave a half-written exe behind: put the old one back
+                try { if (File.Exists(exe)) File.Delete(exe); } catch { }
+                File.Move(old, exe);
+                try { File.Delete(fresh); } catch { }
+                throw;
+            }
 
-            Process.Start(new ProcessStartInfo(exe, "--updated " + Process.GetCurrentProcess().Id) { UseShellExecute = true });
+            try { Process.Start(new ProcessStartInfo(exe, "--updated " + Process.GetCurrentProcess().Id) { UseShellExecute = true }); }
+            catch (Exception ex)
+            {
+                InstalledNotStarted = true;
+                return Lang.T("the new version is installed, but Windows didn't let it start (" + ex.Message + "). Open 2X Ping again.",
+                              "النسخة الجديدة انثبتت، بس ويندوز ما خلاها تشتغل (" + ex.Message + "). افتح البرنامج مرة ثانية.");
+            }
             return null;
         }
 
-        // Downloads the release zip, checks its SHA256 and extracts 2XPing.exe. Returns null when fresh is ready.
-        public static string Fetch(Release r, Action<int> progress, out string fresh)
+        static string Sha256(string path)
         {
-            fresh = null;
-            if (r.ZipUrl == null || r.ShaUrl == null) return Lang.T("the release has no download file", "الإصدار ما فيه ملف تحميل");
-            string dir = Path.Combine(Path.GetTempPath(), "2XPing-update");
-            try { if (Directory.Exists(dir)) Directory.Delete(dir, true); } catch { }
-            Directory.CreateDirectory(dir);
-            string zip = Path.Combine(dir, "update.zip");
-            Download(r.ZipUrl, zip, progress);
-
-            string expected = Http.Get(r.ShaUrl, 15000).Trim().Split(' ', '\t')[0].ToLowerInvariant();
-            string actual;
             using (var sha = SHA256.Create())
-            using (var s = File.OpenRead(zip))
-                actual = BitConverter.ToString(sha.ComputeHash(s)).Replace("-", "").ToLowerInvariant();
-            if (expected != actual) return Lang.T("the download is damaged (checksum mismatch)", "الملف وصل خربان (البصمة ما تطابق)");
+            using (var s = File.OpenRead(path))
+                return BitConverter.ToString(sha.ComputeHash(s)).Replace("-", "").ToLowerInvariant();
+        }
 
-            string exePath = Path.Combine(dir, "2XPing.exe");
-            using (var archive = ZipFile.OpenRead(zip))
+        // Downloads the release zip, checks its SHA256 and extracts 2XPing.exe to target. Returns null when target is
+        // ready; targetHash is the SHA256 of the extracted file, to check again before it is used.
+        public static string Fetch(Release r, Action<int> progress, string target, out string targetHash)
+        {
+            targetHash = null;
+            if (r.ZipUrl == null || r.ShaUrl == null) return Lang.T("the release has no download file", "الإصدار ما فيه ملف تحميل");
+            // a new folder with a random name each time: no other program can prepare a file at a known path
+            string dir = Path.Combine(Path.GetTempPath(), "2XPing-update-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(dir);
+            try
             {
-                var entry = archive.Entries.FirstOrDefault(e => e.Name.Equals("2XPing.exe", StringComparison.OrdinalIgnoreCase));
-                if (entry == null) return Lang.T("2XPing.exe is missing from the download", "ما لقيت 2XPing.exe داخل الملف");
-                entry.ExtractToFile(exePath, true);
+                string zip = Path.Combine(dir, "update.zip");
+                Download(r.ZipUrl, zip, progress);
+
+                string expected = Http.Get(r.ShaUrl, 15000).Trim().Split(' ', '\t')[0].ToLowerInvariant();
+                if (expected != Sha256(zip)) return Lang.T("the download is damaged (checksum mismatch)", "الملف وصل خربان (البصمة ما تطابق)");
+
+                using (var archive = ZipFile.OpenRead(zip))
+                {
+                    var entry = archive.Entries.FirstOrDefault(e => e.Name.Equals("2XPing.exe", StringComparison.OrdinalIgnoreCase));
+                    if (entry == null) return Lang.T("2XPing.exe is missing from the download", "ما لقيت 2XPing.exe داخل الملف");
+                    // hashed while it is written, from the verified zip
+                    using (var src = entry.Open())
+                    using (var dst = File.Create(target))
+                    using (var sha = SHA256.Create())
+                    {
+                        var buf = new byte[65536];
+                        int n;
+                        while ((n = src.Read(buf, 0, buf.Length)) > 0)
+                        {
+                            sha.TransformBlock(buf, 0, n, null, 0);
+                            dst.Write(buf, 0, n);
+                        }
+                        sha.TransformFinalBlock(buf, 0, 0);
+                        targetHash = BitConverter.ToString(sha.Hash).Replace("-", "").ToLowerInvariant();
+                    }
+                }
+                return null;
             }
-            fresh = exePath;
-            return null;
+            catch
+            {
+                try { if (File.Exists(target)) File.Delete(target); } catch { }
+                throw;
+            }
+            finally
+            {
+                try { Directory.Delete(dir, true); } catch { }
+            }
         }
 
         static void Download(string url, string path, Action<int> progress)
@@ -173,6 +226,7 @@ namespace PingBoost
         public static void CleanupOld()
         {
             try { var old = Application.ExecutablePath + ".old"; if (File.Exists(old)) File.Delete(old); } catch { }
+            try { var fresh = Application.ExecutablePath + ".new"; if (File.Exists(fresh)) File.Delete(fresh); } catch { }
         }
     }
 
@@ -273,8 +327,8 @@ namespace PingBoost
                                 return;
                             }
                             bar.Visible = false;
-                            status.ForeColor = MainForm.Bad;
-                            status.Text = Lang.T("Couldn't update: ", "ما زبط التحديث: ") + err;
+                            status.ForeColor = Updater.InstalledNotStarted ? MainForm.Warn : MainForm.Bad;
+                            status.Text = Updater.InstalledNotStarted ? err : Lang.T("Couldn't update: ", "ما زبط التحديث: ") + err;
                             failed = true;
                             go.Text = Lang.T("Download page", "صفحة التحميل");
                             go.Enabled = later.Enabled = true;

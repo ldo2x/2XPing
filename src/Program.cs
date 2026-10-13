@@ -23,8 +23,15 @@ namespace PingBoost
             // one copy at a time: two copies would fight over the tunnel and firewall rules
             Lang.Ar = Storage.LoadArabic();
             bool first;
-            using (new Mutex(true, "Local\\lDo2x.2XPing", out first))
+            using (var single = new Mutex(true, "Local\\lDo2x.2XPing", out first))
             {
+                // just updated: the old version may still be closing (removing its lock rules, its tunnel): wait for it
+                // a while longer instead of quietly exiting, which would leave the player with no app at all
+                if (!first && Updater.JustUpdated)
+                {
+                    try { first = single.WaitOne(60000); }
+                    catch (AbandonedMutexException) { first = true; } // it ended without letting go: ours now
+                }
                 if (!first)
                 {
                     // already open (maybe minimized): bring that window up instead of showing a message
