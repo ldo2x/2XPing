@@ -86,6 +86,44 @@ namespace PingBoost
             return Format(d);
         }
 
+        // What to save after a server check saw these datacenters (Region.Id), or null when nothing changes: a game without
+        // zones, datacenters in no zone, or zones already saved within the hour (the time only needs to be about right,
+        // so settings.txt isn't written at every check).
+        public static string Learn(Game g, string saved, IEnumerable<string> regionIds, DateTime nowUtc)
+        {
+            if (g == null || regionIds == null) return null;
+            var had = Parse(saved, nowUtc);
+            string next = saved;
+            bool changed = false;
+            foreach (var id in regionIds)
+            {
+                string z = Of(g, id);
+                DateTime at;
+                if (z == null || (had.TryGetValue(z, out at) && nowUtc - at <= TimeSpan.FromHours(1))) continue;
+                next = Add(next, z, nowUtc);
+                had[z] = nowUtc;
+                changed = true;
+            }
+            return changed && !string.IsNullOrEmpty(next) ? next : null;
+        }
+
+        // "No match found?" counts only time the server check actually watched the running game: the gap between two
+        // checks is added when it is short (a normal check interval); a longer gap (checks paused while the game is
+        // in front, the game closed) adds nothing.
+        public static readonly TimeSpan NoMatchAfter = TimeSpan.FromMinutes(3), MaxCheckGap = TimeSpan.FromMinutes(2);
+
+        public static TimeSpan AddObserved(TimeSpan observed, DateTime lastCheck, DateTime now)
+        {
+            if (lastCheck == DateTime.MinValue) return observed;
+            var gap = now - lastCheck;
+            return gap > TimeSpan.Zero && gap <= MaxCheckGap ? observed + gap : observed;
+        }
+
+        public static bool NoMatchYet(bool lockedHere, bool hasZones, bool dcSinceLock, TimeSpan observed)
+        {
+            return lockedHere && hasZones && !dcSinceLock && observed > NoMatchAfter;
+        }
+
         // The zones seen in the last FreshDays days, in a fixed order.
         public static List<string> Recent(string saved, DateTime nowUtc)
         {

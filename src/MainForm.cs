@@ -178,8 +178,10 @@ namespace PingBoost
         // Minimized, 2X Ping stays a normal window in the taskbar (no tray icon): its title shows the live status, so
         // hovering the taskbar button shows it, and important notices flash the button and wait for the window to come back.
         bool wasMinimized;
+        FormWindowState restoreState = FormWindowState.Normal; // what a restore goes back to (Normal or Maximized)
         string liveStatus;                                          // e.g. "locked on Europe · 78 ms"; null = nothing yet
-        readonly List<KeyValuePair<string, ToastKind>> heldNotices = new List<KeyValuePair<string, ToastKind>>();
+        readonly List<HeldNotice> heldNotices = new List<HeldNotice>();
+        class HeldNotice { public string Text; public ToastKind Kind; public bool AboutMatch; }
         const int HeldMax = 4;
 
         void BuildWindowEvents()
@@ -187,6 +189,7 @@ namespace PingBoost
             Resize += delegate
             {
                 bool min = WindowState == FormWindowState.Minimized;
+                if (!min) restoreState = WindowState;
                 if (min == wasMinimized) return;
                 wasMinimized = min;
                 if (min) Telemetry.Send("use", null, -1, "minimized");
@@ -247,7 +250,7 @@ namespace PingBoost
         void RestoreWindow()
         {
             if (!Visible) Show();
-            if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
+            if (WindowState == FormWindowState.Minimized) WindowState = restoreState;
             Activate();
         }
 
@@ -263,7 +266,7 @@ namespace PingBoost
         // Minimized: "2X Ping · locked on Europe · 78 ms" (what hovering the taskbar button shows); otherwise the normal title.
         void ApplyTitle()
         {
-            // Brand.Caption starts with an LRM: keeps "2X" in Latin digits inside a right-to-left title bar
+            // Brand.Caption is wrapped in LRE/PDF marks: keeps "2X" in Latin order inside a right-to-left title bar
             string normal = Brand.Caption + (Brand.IsBeta ? " (Beta)" : "") + "  -  by " + Brand.Developer + (devMode ? "   [DEV]" : "");
             string title = TitleFor(normal, WindowState == FormWindowState.Minimized, liveStatus);
             if (Text != title) Text = title;
@@ -271,7 +274,7 @@ namespace PingBoost
 
         internal static string TitleFor(string normal, bool minimized, string status)
         {
-            return minimized && !string.IsNullOrEmpty(status) ? Brand.Name + " · " + status : normal;
+            return minimized && !string.IsNullOrEmpty(status) ? Brand.Caption + " · " + status : normal;
         }
 
         [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
@@ -288,12 +291,18 @@ namespace PingBoost
         }
 
         // An important notice while minimized: kept (the latest few) for when the window is back.
-        void HoldNotice(string text, ToastKind kind)
+        void HoldNotice(string text, ToastKind kind, bool aboutMatch)
         {
-            heldNotices.RemoveAll(n => n.Key == text);
-            heldNotices.Add(new KeyValuePair<string, ToastKind>(text, kind));
+            heldNotices.RemoveAll(n => n.Text == text);
+            heldNotices.Add(new HeldNotice { Text = text, Kind = kind, AboutMatch = aboutMatch });
             while (heldNotices.Count > HeldMax) heldNotices.RemoveAt(0);
             FlashTaskbar();
+        }
+
+        // A new match or a lock change: the held warnings about the old match or lock check are stale. Errors stay.
+        void DropHeldWarnings()
+        {
+            heldNotices.RemoveAll(n => n.AboutMatch && n.Kind != ToastKind.Bad);
         }
 
         void ShowHeldNotices()
@@ -301,7 +310,7 @@ namespace PingBoost
             if (Minimized || heldNotices.Count == 0) return;
             var list = heldNotices.ToList();
             heldNotices.Clear();
-            foreach (var n in list) Msg(n.Key, n.Value);
+            foreach (var n in list) Msg(n.Text, n.Kind);
         }
 
         void ApplyDirection()
@@ -974,13 +983,16 @@ namespace PingBoost
         // Notices appear as chat lines at the bottom of the window and fade out (no popups, no OK button).
         // While the window is minimized, warnings and errors flash its taskbar button and show when it's back; the rest
         // (information, good news the card already shows) is dropped.
-        void Msg(string text, ToastKind kind = ToastKind.Info)
+        void Msg(string text, ToastKind kind = ToastKind.Info) { Msg(text, kind, false); }
+
+        // aboutMatch: a notice about the match or the lock check (from AdvancedMsg), dropped when the match or lock changes
+        void Msg(string text, ToastKind kind, bool aboutMatch)
         {
             Ui(() =>
             {
                 if (Minimized)
                 {
-                    if (kind == ToastKind.Warn || kind == ToastKind.Bad) HoldNotice(text, kind);
+                    if (kind == ToastKind.Warn || kind == ToastKind.Bad) HoldNotice(text, kind, aboutMatch);
                     return;
                 }
                 if (chat == null) chat = new ChatToasts(this, () => centerPanel.RectangleToScreen(centerPanel.ClientRectangle));
@@ -993,7 +1005,7 @@ namespace PingBoost
         // button, shown when the window is back).
         void AdvancedMsg(string text, ToastKind kind = ToastKind.Info)
         {
-            if (!simple || Minimized) Msg(text, kind);
+            if (!simple || Minimized) Msg(text, kind, true);
         }
 
         // LRM marks keep "74 ms" in order inside right-to-left text.
@@ -1217,6 +1229,8 @@ namespace PingBoost
 
         void SetMatch(string region, bool onPicked, bool viaRelay)
         {
+            // a different match: the warnings held about the last one are stale (the same match keeps them)
+            if (region != matchRegion || onPicked != matchOnPicked || viaRelay != matchViaRelay) DropHeldWarnings();
             matchRegion = region;
             matchOnPicked = onPicked;
             matchViaRelay = viaRelay;
@@ -1752,10 +1766,16 @@ namespace PingBoost
 
         static bool HasZones(Game g) { return g.RegionMap != null && g.RegionMap.Any(d => d.Zone != null); }
 
+        // SeenZones is asked at every card update: read settings.txt once per game, again after LearnZones or an hour
+        // later (zones age out after Zones.FreshDays days)
+        readonly Dictionary<string, KeyValuePair<DateTime, List<string>>> seenZonesCache = new Dictionary<string, KeyValuePair<DateTime, List<string>>>();
+
         // The zones seen in the last Zones.FreshDays days. An old plain list ("am,eu") is saved once with today's time.
-        static List<string> SeenZones(Game g)
+        List<string> SeenZones(Game g)
         {
             var now = DateTime.UtcNow;
+            KeyValuePair<DateTime, List<string>> cached;
+            if (seenZonesCache.TryGetValue(g.Icon, out cached) && now - cached.Key < TimeSpan.FromHours(1)) return cached.Value;
             string saved = Storage.GetSetting(ZonesKey(g));
             if (!string.IsNullOrEmpty(saved))
             {
@@ -1763,22 +1783,18 @@ namespace PingBoost
                 if (migrated != saved) Storage.SetSetting(ZonesKey(g), migrated);
                 saved = migrated;
             }
-            return Zones.Recent(saved, now);
+            var recent = Zones.Recent(saved, now);
+            seenZonesCache[g.Icon] = new KeyValuePair<DateTime, List<string>>(now, recent);
+            return recent;
         }
 
-        static void LearnZones(Game g, IEnumerable<Region> datacenters)
+        void LearnZones(Game g, IEnumerable<Region> datacenters)
         {
-            var now = DateTime.UtcNow;
-            string saved = Storage.GetSetting(ZonesKey(g)), next = saved;
-            var had = Zones.Parse(saved, now);
-            foreach (var dc in datacenters)
-            {
-                string z = Zones.Of(g, dc.Id);
-                DateTime at;
-                // the time only needs to be about right: write at most once an hour per zone, not at every check
-                if (z != null && (!had.TryGetValue(z, out at) || now - at > TimeSpan.FromHours(1))) next = Zones.Add(next, z, now);
-            }
-            if (next != (saved ?? "") && next.Length > 0) Storage.SetSetting(ZonesKey(g), next);
+            if (!HasZones(g)) return; // Valve and the rest: nothing to learn
+            string next = Zones.Learn(g, Storage.GetSetting(ZonesKey(g)), datacenters.Select(r => r.Id), DateTime.UtcNow);
+            if (string.IsNullOrEmpty(next)) return;
+            Storage.SetSetting(ZonesKey(g), next);
+            seenZonesCache.Remove(g.Icon);
         }
 
         // The datacenter the game is on, from the addresses it talks to: one that hosts matches, or null when the game
@@ -1965,9 +1981,11 @@ namespace PingBoost
         // then every 90 s. Problems found on the way are reported silently (see Issues).
         System.Windows.Forms.Timer autoDetectTimer;
         bool autoDetecting, matchSinceLock;
-        // since the lock: a match datacenter was seen; and (Overwatch) none for NoMatchMinutes while the game ran
+        // since the lock: a match datacenter was seen; and (Overwatch) none in more than Zones.NoMatchAfter of checks
+        // that actually watched the running game (observedSinceLock, see Zones.AddObserved)
         bool dcSinceLock, noMatchLong;
-        const int NoMatchMinutes = 3;
+        TimeSpan observedSinceLock;
+        DateTime lastObservedCheck = DateTime.MinValue;
         DateTime lastAutoDetect = DateTime.MinValue, lockChangedAt = DateTime.MinValue, lastRulesCheck = DateTime.MinValue;
         string lastAutoServer;
 
@@ -2001,6 +2019,9 @@ namespace PingBoost
         {
             lockChangedAt = DateTime.Now;
             matchSinceLock = dcSinceLock = noMatchLong = false;
+            observedSinceLock = TimeSpan.Zero;
+            lastObservedCheck = DateTime.MinValue;
+            DropHeldWarnings(); // they were about the lock before this change
             lastAutoServer = null;
             lastAutoDetect = DateTime.MinValue;
             ClearMatch(); // a match from before the change says nothing about the new lock
@@ -2051,6 +2072,7 @@ namespace PingBoost
                     if (CurrentGame != g) return;
                     if (!running)
                     {
+                        lastObservedCheck = DateTime.MinValue; // time with the game closed is never "no match yet"
                         if (lastAutoServer != null) ResetDetectButton();
                         if (matchRegion != null || matchViaRelay || currentServer != null) { ClearMatch(); UpdateCard(); }
                         return;
@@ -2087,10 +2109,12 @@ namespace PingBoost
                 dcSinceLock = true;
                 LearnZones(g, new[] { seenDc });
             }
-            // Overwatch: locked for a few minutes with the game open and no match datacenter in sight. The picked
-            // regions may be outside the game's region, where it never finds a match (see Zones)
-            bool noMatch = lockSummary != null && lockGame == g && HasZones(g) && !dcSinceLock &&
-                           DateTime.Now - lockChangedAt > TimeSpan.FromMinutes(NoMatchMinutes);
+            // Overwatch: the checks watched the running game for a few minutes since the lock and saw no match
+            // datacenter. The picked regions may be outside the game's region, where it never finds a match (see Zones)
+            var checkedAt = DateTime.Now;
+            observedSinceLock = Zones.AddObserved(observedSinceLock, lastObservedCheck, checkedAt);
+            lastObservedCheck = checkedAt;
+            bool noMatch = Zones.NoMatchYet(lockSummary != null && lockGame == g, HasZones(g), dcSinceLock, observedSinceLock);
             if (noMatch != noMatchLong)
             {
                 noMatchLong = noMatch;

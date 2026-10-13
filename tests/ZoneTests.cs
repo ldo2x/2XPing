@@ -179,13 +179,59 @@ namespace PingBoost
 
         static void MinimizedTitle()
         {
-            Check(MainForm.TitleFor("Normal", true, "locked on Europe · 78 ms") == Brand.Name + " · locked on Europe · 78 ms", "minimized: live status in the title");
+            Check(MainForm.TitleFor("Normal", true, "locked on Europe · 78 ms") == Brand.Caption + " · locked on Europe · 78 ms", "minimized: live status in the title");
             Check(MainForm.TitleFor("Normal", false, "locked on Europe · 78 ms") == "Normal", "restored: the normal title");
             Check(MainForm.TitleFor("Normal", true, null) == "Normal", "minimized, nothing running: the normal title");
         }
 
+        static void ZonesLearnFromServerChecks()
+        {
+            var now = new DateTime(2026, 10, 13, 12, 0, 0, DateTimeKind.Utc);
+            // games without zones (Valve, a missing setting): nothing to save, never a crash
+            var valve = new Game { Name = "Valve-like", Provider = Provider.Valve };
+            Check(Zones.Learn(valve, null, new[] { "fra", "dxb" }, now) == null, "no RegionMap, null setting: nothing to save");
+            var dbd = Find("Dead by Daylight");
+            Check(Zones.Learn(dbd, null, new[] { "eu-central-1" }, now) == null, "regions without zones: nothing to save");
+            Check(Zones.Learn(dbd, "am:" + now.Ticks, new[] { "eu-central-1" }, now) == null, "a saved list stays as it is");
+            Check(Zones.Learn(null, null, new[] { "x" }, now) == null && Zones.Learn(valve, null, null, now) == null, "nulls");
+            var ow = Find("Overwatch 2");
+            Check(Zones.Learn(ow, null, new string[0], now) == null, "no datacenter seen: nothing to save");
+            Check(Zones.Learn(ow, null, new[] { "GSG1" }, now) == "as:" + now.Ticks, "first zone saved");
+            Check(Zones.Learn(ow, "as:" + now.Ticks, new[] { "GSG1" }, now.AddMinutes(30)) == null, "seen again within the hour: no write");
+            var later = now.AddHours(2);
+            Check(Zones.Learn(ow, "as:" + now.Ticks, new[] { "GSG1", "ORD1" }, later) == "am:" + later.Ticks + ",as:" + later.Ticks, "an hour later: times move, new zone added");
+            Check(Zones.Learn(ow, "as:" + now.Ticks, new[] { "nope" }, later) == null, "an unknown datacenter: nothing to save");
+        }
+
+        static void NoMatchCountsWatchedTimeOnly()
+        {
+            var t0 = new DateTime(2026, 10, 13, 12, 0, 0);
+            var seen = TimeSpan.Zero;
+            seen = Zones.AddObserved(seen, DateTime.MinValue, t0);
+            Check(seen == TimeSpan.Zero, "the first check adds nothing");
+            // 30 s checks for 3 min 30 s while the game runs and the app is in front
+            var last = t0;
+            for (int i = 1; i <= 7; i++) { var at = t0.AddSeconds(30 * i); seen = Zones.AddObserved(seen, last, at); last = at; }
+            Check(seen == TimeSpan.FromSeconds(210), "watched 3:30: " + seen);
+            Check(Zones.NoMatchYet(true, true, false, seen), "3:30 watched, no match datacenter: hint");
+            Check(!Zones.NoMatchYet(true, true, true, seen), "a datacenter was seen: no hint");
+            Check(!Zones.NoMatchYet(false, true, false, seen) && !Zones.NoMatchYet(true, false, false, seen), "not locked here, or no zones: no hint");
+
+            // the review case: lock, play a match with the game in front (checks paused), alt-tab back 20 minutes later
+            seen = TimeSpan.Zero;
+            seen = Zones.AddObserved(seen, DateTime.MinValue, t0);                        // one check right after the lock
+            seen = Zones.AddObserved(seen, t0, t0.AddMinutes(20));                       // the next one, 20 min later
+            seen = Zones.AddObserved(seen, t0.AddMinutes(20), t0.AddMinutes(20.5));
+            Check(seen == TimeSpan.FromSeconds(30) && !Zones.NoMatchYet(true, true, false, seen), "paused time doesn't count: " + seen);
+            Check(Zones.AddObserved(TimeSpan.FromMinutes(1), t0, t0.AddSeconds(98)) == TimeSpan.FromSeconds(158), "a 90 s check interval (+ capture) counts");
+            Check(Zones.AddObserved(TimeSpan.FromMinutes(1), t0, t0.AddSeconds(-5)) == TimeSpan.FromMinutes(1), "clock going back adds nothing");
+            Check(!Zones.NoMatchYet(true, true, false, TimeSpan.FromMinutes(3)), "exactly 3 min: not yet");
+        }
+
         static void RunZoneTests()
         {
+            Run("ZonesLearnFromServerChecks", ZonesLearnFromServerChecks);
+            Run("NoMatchCountsWatchedTimeOnly", NoMatchCountsWatchedTimeOnly);
             Run("MinimizedTitle", MinimizedTitle);
             Run("OverwatchRegionsHaveZones", OverwatchRegionsHaveZones);
             Run("ZonesRememberWhenSeen", ZonesRememberWhenSeen);
