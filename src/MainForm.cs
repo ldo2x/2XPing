@@ -956,6 +956,12 @@ namespace PingBoost
             });
         }
 
+        // A notice the simple layout leaves out because the state card already says it; the advanced layout keeps it.
+        void AdvancedMsg(string text, ToastKind kind = ToastKind.Info)
+        {
+            if (!simple) Msg(text, kind);
+        }
+
         // LRM marks keep "74 ms" in order inside right-to-left text.
         static string Ms(double v) { return v < 0 ? T("no reply", "ما يرد") : "‎" + Math.Round(v) + " ms‎"; }
 
@@ -1791,7 +1797,7 @@ namespace PingBoost
                 if (CurrentGame == g) { SetMatch(null, false, true); FillServers(g); }
                 SetStatus(T("Through Valve's relay in ", "داخل شبكة Valve من وسيط ") + ShortName(relay));
                 Telemetry.Send("detect", relay.NameEn, -1, "through relay");
-                Msg(T("Your game goes through Valve's relay in " + ShortName(relay) + ", the shortest way into their network, so the match server itself is hidden. " +
+                AdvancedMsg(T("Your game goes through Valve's relay in " + ShortName(relay) + ", the shortest way into their network, so the match server itself is hidden. " +
                       (lockSummary != null ? "Your lock still only allows the servers you picked." : ""),
                       "لعبتك داخلة شبكة Valve من وسيط " + ShortName(relay) + "، وهو أقصر طريق لها، فسيرفر المباراة نفسه ما يبان. " +
                       (lockSummary != null ? "والتثبيت ما يسمح إلا بالسيرفرات اللي اخترتها." : "")), ToastKind.Good);
@@ -1822,9 +1828,9 @@ namespace PingBoost
                     g.Icon + string.Join(",", found.Select(r => r.Id)));
 
             bool onPicked = lockSummary == null || found.All(r => r.Picked);
-            Msg(T("You're playing on: ", "إنت تلعب دحين على: ") + names, onPicked ? ToastKind.Good : ToastKind.Warn);
+            AdvancedMsg(T("You're playing on: ", "إنت تلعب دحين على: ") + names, onPicked ? ToastKind.Good : ToastKind.Warn);
             if (lockSummary != null)
-                Msg(onPicked
+                AdvancedMsg(onPicked
                     ? T("✓ That's one of your picked servers, so the lock is working.", "هادا من السيرفرات اللي اخترتها، يعني التثبيت شغّال صح ✓")
                     : T("That's not one of your picked servers. Restart the game and queue again.",
                         "هادا مو من السيرفرات اللي اخترتها. اقفل اللعبة وافتحها من جديد، وبعدين دوّر مباراة."),
@@ -1864,8 +1870,8 @@ namespace PingBoost
                 SetStatus(T("You are on: ", "إنت دحين على: ") + top.Name);
                 Telemetry.Server = top.NameEn;
                 Telemetry.Send("detect", top.NameEn, top.Direct.Ok ? (int)Math.Round(top.Direct.Avg) : -1, null);
-                Msg(T("You're playing on: ", "إنت تلعب دحين على: ") + top.Name, ToastKind.Good);
-                Msg((top.Direct.Ok ? T("Ping: ", "البنق: ") + Ms(top.Direct.Avg) + T(". ", "، ")
+                AdvancedMsg(T("You're playing on: ", "إنت تلعب دحين على: ") + top.Name, ToastKind.Good);
+                AdvancedMsg((top.Direct.Ok ? T("Ping: ", "البنق: ") + Ms(top.Direct.Avg) + T(". ", "، ")
                                    : T("It doesn't answer ping (normal for some games). ", "ما يرد على البنق (عادي في بعض الألعاب)، ")) +
                     T("It's saved at the top of the list.", "وحفظته فوق في القائمة."));
             });
@@ -2041,7 +2047,7 @@ namespace PingBoost
             else if (!ok)
                 Issues.Report("lock_outside", g.Name + " on " + dc.Id + " (" + top.Ip + ") while locked on " + lockSummary, data, g.Icon + dc.Id);
             if (!ok && dc != null && name != lastAutoServer)
-                Msg(T("You're on " + name + ", which isn't one of your picked servers. Restart the game and queue again.",
+                AdvancedMsg(T("You're on " + name + ", which isn't one of your picked servers. Restart the game and queue again.",
                       "إنت على " + name + "، وهو مو من السيرفرات اللي اخترتها. اقفل اللعبة وافتحها من جديد، وبعدين دوّر مباراة."), ToastKind.Warn);
             if (name != lastAutoServer)
                 Telemetry.Send("detect", dc != null ? dc.NameEn : top.Ip, -1, "auto, " + (ok ? "ok" : "outside lock"));
@@ -2143,11 +2149,11 @@ namespace PingBoost
                         Log(T("Lock ON (", "التثبيت شغّال (") + g.Name + "): " + names + "  (" + n + ")");
                         SetStatus(T("Locked: ", "مثبّت على: ") + names);
                         StartLockMonitor();
-                        Msg(T("Locked. You'll only be matched on: ", "تم التثبيت. ما بتلعب إلا على: ") + names, ToastKind.Good);
+                        AdvancedMsg(T("Locked. You'll only be matched on: ", "تم التثبيت. ما بتلعب إلا على: ") + names, ToastKind.Good);
                         if (g.LockSpace != null)
-                            Msg(T("Try a casual match first (not ranked): if " + g.Name + " still picks a blocked server, the match won't load, and in ranked that counts as leaving.",
+                            AdvancedMsg(T("Try a casual match first (not ranked): if " + g.Name + " still picks a blocked server, the match won't load, and in ranked that counts as leaving.",
                                   "جرّبه في مباراة عادية أول (مو رانكد): لو اللعبة اختارت سيرفر محجوب المباراة ما تفتح، وفي الرانكد تنحسب منسحب."), ToastKind.Warn);
-                        Msg(T("If the game is open, restart it (or wait a minute) before you queue.",
+                        AdvancedMsg(T("If the game is open, restart it (or wait a minute) before you queue.",
                               "لو اللعبة مفتوحة، اقفلها وافتحها من جديد (أو استنى دقيقة) قبل ما تدوّر مباراة."));
                         if (Storage.GetSetting("tip_tray") != "1")
                         {
