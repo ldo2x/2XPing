@@ -1,0 +1,273 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Text;
+
+namespace PingBoost
+{
+    // Deadlock honest detection (audit I4, B3, B4, G2): the >=50% rule, the console log, the relay-only card.
+    static partial class Tests
+    {
+        static string RelayIp(Game g, string id)
+        {
+            var r = g.Regions.First(x => x.Id == id);
+            return r.Cidrs.First().Split('/')[0];
+        }
+
+        static Detector.Hit HitOf(string ip, int packets) { return new Detector.Hit { Ip = ip, Port = 27015, Packets = packets }; }
+
+        static void ShareRuleCountsEveryPacket()
+        {
+            // 300 game packets in all: 120 dxb, 90 fra, 80 ams, 10 small ones that never make the list
+            var all = new[] { HitOf("1.1.1.1", 120), HitOf("2.2.2.2", 90), HitOf("3.3.3.3", 80), HitOf("4.4.4.4", 6), HitOf("5.5.5.5", 4) };
+            var top = Detector.Top(all);
+            Check(top.Count == 3 && top[0].Ip == "1.1.1.1", "busiest first, under 20 packets left out: " + top.Count);
+            Check(Math.Abs(top[0].Share - 0.4) < 1e-9, "share counts the small ones too: " + top[0].Share);
+            Check(!top.Any(Detector.CarriesMatch), "40% carries nothing");
+            var one = Detector.Top(new[] { HitOf("1.1.1.1", 150), HitOf("2.2.2.2", 150) });
+            Check(one.All(Detector.CarriesMatch), "exactly half carries the match");
+            var less = Detector.Top(new[] { HitOf("1.1.1.1", 149), HitOf("2.2.2.2", 151) });
+            Check(!Detector.CarriesMatch(less.First(h => h.Ip == "1.1.1.1")) && Detector.CarriesMatch(less.First(h => h.Ip == "2.2.2.2")),
+                  "149/300 doesn't, 151/300 does");
+            Check(Detector.Top(new Detector.Hit[0]).Count == 0, "nothing captured");
+        }
+
+        static void HostNeedsHalfThePackets()
+        {
+            var g = SavedDeadlock();
+            string dxb = RelayIp(g, "dxb"), fra = RelayIp(g, "fra");
+            // the audit's case: Dubai carries the game, Frankfurt is the backup router kept alive (B3)
+            var hits = Detector.Top(new[] { HitOf(dxb, 950), HitOf(fra, 50) });
+            Check(MainForm.HostRegionOf(g, hits) == null, "a 5% Frankfurt is never the match");
+            var relay = MainForm.RelayRegionOf(g, hits);
+            Check(relay != null && relay.Id == "dxb", "entering at Dubai: " + (relay != null ? relay.Id : "none"));
+            // Frankfurt carries most of it: that's the match
+            hits = Detector.Top(new[] { HitOf(dxb, 100), HitOf(fra, 900) });
+            var dc = MainForm.HostRegionOf(g, hits);
+            Check(dc != null && dc.Id == "fra", "90% Frankfurt is the match");
+            // 45% Frankfurt, 40% Dubai, the rest elsewhere: no match, the busiest Valve address is the way in
+            hits = Detector.Top(new[] { HitOf(fra, 450), HitOf(dxb, 400), HitOf("8.8.8.8", 150) });
+            Check(MainForm.HostRegionOf(g, hits) == null, "45% is not the match");
+            relay = MainForm.RelayRegionOf(g, hits);
+            Check(relay != null && relay.Id == "fra", "entering at Frankfurt (used as a relay): " + (relay != null ? relay.Id : "none"));
+            // nothing of Valve's
+            hits = Detector.Top(new[] { HitOf("8.8.8.8", 500) });
+            Check(MainForm.HostRegionOf(g, hits) == null && MainForm.RelayRegionOf(g, hits) == null, "no Valve address, nothing");
+        }
+
+        // The game's real lines (format strings from Deadlock's steamnetworkingsockets.dll, audit §4).
+        static void ConsoleParsesTheGamesLines()
+        {
+            var now = new DateTime(2026, 10, 13, 22, 0, 0);
+            string kind;
+            var l = GameConsole.Parse("    Remote host is in data center 'fra'", now, out kind);
+            Check(l != null && kind == "dc" && l.Code == "fra" && l.At == DateTime.MaxValue, "plain dc line");
+            l = GameConsole.Parse("10/13 21:33:12 [SteamNetSockets]     Remote host is in data center 'vie'", now, out kind);
+            Check(l != null && l.Code == "vie" && l.At == new DateTime(2026, 10, 13, 21, 33, 12), "dated dc line: " + (l != null ? l.At.ToString("s") : "null"));
+            l = GameConsole.Parse("Communicating via relay in 'dxb'", now, out kind);
+            Check(l != null && kind == "relay" && l.Code == "dxb", "relay line");
+            l = GameConsole.Parse("    Remote host is in data center 'sto2'", now, out kind);
+            Check(l != null && l.Code == "sto2", "a POP id with a number");
+            l = GameConsole.Parse("Remote host is in data center 'FRA#12 (155.133.226.68:27015)'", now, out kind);
+            Check(l != null && l.Code == "fra", "only the POP id, lowercase: " + (l != null ? l.Code : "null"));
+            Check(GameConsole.Parse("Primary router: dxb#3 (185.25.183.163:27015)  Ping = 31+28=59 (front+back=total)", now, out kind) == null,
+                  "other lines are not a datacenter");
+            Check(GameConsole.Parse("Remote host is in data center ''", now, out kind) == null, "an empty name is nothing");
+            Check(GameConsole.Parse("Ping location: dxb=31+3,fra=72+7/69+5", now, out kind) == null, "the ping location is nothing");
+            // "12/31" read on 1 January was last year
+            l = GameConsole.Parse("12/31 23:59:00 Remote host is in data center 'ams'", new DateTime(2027, 1, 1, 0, 5, 0), out kind);
+            Check(l != null && l.At.Year == 2026, "last year's date: " + (l != null ? l.At.ToString("s") : "null"));
+            // known ids: itself, or without the number (tyo1 -> tyo)
+            Func<string, bool> known = c => DeadlockData.IsKnown(c);
+            Check(GameConsole.Known("sto2", known) == "sto2" && GameConsole.Known("tyo1", known) == "tyo" && GameConsole.Known("xyz9", known) == null,
+                  "known ids");
+            Check(GameConsole.PathFromExe(null) == null, "no exe, no path");
+        }
+
+        static string TempLog()
+        {
+            string dir = Path.Combine(Path.GetTempPath(), "2xping-tests");
+            Directory.CreateDirectory(dir);
+            return Path.Combine(dir, "console-" + Guid.NewGuid().ToString("N") + ".log");
+        }
+
+        static void Append(string path, string text) { File.AppendAllText(path, text, new UTF8Encoding(false)); }
+
+        static void ConsoleReadsOnlyNewLines()
+        {
+            string path = TempLog();
+            try
+            {
+                var t0 = new DateTime(2026, 10, 13, 20, 0, 0);
+                // a log from an earlier session: undated lines of unknown age never count
+                File.WriteAllText(path, "Ping location: dxb=31\n    Remote host is in data center 'fra'\n", new UTF8Encoding(false));
+                var log = new GameConsole(path);
+                Check(log.Read(t0), "reads");
+                Check(log.LastDc != null && log.LastDc.Code == "fra" && log.LastDc.At == DateTime.MinValue, "old line kept as old");
+                Check(GameConsole.Fresh(log.LastDc, DateTime.MinValue) == null, "an old line is never fresh");
+                // a new match: the line appears after the first read, stamped with the read time
+                var t1 = t0.AddMinutes(5);
+                Append(path, "Communicating via relay in 'dxb'\n    Remote host is in data cen");
+                log.Read(t1);
+                Check(log.LastDc.Code == "fra" && log.LastRelay != null && log.LastRelay.Code == "dxb", "half a line waits");
+                Append(path, "ter 'vie'\n");
+                var t2 = t1.AddSeconds(30);
+                log.Read(t2);
+                Check(log.LastDc.Code == "vie" && log.LastDc.At == t2, "the finished line counts: " + log.LastDc.Code);
+                Check(GameConsole.Fresh(log.LastDc, t0) != null, "written after the cutoff: fresh");
+                Check(GameConsole.Fresh(log.LastDc, t2.AddSeconds(1)) == null, "a cutoff after it (no match seen since): stale");
+                // nothing new: nothing changes
+                log.Read(t2.AddMinutes(1));
+                Check(log.LastDc.Code == "vie" && log.LastDc.At == t2, "no new bytes, same answer");
+
+                // the game cleared the log (shorter now): read from its start, every line is new
+                File.WriteAllText(path, "    Remote host is in data center 'ams'\n", new UTF8Encoding(false));
+                var t3 = t2.AddMinutes(10);
+                log.Read(t3);
+                Check(log.LastDc.Code == "ams" && log.LastDc.At == t3, "a shorter file is a new log: " + log.LastDc.Code);
+                // replaced by a longer one that starts differently: also a new log
+                File.WriteAllText(path, "Different start of a new session, quite a bit longer than before ...........\n" +
+                                        "    Remote host is in data center 'waw'\n", new UTF8Encoding(false));
+                var t4 = t3.AddMinutes(10);
+                log.Read(t4);
+                Check(log.LastDc.Code == "waw" && log.LastDc.At == t4, "a different start is a new log: " + log.LastDc.Code);
+
+                // dated lines carry their own time, even in the first read
+                File.WriteAllText(path, "10/13 19:00:00 Remote host is in data center 'lhr'\n10/13 21:40:00 Remote host is in data center 'par'\n",
+                                  new UTF8Encoding(false));
+                var fresh = new GameConsole(path);
+                fresh.Read(new DateTime(2026, 10, 13, 21, 45, 0));
+                Check(fresh.LastDc.Code == "par" && fresh.LastDc.At == new DateTime(2026, 10, 13, 21, 40, 0), "the newest dated line");
+                Check(GameConsole.Fresh(fresh.LastDc, new DateTime(2026, 10, 13, 21, 30, 0)) != null, "after the game started: fresh");
+                Check(GameConsole.Fresh(fresh.LastDc, new DateTime(2026, 10, 13, 21, 41, 0)) == null, "before the game started: stale");
+
+                // the log is gone: nothing current
+                File.Delete(path);
+                Check(!fresh.Read(DateTime.Now) && fresh.LastDc == null, "no log, no answer");
+            }
+            finally { try { File.Delete(path); } catch { } }
+        }
+
+        static void ConsoleFirstReadIsTheTailOnly()
+        {
+            string path = TempLog();
+            try
+            {
+                var sb = new StringBuilder();
+                sb.Append("10/13 10:00:00 Remote host is in data center 'sgp'\n");
+                string filler = new string('x', 200) + "\n";
+                while (sb.Length < GameConsole.FirstReadMax + 4096) sb.Append(filler);
+                sb.Append("10/13 11:00:00 Remote host is in data center 'hkg'\n");
+                File.WriteAllText(path, sb.ToString(), new UTF8Encoding(false));
+                var log = new GameConsole(path);
+                log.Read(new DateTime(2026, 10, 13, 12, 0, 0));
+                Check(log.LastDc != null && log.LastDc.Code == "hkg", "the newest line, from the last MB");
+                // the sgp line is beyond the first read: a big log is never read whole
+                Append(path, "nothing\n");
+                log.Read(new DateTime(2026, 10, 13, 12, 1, 0));
+                Check(log.LastDc.Code == "hkg", "the next read takes only the new bytes");
+            }
+            finally { try { File.Delete(path); } catch { } }
+        }
+
+        static void ConsoleOnPickedByRegion()
+        {
+            // Frankfurt picked itself; Helsinki has no relay, so it counts with Europe; Singapore is another region
+            Check(DeadlockData.OnPicked("fra", true, new[] { "fra" }), "picked itself");
+            Check(!DeadlockData.OnPicked("ams", false, new[] { "fra" }), "a datacenter with relays, not picked");
+            Check(DeadlockData.OnPicked("hel", null, new[] { "fra", "ams" }), "Helsinki with a Europe lock");
+            Check(!DeadlockData.OnPicked("hel", null, new[] { "sgp" }), "Helsinki with an SE Asia lock");
+            Check(!DeadlockData.OnPicked("dxb", null, new[] { "fra" }), "a relay is never a match");
+            Check(!DeadlockData.OnPicked("eat", null, new string[0]), "nothing picked");
+        }
+
+        static void CardRelayOnlyIsNeutral()
+        {
+            Lang.Ar = true;
+            var i = LockedInput();
+            i.MatchViaRelay = true; i.MatchEntry = "دبي";
+            var v = CardLogic.Decide(i);
+            Check(v.Kind == CardKind.InMatchRelay, "relay-only kind");
+            Check(v.Title == "داخل شبكة Valve من دبي، وسيرفر المباراة ما يبان من هنا", "title: " + v.Title);
+            Check(!v.Title.Contains("✓") && !v.Sub.Contains("✓") && !v.Sub.Contains("شغّال"), "no ✓, no 'working'");
+            Check(v.Sub == "مثبّت على أوروبا. البنق داخل اللعبة هو الأدق.", "sub: " + v.Sub);
+            Check(v.Accent == MainForm.Accent && v.Button == "فك التثبيت", "neutral accent, unlock");
+            Check(v.HintLink == null && v.HintSteps == null, "no hint without one asked for");
+            i.MatchEntry = null;
+            Check(CardLogic.Decide(i).Title == "داخل شبكة Valve من وسيط، وسيرفر المباراة ما يبان من هنا", "unknown entry");
+            Lang.Ar = false;
+            i.LockedNames = "Europe"; i.MatchEntry = "Dubai";
+            v = CardLogic.Decide(i);
+            Check(v.Title == "Entering Valve's network at Dubai; the match server can't be seen from here", "english title: " + v.Title);
+            Check(v.Sub == "Locked to Europe. The ping inside the game is the most accurate.", "english sub: " + v.Sub);
+            Lang.Ar = true;
+        }
+
+        static void CardExactHint()
+        {
+            Lang.Ar = true;
+            var i = LockedInput();
+            i.MatchViaRelay = true; i.MatchEntry = "دبي";
+            i.Hint = ExactHint.Link;
+            var v = CardLogic.Decide(i);
+            Check(v.HintLink == "تبغى نعرف السيرفر بالضبط؟", "simple: the link: " + v.HintLink);
+            Check(v.HintSteps != null && v.HintSteps.Contains("-condebug") && v.HintSteps.Contains("خيارات التشغيل"), "its steps: " + v.HintSteps);
+            // simple: only in the relay-only state
+            var locked = LockedInput(); locked.Hint = ExactHint.Link;
+            v = CardLogic.Decide(locked);
+            Check(v.HintLink == null && v.HintSteps == null, "simple, locked: no hint");
+            var ok = LockedInput(); ok.Hint = ExactHint.Link; ok.MatchRegion = "أوروبا"; ok.MatchOnPicked = true;
+            Check(CardLogic.Decide(ok).HintSteps == null, "simple, in a seen match: no hint");
+            // advanced and developer mode: the steps on every locked state, no link
+            locked.Hint = ExactHint.Shown;
+            v = CardLogic.Decide(locked);
+            Check(v.HintLink == null && v.HintSteps != null, "advanced: the steps themselves");
+            i.Hint = ExactHint.Shown;
+            Check(CardLogic.Decide(i).HintSteps != null, "advanced, relay-only: the steps");
+            // never on the choose screen
+            var choose = Lockable(Choice("eu", "Europe", "أوروبا", 78, true));
+            choose.Hint = ExactHint.Shown;
+            Check(CardLogic.Decide(choose).HintSteps == null, "choose: no hint");
+            Lang.Ar = false;
+            i.Hint = ExactHint.Link;
+            v = CardLogic.Decide(i);
+            Check(v.HintLink == "Want to know the exact server?", "english link: " + v.HintLink);
+            Check(v.HintSteps == "In Steam: Deadlock → Properties → Launch options, add -condebug, then close the game and open it again. " +
+                                 "After that we can name the exact server.", "english steps: " + v.HintSteps);
+            Lang.Ar = true;
+        }
+
+        static void CardExactPlaceFromLog()
+        {
+            Lang.Ar = true;
+            var i = LockedInput();
+            i.MatchRegion = "أوروبا"; i.MatchOnPicked = true; i.MatchPlace = "فرانكفورت";
+            var v = CardLogic.Decide(i);
+            Check(v.Kind == CardKind.InMatchOk && v.Title == "تلعب دحين في أوروبا (فرانكفورت) ✓", "on picked, exact: " + v.Title);
+            i.MatchRegion = "جنوب شرق آسيا"; i.MatchOnPicked = false; i.MatchPlace = "سنغافورة";
+            v = CardLogic.Decide(i);
+            Check(v.Kind == CardKind.Outside && v.Title == "اللعبة حطّتك على جنوب شرق آسيا (سنغافورة)", "outside, exact: " + v.Title);
+            // the log's answer wins over a relay seen in the capture
+            i.MatchViaRelay = true;
+            Check(CardLogic.Decide(i).Kind == CardKind.Outside, "a known match beats the relay");
+            Lang.Ar = false;
+            i.MatchRegion = "Europe"; i.MatchOnPicked = true; i.MatchPlace = "Frankfurt"; i.MatchViaRelay = false; i.LockedNames = "Europe";
+            Check(CardLogic.Decide(i).Title == "You're playing in Europe (Frankfurt) now ✓", "english exact");
+            Lang.Ar = true;
+        }
+
+        static void RunDetectionTests()
+        {
+            Run("ShareRuleCountsEveryPacket", ShareRuleCountsEveryPacket);
+            Run("HostNeedsHalfThePackets", HostNeedsHalfThePackets);
+            Run("ConsoleParsesTheGamesLines", ConsoleParsesTheGamesLines);
+            Run("ConsoleReadsOnlyNewLines", ConsoleReadsOnlyNewLines);
+            Run("ConsoleFirstReadIsTheTailOnly", ConsoleFirstReadIsTheTailOnly);
+            Run("ConsoleOnPickedByRegion", ConsoleOnPickedByRegion);
+            Run("CardRelayOnlyIsNeutral", CardRelayOnlyIsNeutral);
+            Run("CardExactHint", CardExactHint);
+            Run("CardExactPlaceFromLog", CardExactPlaceFromLog);
+        }
+    }
+}

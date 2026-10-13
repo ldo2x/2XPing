@@ -17,14 +17,16 @@ namespace PingBoost
         CardView view;
         readonly List<RegionTile> tiles = new List<RegionTile>();
         readonly RoundButton button;
-        readonly CardLink other, manual, test;
+        readonly CardLink other, manual, test, hint;
         readonly Font titleFont = Fonts.Semi(16f), subFont = Fonts.Ui(10f), noteFont = Fonts.Ui(9f);
         readonly Timer dots = new Timer { Interval = 380 };
         int dotPhase;
+        bool hintOpen; // the hint link was pressed: its steps show under it
         bool laying, hasButton, hasLinks, hasTest, showTiles, otherAvailable = true, manualAvailable = true, testAvailable = true; // Visible reads false until the window shows, so the layout keeps its own flags
-        Rectangle titleRect, subRect, dotsRect, noteRect;
+        Rectangle titleRect, subRect, dotsRect, noteRect, stepsRect;
 
-        public event EventHandler ButtonPressed, OtherRegions, Manual, TestPing, SelectionChanged;
+        // HintToggled: the hint's steps opened or closed, so the card wants a different height
+        public event EventHandler ButtonPressed, OtherRegions, Manual, TestPing, SelectionChanged, HintToggled;
 
         public StateCard()
         {
@@ -41,7 +43,16 @@ namespace PingBoost
             manual.Click += delegate { Raise(Manual); };
             test = new CardLink { Text = Lang.T("Test ping", "افحص البنق"), Visible = false };
             test.Click += delegate { Raise(TestPing); };
+            hint = new CardLink { Font = Fonts.Ui(9f), Visible = false };
+            hint.Click += delegate
+            {
+                hintOpen = !hintOpen;
+                PerformLayout();
+                Invalidate();
+                Raise(HintToggled);
+            };
             Controls.Add(button);
+            Controls.Add(hint);
             Controls.Add(other);
             Controls.Add(test);
             Controls.Add(manual);
@@ -98,6 +109,10 @@ namespace PingBoost
             manual.Visible = hasLinks && manualAvailable;
             hasTest = v != null && v.ShowTest && testAvailable;
             test.Visible = hasTest;
+            bool link = v != null && v.HintLink != null;
+            if (!link) hintOpen = false; // a link shown again later starts closed
+            hint.Visible = link;
+            if (link) hint.Text = v.HintLink;
 
             var accent = v != null ? v.Accent : MainForm.Accent;
             Border = accent == MainForm.Good || accent == MainForm.Warn ? Shapes.Blend(accent, MainForm.Panel1, 0.6f) : Color.Empty;
@@ -184,7 +199,20 @@ namespace PingBoost
             bool actions = hasButton || Links().Count > 0;
             int noteH = NoteHeight(w, tileH);
             return titleH + (subH > 0 ? 6 + subH : 0) + (tileH > 0 ? 16 + tileH : 0) + (noteH > 0 ? 10 + noteH : 0) +
-                   (actions ? 18 + button.Height : 0) + (LinksBelow ? button.Height : 0);
+                   (actions ? 18 + button.Height : 0) + (LinksBelow ? button.Height : 0) + HintHeight(w);
+        }
+
+        // The "-condebug" hint at the bottom: a small link (its steps under it once pressed), or the steps alone.
+        bool HintLinkShown { get { return view != null && view.HintLink != null; } }
+        bool StepsShown { get { return view != null && view.HintSteps != null && (!HintLinkShown || hintOpen); } }
+        int HintLinkH { get { return hint.Font.Height + 12; } }
+
+        int HintHeight(int w)
+        {
+            int h = 0;
+            if (HintLinkShown) h += 10 + HintLinkH;
+            if (StepsShown) h += (HintLinkShown ? 2 : 14) + Measure(view.HintSteps, noteFont, w);
+            return h;
         }
 
         // The footnote sits under the tiles, so it only shows with them.
@@ -250,29 +278,52 @@ namespace PingBoost
             if (actions)
             {
                 y += 18;
-                if (!hasButton || LinksBelow)
-                {
-                    if (hasButton)
-                    {
-                        int bw = Math.Min(w, Math.Max(200, TextRenderer.MeasureText(button.Text, button.Font).Width + 64));
-                        button.Bounds = new Rectangle((ClientSize.Width - bw) / 2, y, bw, button.Height);
-                        y += button.Height;
-                    }
-                    LinkRow(links, y);
-                    return;
-                }
-                // the button with up to two links: the first before it in reading order, the second after it
-                CardLink first = links.Count > 0 ? links[0] : null, second = links.Count > 1 ? links[1] : null;
-                int side = Math.Max(first != null ? LinkWidth(first) : 0, second != null ? LinkWidth(second) : 0);
-                int bw2 = TextRenderer.MeasureText(button.Text, button.Font).Width + 64;
-                int room = w - (side > 0 ? 2 * (side + LinkGap) : 0);
-                bw2 = Math.Max(Math.Min(200, room), Math.Min(bw2, room));
-                int bx = (ClientSize.Width - bw2) / 2;
-                button.Bounds = new Rectangle(bx, y, bw2, button.Height);
-                CardLink left = LeadRight ? second : first, right = LeadRight ? first : second;
-                if (left != null) left.Bounds = new Rectangle(bx - LinkGap - LinkWidth(left), y, LinkWidth(left), button.Height);
-                if (right != null) right.Bounds = new Rectangle(bx + bw2 + LinkGap, y, LinkWidth(right), button.Height);
+                Actions(links, y, w);
+                y += button.Height + (LinksBelow ? button.Height : 0);
             }
+
+            stepsRect = Rectangle.Empty;
+            if (HintLinkShown)
+            {
+                y += 10;
+                int lw = LinkWidth(hint);
+                hint.Bounds = new Rectangle((ClientSize.Width - lw) / 2, y, lw, HintLinkH);
+                y += HintLinkH;
+            }
+            if (StepsShown)
+            {
+                y += HintLinkShown ? 2 : 14;
+                int sh = Measure(view.HintSteps, noteFont, w);
+                stepsRect = new Rectangle(Pad, y, w, sh);
+                y += sh;
+            }
+        }
+
+        // The button and the links at y.
+        void Actions(List<CardLink> links, int y, int w)
+        {
+            if (!hasButton || LinksBelow)
+            {
+                if (hasButton)
+                {
+                    int bw = Math.Min(w, Math.Max(200, TextRenderer.MeasureText(button.Text, button.Font).Width + 64));
+                    button.Bounds = new Rectangle((ClientSize.Width - bw) / 2, y, bw, button.Height);
+                    y += button.Height;
+                }
+                LinkRow(links, y);
+                return;
+            }
+            // the button with up to two links: the first before it in reading order, the second after it
+            CardLink first = links.Count > 0 ? links[0] : null, second = links.Count > 1 ? links[1] : null;
+            int side = Math.Max(first != null ? LinkWidth(first) : 0, second != null ? LinkWidth(second) : 0);
+            int bw2 = TextRenderer.MeasureText(button.Text, button.Font).Width + 64;
+            int room = w - (side > 0 ? 2 * (side + LinkGap) : 0);
+            bw2 = Math.Max(Math.Min(200, room), Math.Min(bw2, room));
+            int bx = (ClientSize.Width - bw2) / 2;
+            button.Bounds = new Rectangle(bx, y, bw2, button.Height);
+            CardLink left = LeadRight ? second : first, right = LeadRight ? first : second;
+            if (left != null) left.Bounds = new Rectangle(bx - LinkGap - LinkWidth(left), y, LinkWidth(left), button.Height);
+            if (right != null) right.Bounds = new Rectangle(bx + bw2 + LinkGap, y, LinkWidth(right), button.Height);
         }
 
         // Links side by side and centred, the first on the reading side.
@@ -304,6 +355,7 @@ namespace PingBoost
             TextRenderer.DrawText(g, view.Title, titleFont, titleRect, TitleColor, Flags);
             if (view.Sub != null) TextRenderer.DrawText(g, view.Sub, subFont, subRect, MainForm.Dim, Flags);
             if (noteRect != Rectangle.Empty) TextRenderer.DrawText(g, view.Note, noteFont, noteRect, MainForm.Dim, Flags);
+            if (stepsRect != Rectangle.Empty) TextRenderer.DrawText(g, view.HintSteps, noteFont, stepsRect, MainForm.Dim, Flags);
             if (dotsRect != Rectangle.Empty)
             {
                 g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;

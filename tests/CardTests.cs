@@ -209,12 +209,13 @@ namespace PingBoost
         {
             Lang.Ar = true;
             var i = LockedInput();
-            i.MatchRegion = "أوروبا"; i.MatchOnPicked = true; i.MatchViaRelay = true;
+            i.MatchViaRelay = true; i.MatchEntry = "دبي";
             var v = CardLogic.Decide(i);
             Check(v.Kind == CardKind.InMatchRelay, "InMatchRelay kind");
-            Check(v.Title == "تلعب دحين في واحد من مناطقك ✓ (أوروبا)", "title: " + v.Title);
-            Check(v.Sub == "التثبيت شغّال. البنق داخل اللعبة هو الأدق.", "sub");
-            Check(v.Button == "فك التثبيت" && v.Accent == MainForm.Good, "button and accent");
+            // only the entry relay is seen: never a claim that the lock worked (audit B4)
+            Check(v.Title == "داخل شبكة Valve من دبي، وسيرفر المباراة ما يبان من هنا", "title: " + v.Title);
+            Check(v.Sub == "مثبّت على أوروبا. البنق داخل اللعبة هو الأدق.", "sub: " + v.Sub);
+            Check(v.Button == "فك التثبيت" && v.Accent == MainForm.Accent, "button and neutral accent");
         }
 
         static void CardInMatchOutside()

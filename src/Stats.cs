@@ -177,6 +177,23 @@ namespace PingBoost
         {
             public string Ip;
             public int Port, Packets;
+            public double Share; // this address's part of all the game's public packets in the capture (0..1)
+        }
+
+        // A Valve address carries the match only with at least half of the game's packets; a smaller one is a relay the
+        // game also keeps open (SDR keeps a backup router alive next to the primary), or nothing (Deadlock audit I4).
+        public const double MatchShare = 0.5;
+
+        public static bool CarriesMatch(Hit h) { return h != null && h.Share >= MatchShare; }
+
+        // The addresses worth naming: each one's share of every packet counted, then those with at least 20 packets,
+        // the five busiest first.
+        internal static List<Hit> Top(IEnumerable<Hit> all)
+        {
+            var list = all.ToList();
+            double total = list.Sum(h => (double)h.Packets);
+            foreach (var h in list) h.Share = total > 0 ? h.Packets / total : 0;
+            return list.Where(h => h.Packets >= 20).OrderByDescending(h => h.Packets).Take(5).ToList();
         }
 
         // Apps that send a lot of UDP (voice chat, browsers, music) and must never be taken for a game server.
@@ -276,7 +293,7 @@ namespace PingBoost
                 h.Packets++;
             }
             try { File.Delete(etl); File.Delete(txt); } catch { }
-            return hits.Values.Where(h => h.Packets >= 20).OrderByDescending(h => h.Packets).Take(5).ToList();
+            return Top(hits.Values);
         }
 
         // Is the address inside a.b.c.d/n (or an IPv6 prefix)? An address and a range of different kinds never match.

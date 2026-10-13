@@ -266,6 +266,7 @@ namespace PingBoost
             Run("ChosenOtherRegionIsNamedAndLocked", ChosenOtherRegionIsNamedAndLocked);
             RunCardTests();
             RunDeadlockTests();
+            RunDetectionTests();
             RunLockTestTests();
             RunZoneTests();
             RunSafetyTests();

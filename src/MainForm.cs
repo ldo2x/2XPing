@@ -545,6 +545,7 @@ namespace PingBoost
                 ApplyCardLayout();
             };
             stateCard.TestPing += delegate { Telemetry.Send("use", null, -1, "test link"); RunTest(); };
+            stateCard.HintToggled += delegate { ApplyCardLayout(); };
             cardHost.Controls.Add(stateCard);
             cardHost.Resize += delegate { FitCard(stateCard.PreferredHeight(cardHost.Width)); };
             choicesGame = null;
@@ -1325,23 +1326,157 @@ namespace PingBoost
         // what the automatic check saw: the region of the running match, or (games that can't be locked) the server
         string matchRegion, currentServer;
         bool matchOnPicked, matchViaRelay;
+        // matchViaRelay: where the game enters Valve's network ("Dubai"); matchPlace: the match server's datacenter, known
+        // only from Deadlock's console log
+        string matchEntry, matchPlace;
         int currentMs = -1;
 
         void ClearMatch()
         {
-            matchRegion = null;
+            matchRegion = matchEntry = matchPlace = null;
             matchOnPicked = matchViaRelay = false;
             currentServer = null;
             currentMs = -1;
         }
 
-        void SetMatch(string region, bool onPicked, bool viaRelay)
+        void SetMatch(string region, bool onPicked, bool viaRelay) { SetMatch(region, onPicked, viaRelay, null, null); }
+
+        void SetMatch(string region, bool onPicked, bool viaRelay, string entry, string place)
         {
             // a different match: the warnings held about the last one are stale (the same match keeps them)
-            if (region != matchRegion || onPicked != matchOnPicked || viaRelay != matchViaRelay) DropHeldWarnings();
+            if (region != matchRegion || onPicked != matchOnPicked || viaRelay != matchViaRelay || place != matchPlace) DropHeldWarnings();
             matchRegion = region;
             matchOnPicked = onPicked;
             matchViaRelay = viaRelay;
+            matchEntry = entry;
+            matchPlace = place;
+        }
+
+        // ---------------------------------------------------------------- Deadlock's console log (-condebug)
+
+        // Deadlock's own log (GameConsole): found from the game's exe while it runs, looked for again at most every 10
+        // minutes while not found. Only touched by the background part of a server check (never two at once).
+        GameConsole gameLog;
+        DateTime gameLogLookup = DateTime.MinValue;
+        volatile bool gameLogOn; // the log file exists (the player starts the game with -condebug): no hint needed
+        // the last time a server check saw the game in no match: a console line from before it is about an earlier match
+        DateTime noMatchAt = DateTime.MinValue;
+
+        static bool IsDeadlock(Game g) { return g != null && g.Icon == "deadlock"; }
+
+        // Before the first check reads it: is the log there, from the exe path saved last time? (once, so the hint
+        // doesn't show to a player who already has -condebug)
+        bool gameLogPeeked;
+        void PeekGameLog(Game g)
+        {
+            if (gameLogPeeked || !IsDeadlock(g)) return;
+            gameLogPeeked = true;
+            try
+            {
+                string path = GameConsole.PathFromExe(Storage.GetSetting("exe_" + g.Icon));
+                if (path != null && File.Exists(path)) gameLogOn = true;
+            }
+            catch { }
+        }
+
+        // Background: reads what Deadlock added to its console log since the last time. The newest match datacenter it
+        // named (null = none), and when the running game started (MinValue = unknown).
+        ConsoleLine ReadGameLog(Game g, out DateTime gameStart)
+        {
+            gameStart = DateTime.MinValue;
+            if (!IsDeadlock(g)) return null;
+            try
+            {
+                if (gameLog == null && DateTime.Now - gameLogLookup > TimeSpan.FromMinutes(10))
+                {
+                    gameLogLookup = DateTime.Now;
+                    string path = GameConsole.PathFromExe(SystemInfo.FindExe(g));
+                    if (path != null) gameLog = new GameConsole(path);
+                }
+                foreach (var name in g.Processes)
+                    foreach (var p in Process.GetProcessesByName(name))
+                        try { if (gameStart == DateTime.MinValue || p.StartTime < gameStart) gameStart = p.StartTime; }
+                        catch { }
+                        finally { p.Dispose(); }
+                if (gameLog == null) { gameLogOn = false; return null; }
+                gameLogOn = gameLog.Read(DateTime.Now);
+                return gameLogOn ? gameLog.LastDc : null;
+            }
+            catch (Exception ex)
+            {
+                ReportCrash("console log", ex);
+                return null;
+            }
+        }
+
+        // UI: the match datacenter from Deadlock's log when it was written during this match: after the game started,
+        // after the lock changed, after the last check that saw no match. Null otherwise.
+        ConsoleLine FreshLogDc(ConsoleLine line, DateTime gameStart)
+        {
+            var since = new[] { gameStart, lockChangedAt, noMatchAt }.Max();
+            return GameConsole.Fresh(line, since);
+        }
+
+        // The datacenter a console line names, when it is one that hosts Deadlock matches: its id, its row (null for a
+        // place the app has no row for), the region it plays and whether the lock allows it.
+        bool ResolveLogDc(Game g, ConsoleLine line, out string id, out Region dc, out string region, out bool onPicked)
+        {
+            dc = null; region = null; onPicked = false;
+            id = GameConsole.Known(line.Code, c => DeadlockData.IsKnown(c) || g.Regions.Any(r => r.Id == c));
+            if (id == null || !DeadlockData.Hosting.ContainsKey(id)) return false; // a relay or an unknown place: no answer
+            string want = id;
+            dc = g.Regions.FirstOrDefault(r => r.Id == want);
+            bool? itself = dc != null ? dc.Picked : (bool?)null;
+            if (dc == null) dc = g.NoRelayHosts.FirstOrDefault(r => r.Id == want);
+            region = RegionOfPop(g, id);
+            onPicked = DeadlockData.OnPicked(id, itself, g.Regions.Where(r => r.Picked).Select(r => r.Id));
+            return true;
+        }
+
+        // The console log named the match datacenter: that is the answer (it wins over the capture). Puts it on the
+        // card and the button and reports a match outside the lock. False when the line names no hosting datacenter.
+        bool ShowLogResult(Game g, ConsoleLine line, bool manual)
+        {
+            string id, region;
+            Region dc;
+            bool onPicked;
+            if (line == null || !ResolveLogDc(g, line, out id, out dc, out region, out onPicked)) return false;
+            string place = dc != null ? PlaceName(dc) : id.ToUpperInvariant();
+            bool ok = lockSummary == null || onPicked;
+            dcSinceLock = true;
+            matchSinceLock = true;
+            if (CurrentGame == g)
+            {
+                SetMatch(region, onPicked, false, null, place);
+                if (dc != null && g.Regions.Contains(dc) && !dc.Here)
+                {
+                    foreach (var r in g.Regions) r.Here = r == dc;
+                    FillServers(g);
+                }
+                UpdateCard();
+            }
+            SetDetect(T("On: ", "إنت على: ") + place, ok ? Good : Warn);
+            if (lockSummary != null && !ok)
+                Issues.Report("lock_outside", g.Name + " on " + id + " (console log) while locked on " + lockSummary,
+                    new Dictionary<string, object> { { "game", g.Name }, { "datacenter", id }, { "source", "console log" }, { "locked", lockSummary } },
+                    g.Icon + id);
+            if (manual || place != lastAutoServer)
+            {
+                Telemetry.Server = dc != null ? dc.NameEn : id;
+                Telemetry.Send("detect", Telemetry.Server, -1, (manual ? "" : "auto, ") + "console log, " +
+                    (lockSummary == null ? "no lock" : ok ? "lock OK" : "NOT on picked servers"));
+                if (manual)
+                {
+                    SetStatus(T("You are on: ", "إنت دحين على: ") + place);
+                    AdvancedMsg(T("You're playing on: ", "إنت تلعب دحين على: ") + place + T(" (from the game's console log)", " (من سجل اللعبة)"),
+                                ok ? ToastKind.Good : ToastKind.Warn);
+                }
+                if (!ok)
+                    AdvancedMsg(T("You're on " + place + ", which isn't one of your picked servers. Restart the game and queue again.",
+                          "إنت على " + place + "، وهو مو من السيرفرات اللي اخترتها. اقفل اللعبة وافتحها من جديد، وبعدين دوّر مباراة."), ToastKind.Warn);
+            }
+            lastAutoServer = place;
+            return true;
         }
 
         // The region (as the player chooses it) a datacenter belongs to, or the datacenter's own name.
@@ -1490,6 +1625,7 @@ namespace PingBoost
             var g = CurrentGame;
             if (stateCard == null || g == null) return;
             if (g != choicesGame) RebuildChoices();
+            PeekGameLog(g);
             var input = new CardInput
             {
                 Game = g.Name,
@@ -1506,6 +1642,10 @@ namespace PingBoost
                 MatchRegion = matchRegion,
                 MatchOnPicked = matchOnPicked,
                 MatchViaRelay = matchViaRelay,
+                MatchEntry = matchEntry,
+                MatchPlace = matchPlace,
+                // Deadlock without its console log: how to switch it on (a link in the simple layout, the steps in the advanced one)
+                Hint = !IsDeadlock(g) || gameLogOn ? ExactHint.None : simple && !devMode ? ExactHint.Link : ExactHint.Shown,
                 CurrentServer = currentServer,
                 CurrentMs = currentMs,
                 NoMatchYet = noMatchLong && lockSummary != null && lockGame == g,
@@ -2042,14 +2182,20 @@ namespace PingBoost
         }
 
         // The datacenter the game is on, from the addresses it talks to: one that hosts matches, or null when the game
-        // only talks to a relay (e.g. Dubai), which hides the match server behind it.
-        static Region HostRegionOf(Game g, List<Detector.Hit> hits)
+        // only talks to a relay (e.g. Dubai), which hides the match server behind it. Valve: an address carries the
+        // match only with at least half of the game's packets (Detector.MatchShare); a hosting datacenter with less is
+        // a relay the game keeps open next to its primary one, never the match (Deadlock audit B3).
+        internal static Region HostRegionOf(Game g, List<Detector.Hit> hits)
         {
-            return hits.Select(h => ValveRegionOf(g, h.Ip)).FirstOrDefault(r => r != null && g.Hosts(r));
+            return hits.Where(h => g.Provider != Provider.Valve || Detector.CarriesMatch(h))
+                       .Select(h => ValveRegionOf(g, h.Ip)).FirstOrDefault(r => r != null && g.Hosts(r));
         }
 
-        static Region RelayRegionOf(Game g, List<Detector.Hit> hits)
+        // Where the game enters Valve's network when no address carries the match: Valve, the busiest of its addresses
+        // (a relay like Dubai, or a hosting datacenter used as one); other games, a relay-only place. Null = none.
+        internal static Region RelayRegionOf(Game g, List<Detector.Hit> hits)
         {
+            if (g.Provider == Provider.Valve) return hits.Select(h => ValveRegionOf(g, h.Ip)).FirstOrDefault(r => r != null);
             return hits.Select(h => ValveRegionOf(g, h.Ip)).FirstOrDefault(r => r != null && !g.Hosts(r));
         }
 
@@ -2080,7 +2226,10 @@ namespace PingBoost
                 try
                 {
                     bool matched;
+                    var capturedAt = DateTime.Now;
                     var hits = Detector.Capture(g.Processes, 15, out matched);
+                    DateTime gameStart;
+                    var logDc = ReadGameLog(g, out gameStart); // Deadlock with -condebug: the real answer
                     // a local record too (traffic.txt in the data folder), for diagnosing locks that block too much
                     try
                     {
@@ -2088,7 +2237,8 @@ namespace PingBoost
                         {
                             var dc = g.CanLock ? ValveRegionOf(g, h.Ip) : null;
                             return string.Join("\t", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"), g.Name, h.Ip + ":" + h.Port,
-                                               h.Packets + " packets", dc != null ? dc.Id : "-", lockSummary != null ? "locked: " + lockSummary : "not locked");
+                                               h.Packets + " packets", ((int)Math.Round(h.Share * 100)) + "%", dc != null ? dc.Id : "-",
+                                               lockSummary != null ? "locked: " + lockSummary : "not locked");
                         }));
                     }
                     catch { }
@@ -2103,7 +2253,13 @@ namespace PingBoost
                         });
                     // games with known datacenters (Valve, Overwatch): name the datacenter and check it against the lock
                     if (g.Provider == Provider.Valve || (g.CanLock && hits.Any(h => ValveRegionOf(g, h.Ip) != null)))
-                        Ui(() => ShowValveResult(g, hits));
+                        Ui(() =>
+                        {
+                            if (hits.Count == 0) noMatchAt = capturedAt;
+                            var fresh = hits.Count > 0 ? FreshLogDc(logDc, gameStart) : null;
+                            if (fresh != null && ShowLogResult(g, fresh, true)) { SetIdle(); btnDetect.Enabled = true; return; }
+                            ShowValveResult(g, hits);
+                        });
                     else ShowOtherResult(g, hits);
                 }
                 catch (Exception ex)
@@ -2128,19 +2284,22 @@ namespace PingBoost
             SetIdle();
             btnDetect.Enabled = true;
             foreach (var r in g.Regions) r.Here = false;
-            var found = hits.Select(h => ValveRegionOf(g, h.Ip)).Where(r => r != null && g.Hosts(r)).Distinct().ToList();
-            foreach (var h in hits) Log(T("Game traffic: ", "ترافيك اللعبة: ") + h.Ip + ":" + h.Port + "  (" + h.Packets + ")");
-            var relay = RelayRegionOf(g, hits);
-            if (found.Count == 0 && relay != null)
+            var found = hits.Where(h => g.Provider != Provider.Valve || Detector.CarriesMatch(h))
+                            .Select(h => ValveRegionOf(g, h.Ip)).Where(r => r != null && g.Hosts(r)).Distinct().ToList();
+            foreach (var h in hits)
+                Log(T("Game traffic: ", "ترافيك اللعبة: ") + h.Ip + ":" + h.Port + "  (" + h.Packets + ", " + (int)Math.Round(h.Share * 100) + "%)");
+            var relay = found.Count == 0 ? RelayRegionOf(g, hits) : null;
+            if (relay != null)
             {
-                // the game goes through a nearby Valve relay, which hides which datacenter the match is on
-                if (CurrentGame == g) { SetMatch(null, false, true); FillServers(g); }
-                SetStatus(T("Through Valve's relay in ", "داخل شبكة Valve من وسيط ") + ShortName(relay));
+                // the game enters Valve's network at a relay, which hides which datacenter the match is on: say only that
+                string at = PlaceName(relay);
+                if (CurrentGame == g) { SetMatch(null, false, true, at, null); FillServers(g); UpdateCard(); }
+                SetStatus(T("Entering Valve's network at ", "داخل شبكة Valve من ") + at);
                 Telemetry.Send("detect", relay.NameEn, -1, "through relay");
-                AdvancedMsg(T("Your game goes through Valve's relay in " + ShortName(relay) + ", the shortest way into their network, so the match server itself is hidden. " +
-                      (lockSummary != null ? "Your lock still only allows the servers you picked." : ""),
-                      "لعبتك داخلة شبكة Valve من وسيط " + ShortName(relay) + "، وهو أقصر طريق لها، فسيرفر المباراة نفسه ما يبان. " +
-                      (lockSummary != null ? "والتثبيت ما يسمح إلا بالسيرفرات اللي اخترتها." : "")), ToastKind.Good);
+                AdvancedMsg(T("Your game enters Valve's network at " + at + "; the match server can't be seen from here." +
+                              (IsDeadlock(g) && !gameLogOn ? " " + CardLogic.ExactSteps() : ""),
+                              "لعبتك داخلة شبكة Valve من " + at + "، وسيرفر المباراة ما يبان من هنا." +
+                              (IsDeadlock(g) && !gameLogOn ? " " + CardLogic.ExactSteps() : "")));
                 return;
             }
             if (found.Count == 0)
@@ -2293,13 +2452,18 @@ namespace PingBoost
                 string where = null;
                 int whereMs = -1;
                 bool running = false;
+                var capturedAt = DateTime.Now;
+                ConsoleLine logDc = null;
+                DateTime gameStart = DateTime.MinValue;
                 try { running = Detector.IsRunning(g.Processes); }
                 catch (Exception ex) { ReportCrash("automatic check", ex); }
                 if (running)
                     try
                     {
                         bool matched;
+                        capturedAt = DateTime.Now;
                         hits = ServerHits(g, Detector.Capture(g.Processes, 8, out matched)); // never voice chat or services
+                        logDc = ReadGameLog(g, out gameStart); // Deadlock with -condebug: the real answer
                         // games without a datacenter list: the main server's city
                         if (hits.Count > 0 && !hits.Any(h => ValveRegionOf(g, h.Ip) != null)) where = Stats.Locate(hits[0].Ip);
                         // games that can't be locked: the card shows that server's ping too
@@ -2325,7 +2489,7 @@ namespace PingBoost
                         if (matchRegion != null || matchViaRelay || currentServer != null) { ClearMatch(); UpdateCard(); }
                         return;
                     }
-                    if (hits != null) ShowAutoDetect(g, hits, where, whereMs);
+                    if (hits != null) ShowAutoDetect(g, hits, where, whereMs, capturedAt, logDc, gameStart);
                 });
             });
         }
@@ -2349,8 +2513,12 @@ namespace PingBoost
             });
         }
 
-        void ShowAutoDetect(Game g, List<Detector.Hit> hits, string where, int whereMs)
+        void ShowAutoDetect(Game g, List<Detector.Hit> hits, string where, int whereMs, DateTime capturedAt, ConsoleLine logDc, DateTime gameStart)
         {
+            if (hits.Count == 0) noMatchAt = capturedAt; // a console line older than this is about an earlier match
+            // Deadlock's console log names the match datacenter: that wins over the capture
+            var fresh = hits.Count > 0 ? FreshLogDc(logDc, gameStart) : null;
+            if (fresh != null && ShowLogResult(g, fresh, false)) return;
             var seenDc = hits.Count > 0 ? HostRegionOf(g, hits) : null;
             if (seenDc != null)
             {
@@ -2388,10 +2556,13 @@ namespace PingBoost
             var relay = dc == null ? RelayRegionOf(g, hits) : null;
             if (relay != null)
             {
-                // only a relay in sight: the match server is hidden behind it, so there's nothing to check or report
-                SetDetect(T("Via relay: ", "عن طريق وسيط: ") + ShortName(relay), Lavender);
+                // only the entry relay in sight: the match server is hidden behind it, so there's nothing to check or report
+                // (never "lock OK", never lock_outside)
+                string at = PlaceName(relay);
+                SetDetect(T("Entering at: ", "داخل من: ") + at, Lavender);
+                if (lastAutoServer != relay.Id) Telemetry.Send("detect", relay.NameEn, -1, "auto, through relay");
                 lastAutoServer = relay.Id;
-                SetMatch(null, false, true);
+                SetMatch(null, false, true, at, null);
                 UpdateCard();
                 return;
             }
@@ -3221,6 +3392,13 @@ namespace PingBoost
                 check("Blizzard network", () => IpLists.Resolve("asn:57976").Count + " blocks");
                 foreach (var g in games.Where(x => x.LockSpace != null))
                     check("Exe " + g.Name, () => SystemInfo.FindExe(g) ?? "not found");
+                check("Deadlock console log", () =>
+                {
+                    var dl = games.FirstOrDefault(IsDeadlock);
+                    string path = dl != null ? GameConsole.PathFromExe(SystemInfo.FindExe(dl)) : null;
+                    if (path == null) return "game not found";
+                    return File.Exists(path) ? "on (" + new FileInfo(path).Length / 1024 + " KB): " + path : "off (no -condebug): " + path;
+                });
                 check("Problems this session", () => Issues.Recent.Count.ToString());
                 DevOut("---- done");
             });

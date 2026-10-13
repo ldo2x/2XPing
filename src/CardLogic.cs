@@ -17,6 +17,12 @@ namespace PingBoost
         public string LockedNames;            // null = not locked
         public string MatchRegion;            // where the running match is, null = not in a match
         public bool MatchOnPicked, MatchViaRelay;
+        // MatchViaRelay: where the game enters Valve's network ("Dubai"), null = not known
+        public string MatchEntry;
+        // the match server's own datacenter, known only from the game's console log ("Frankfurt"); null = not known
+        public string MatchPlace;
+        // Deadlock without its console log: how to switch it on so we can name the exact server (see ExactHint)
+        public ExactHint Hint;
         public string BestServer, CurrentServer;
         public int BestMs = -1, CurrentMs = -1;
         // Overwatch: why the picked regions may find no match (Zones.Warning), shown before locking; null = no warning
@@ -29,6 +35,11 @@ namespace PingBoost
         // Valve: what the strict lock on the chosen regions costs (StrictLock), told on the card; null = nothing to tell
         public RouteNote Route;
     }
+
+    // The "-condebug" hint: None (the log is on, or not Deadlock); Link (simple layout: a small link, only while the
+    // card can't see the match server, that shows the steps); Shown (advanced layout and developer mode: the steps
+    // themselves, on every locked state).
+    enum ExactHint { None, Link, Shown }
 
     enum RouteNoteKind { ClosedEntry, BlockedHost, MayLeak }
 
@@ -47,6 +58,8 @@ namespace PingBoost
         public CardKind Kind;
         public string Title, Sub, Button;
         public string Note; // a small footnote under the tiles, null = none
+        // how to let us name the exact server: HintLink is a small link that shows HintSteps; with no link the steps show as they are
+        public string HintLink, HintSteps;
         public bool ShowTiles, ShowLinks, ShowTest; // ShowTest: the "Test ping" link
         public Color Accent;
     }
@@ -62,27 +75,37 @@ namespace PingBoost
             {
                 string unlock = Lang.T("Unlock", "فك التثبيت");
                 string working = Lang.T("The lock is working. The ping inside the game is the most accurate.", "التثبيت شغّال. البنق داخل اللعبة هو الأدق.");
+                string place = i.MatchPlace != null ? " (" + i.MatchPlace + ")" : "";
                 if (i.MatchRegion != null && !i.MatchOnPicked)
                 {
                     var v = Make(CardKind.Outside,
-                        Lang.T("The game put you on " + i.MatchRegion, "اللعبة حطّتك على " + i.MatchRegion),
+                        Lang.T("The game put you on " + i.MatchRegion + place, "اللعبة حطّتك على " + i.MatchRegion + place),
                         Lang.T("Close the game and open it again, then find a match.", "اقفل اللعبة وافتحها من جديد، وبعدين دوّر مباراة."), unlock);
                     v.Accent = MainForm.Warn;
-                    return v;
+                    return WithHint(v, i.Hint);
                 }
-                if (i.MatchViaRelay)
-                    return Good(Make(CardKind.InMatchRelay,
-                        Lang.T("You're playing in one of your regions now ✓ (" + i.LockedNames + ")", "تلعب دحين في واحد من مناطقك ✓ (" + i.LockedNames + ")"), working, unlock));
                 if (i.MatchRegion != null)
-                    return Good(Make(CardKind.InMatchOk,
-                        Lang.T("You're playing in " + i.MatchRegion + " now ✓", "تلعب دحين في " + i.MatchRegion + " ✓"), working, unlock));
+                    return WithHint(Good(Make(CardKind.InMatchOk,
+                        Lang.T("You're playing in " + i.MatchRegion + place + " now ✓", "تلعب دحين في " + i.MatchRegion + place + " ✓"), working, unlock)), i.Hint);
+                if (i.MatchViaRelay)
+                {
+                    // only the entry relay is in sight: say where the game enters, never that the lock worked (no ✓)
+                    string title = i.MatchEntry != null
+                        ? Lang.T("Entering Valve's network at " + i.MatchEntry + "; the match server can't be seen from here",
+                                 "داخل شبكة Valve من " + i.MatchEntry + "، وسيرفر المباراة ما يبان من هنا")
+                        : Lang.T("Entering Valve's network through a relay; the match server can't be seen from here",
+                                 "داخل شبكة Valve من وسيط، وسيرفر المباراة ما يبان من هنا");
+                    return WithHint(Make(CardKind.InMatchRelay, title,
+                        Lang.T("Locked to " + i.LockedNames + ". The ping inside the game is the most accurate.",
+                               "مثبّت على " + i.LockedNames + ". البنق داخل اللعبة هو الأدق."), unlock), i.Hint);
+                }
                 string find = Lang.T("Open the game and find a match. Try a normal match first.", "افتح اللعبة ودوّر مباراة. جرّب مباراة عادية أول.");
                 if (i.NoMatchYet)
                     find += Lang.T(" No match found? The region you picked may be outside your game's region.",
                                    " ما لقيت مباراة؟ يمكن المنطقة اللي اخترتها برا منطقة لعبتك.");
                 // a lock kept leaky on purpose (G5) says so: it may not keep the other regions away
                 if (i.Route != null && i.Route.Kind == RouteNoteKind.MayLeak) find = RouteText(i.Route) + " " + find;
-                return Good(Make(CardKind.Locked, Lang.T("✓ Locked to " + i.LockedNames, "✓ مثبّت على " + i.LockedNames), find, unlock));
+                return WithHint(Good(Make(CardKind.Locked, Lang.T("✓ Locked to " + i.LockedNames, "✓ مثبّت على " + i.LockedNames), find, unlock)), i.Hint);
             }
 
             if (i.LoadFailed) return Offline();
@@ -155,6 +178,24 @@ namespace PingBoost
                                    "البنق بين " + known.Min() + " و" + known.Max() + "، والبحث أسرع");
             }
             return v;
+        }
+
+        // The "-condebug" hint on a locked state: the simple layout only offers it (a link) where the match server can't be seen.
+        static CardView WithHint(CardView v, ExactHint hint)
+        {
+            if (hint == ExactHint.None || (hint == ExactHint.Link && v.Kind != CardKind.InMatchRelay)) return v;
+            v.HintLink = hint == ExactHint.Link ? Lang.T("Want to know the exact server?", "تبغى نعرف السيرفر بالضبط؟") : null;
+            v.HintSteps = ExactSteps();
+            return v;
+        }
+
+        // How to switch the game's console log on. "-condebug" stays left to right inside the Arabic sentence.
+        public static string ExactSteps()
+        {
+            return Lang.T("In Steam: Deadlock → Properties → Launch options, add -condebug, then close the game and open it again. " +
+                          "After that we can name the exact server.",
+                          "في Steam: Deadlock ← الخصائص ← خيارات التشغيل، ضيف ‪-condebug‬ وبعدين اقفل اللعبة وافتحها من جديد. " +
+                          "بعدها نقدر نعرف لك السيرفر بالضبط.");
         }
 
         // Deadlock's footnote under the region choices: Russia is its own queue, played on the European servers, so no

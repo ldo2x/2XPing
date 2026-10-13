@@ -52,6 +52,17 @@ namespace PingBoost
 
         public static bool IsKnown(string pop) { return pop != null && (Hosting.ContainsKey(pop) || RelayOnly.Contains(pop)); }
 
+        // Is a match on datacenter id (named by the game's console log) inside the lock? pickedItself: the datacenter's own
+        // pick when the lock can pick it (it has relays), null when it can't (Helsinki, Falkenstein, US West): then it
+        // counts as picked when the lock picked any datacenter of the same region, the region the player chose.
+        public static bool OnPicked(string id, bool? pickedItself, IEnumerable<string> pickedIds)
+        {
+            if (pickedItself.HasValue) return pickedItself.Value;
+            string key, other;
+            if (id == null || !Hosting.TryGetValue(id, out key)) return false;
+            return (pickedIds ?? Enumerable.Empty<string>()).Any(p => p != null && Hosting.TryGetValue(p, out other) && other == key);
+        }
+
         // POP ids of Valve's config that are in neither list: a new datacenter (the way dfjr appeared) that the app
         // would otherwise silently treat as a relay and never block. Sorted, each once.
         public static List<string> UnknownPops(IEnumerable<string> popIds)
