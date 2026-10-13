@@ -11,18 +11,37 @@ namespace PingBoost
     static class ServerLock
     {
         const string Rule = "2XPing-RegionLock";
-        // 1.2.3.0/24, 1.2.3.4 or 1.2.3.4-1.2.3.9
-        static readonly System.Text.RegularExpressions.Regex Cidr =
-            new System.Text.RegularExpressions.Regex(@"^\d{1,3}(\.\d{1,3}){3}(/\d{1,2}|-\d{1,3}(\.\d{1,3}){3})?$");
+
+        // true while rules of ours may be in the firewall (set before adding any; cleared by a verified Remove)
+        public static volatile bool MayExist = true;
+
+        // Entries of the last Apply that were not valid addresses (skipped instead of failing the whole lock).
+        public static int Skipped;
+
+        // The valid, distinct remote addresses of the list (1.2.3.0/24, 1.2.3.4 or 1.2.3.4-1.2.3.9); bad entries are skipped.
+        public static List<string> ValidAddresses(IEnumerable<string> cidrs, out int skipped)
+        {
+            var list = new List<string>();
+            var seen = new HashSet<string>();
+            skipped = 0;
+            foreach (var raw in cidrs)
+            {
+                string c = raw == null ? null : raw.Trim();
+                if (!RemoteAddress.Valid(c)) { skipped++; continue; }
+                if (seen.Add(c)) list.Add(c);
+            }
+            return list;
+        }
 
         // Blocks the given addresses. With a program, only that program's traffic is blocked (nothing else on the PC);
         // with a protocol (e.g. UDP), only that kind of traffic.
         public static int Apply(IEnumerable<string> cidrs, string program = null, string protocol = null, string remotePorts = null)
         {
             Remove();
-            var list = new List<string>();
-            var seen = new HashSet<string>();
-            foreach (var c in cidrs) if (Cidr.IsMatch(c) && seen.Add(c)) list.Add(c);
+            MayExist = true;
+            int skipped;
+            var list = ValidAddresses(cidrs, out skipped);
+            Skipped = skipped;
             string scope = (program != null ? " program=\"" + program + "\"" : "") + (protocol != null ? " protocol=" + protocol : "") +
                            (remotePorts != null && protocol != null ? " remoteport=" + remotePorts : "");
             for (int i = 0; i < list.Count; i += 100)
@@ -39,11 +58,16 @@ namespace PingBoost
             return list.Count;
         }
 
-        public static void Remove()
+        // Deletes every 2X Ping rule, then checks: true = none is left.
+        public static bool Remove()
         {
             string output;
             Netsh("advfirewall firewall delete rule name=\"" + Rule + "\"", out output);
             Netsh("advfirewall firewall delete rule name=\"PingBoost-RegionLock\"", out output); // pre-2X Ping name
+            // "show rule" answers non-zero when no rule has the name; -1 = netsh didn't answer, so nothing is known
+            bool gone = Netsh("advfirewall firewall show rule name=\"" + Rule + "\"", out output) > 0;
+            if (gone) MayExist = false;
+            return gone;
         }
 
         // Is Windows Firewall on for the network in use? (When it's off, block rules do nothing.)
@@ -63,17 +87,7 @@ namespace PingBoost
 
         static int Netsh(string args, out string output)
         {
-            var psi = new ProcessStartInfo("netsh", args)
-            {
-                UseShellExecute = false, CreateNoWindow = true,
-                RedirectStandardOutput = true, RedirectStandardError = true
-            };
-            using (var p = Process.Start(psi))
-            {
-                output = (p.StandardOutput.ReadToEnd() + p.StandardError.ReadToEnd()).Trim();
-                p.WaitForExit(20000);
-                return p.HasExited ? p.ExitCode : -1;
-            }
+            return Proc.Run("netsh", args, 20000, out output);
         }
     }
 
@@ -92,6 +106,20 @@ namespace PingBoost
         }
 
         public static bool Installed { get { return File.Exists(WgExe); } }
+
+        // Is our tunnel service (WireGuardTunnel$2xping) installed? Read from the registry: no process is started.
+        public static bool ServiceInstalled
+        {
+            get
+            {
+                try
+                {
+                    using (var k = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\WireGuardTunnel$" + Name))
+                        return k != null;
+                }
+                catch { return false; }
+            }
+        }
 
         public static string BuildConf(Relay relay, ICollection<string> cidrs)
         {
@@ -121,10 +149,13 @@ namespace PingBoost
             return sb.ToString();
         }
 
+        // the config handed to WireGuard (it holds the relay's private key): the tunnel service reads it while it runs
+        static string ConfPath { get { return Path.Combine(Storage.Dir, Name + ".conf"); } }
+
         public static string Start(string conf)
         {
             Stop();
-            string path = Path.Combine(Storage.Dir, Name + ".conf");
+            string path = ConfPath;
             File.WriteAllText(path, conf);
             string output;
             int code = Run("/installtunnelservice \"" + path + "\"", out output);
@@ -134,24 +165,18 @@ namespace PingBoost
 
         public static void Stop()
         {
-            if (!Installed) return;
-            string output;
-            Run("/uninstalltunnelservice " + Name, out output);
+            if (Installed)
+            {
+                string output;
+                Run("/uninstalltunnelservice " + Name, out output);
+            }
+            // the private key never stays on disk once the tunnel is gone
+            if (!ServiceInstalled) try { File.Delete(ConfPath); } catch { }
         }
 
         static int Run(string args, out string output)
         {
-            var psi = new ProcessStartInfo(WgExe, args)
-            {
-                UseShellExecute = false, CreateNoWindow = true,
-                RedirectStandardOutput = true, RedirectStandardError = true
-            };
-            using (var p = Process.Start(psi))
-            {
-                output = (p.StandardOutput.ReadToEnd() + p.StandardError.ReadToEnd()).Trim();
-                p.WaitForExit(20000);
-                return p.HasExited ? p.ExitCode : -1;
-            }
+            return Proc.Run(WgExe, args, 20000, out output);
         }
     }
 }

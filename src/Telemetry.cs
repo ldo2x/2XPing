@@ -29,13 +29,18 @@ namespace PingBoost
         // one random id per launch, so the events of a session can be grouped
         static readonly string session = Guid.NewGuid().ToString("N").Substring(0, 12);
 
+        // Made once and kept: the same id for the whole session even if settings.txt can't be written.
+        static string installId;
         public static string InstallId
         {
             get
             {
-                var id = Storage.GetSetting("install_id");
-                if (string.IsNullOrEmpty(id)) { id = Guid.NewGuid().ToString(); Storage.SetSetting("install_id", id); }
-                return id;
+                var id = installId;
+                if (id != null) return id;
+                id = Storage.GetOrAddSetting("install_id", () => Guid.NewGuid().ToString());
+                Guid parsed;
+                if (!Guid.TryParse(id, out parsed)) id = Guid.NewGuid().ToString(); // a damaged value would be refused by the database
+                return installId = id;
             }
         }
 
@@ -53,10 +58,15 @@ namespace PingBoost
             if (!Configured || !HasConsent) return;
             ThreadPool.QueueUserWorkItem(delegate
             {
-                var info = SystemInfo.Collect(games);
-                info["startup_ms"] = startupMs;
-                info["updated"] = Updater.JustUpdated;
-                Post("start", null, -1, Environment.OSVersion.ToString(), null, info);
+                // offline, or the statistics server paused: never a reason to crash (an exception here would end the app)
+                try
+                {
+                    var info = SystemInfo.Collect(games);
+                    info["startup_ms"] = startupMs;
+                    info["updated"] = Updater.JustUpdated;
+                    Post("start", null, -1, Environment.OSVersion.ToString(), null, info);
+                }
+                catch { }
             });
             if (heartbeat == null) heartbeat = new System.Threading.Timer(delegate { Send("heartbeat", null, -1, null); }, null, 60000, 60000);
         }
@@ -74,40 +84,81 @@ namespace PingBoost
             if (!Configured || !HasConsent) return;
             try
             {
+                // no location lookup while closing: what is already known is enough
                 Post("exit", null, -1, null,
-                     new Dictionary<string, object> { { "minutes", Math.Round((DateTime.UtcNow - sessionStart).TotalMinutes, 1) } }, null, 3000);
+                     new Dictionary<string, object> { { "minutes", Math.Round((DateTime.UtcNow - sessionStart).TotalMinutes, 1) } }, null, 3000,
+                     null, false);
             }
             catch { }
         }
 
         // City and country from the user's internet address, looked up once a day (the address itself is not stored).
-        static void EnsureLocation()
+        // A failed lookup (offline, or the service's rate limit) waits 30 minutes before the next try, so events
+        // never each wait for it; one lookup at a time.
+        static DateTime geoRetryAt = DateTime.MinValue;
+        static readonly object geoGate = new object();
+
+        static void EnsureLocation(bool lookup)
         {
             string today = DateTime.UtcNow.ToString("yyyy-MM-dd");
-            if (Storage.GetSetting("geo_at") == today)
+            if (country == null || Storage.GetSetting("geo_at") == today)
             {
                 country = Storage.GetSetting("geo_country");
                 city = Storage.GetSetting("geo_city");
                 isp = Storage.GetSetting("geo_isp");
                 asn = Storage.GetSetting("geo_as");
-                return;
             }
+            if (!lookup || Storage.GetSetting("geo_at") == today || DateTime.UtcNow < geoRetryAt) return;
+            if (!Monitor.TryEnter(geoGate)) return; // another event is looking it up right now
             try
             {
-                var d = (Dictionary<string, object>)new JavaScriptSerializer().DeserializeObject(
-                    Http.Get("http://ip-api.com/json/?fields=status,country,city,isp,as", 6000));
-                if ((string)d["status"] != "success") return;
-                country = (string)d["country"];
-                city = (string)d["city"];
-                isp = d.ContainsKey("isp") ? (string)d["isp"] : null;
-                asn = d.ContainsKey("as") ? (string)d["as"] : null;
-                Storage.SetSetting("geo_country", country);
-                Storage.SetSetting("geo_city", city);
-                Storage.SetSetting("geo_isp", isp);
-                Storage.SetSetting("geo_as", asn);
-                Storage.SetSetting("geo_at", today);
+                if (Storage.GetSetting("geo_at") == today) return;
+                string c, ci, i, a;
+                // HTTPS first, so nobody on the way can change the answer; the older plain-HTTP service only as a fallback
+                bool ok = false;
+                try { ok = ParseGeo(Http.Get("https://ipwho.is/?fields=success,country,city,connection", 6000), out c, out ci, out i, out a); }
+                catch { c = ci = i = a = null; }
+                if (!ok)
+                    try { ok = ParseGeo(Http.Get("http://ip-api.com/json/?fields=status,country,city,isp,as", 6000), out c, out ci, out i, out a); }
+                    catch { }
+                if (!ok) { geoRetryAt = DateTime.UtcNow.AddMinutes(30); return; }
+                country = c; city = ci; isp = i; asn = a;
+                Storage.SetSettings(new Dictionary<string, string>
+                {
+                    { "geo_country", c }, { "geo_city", ci }, { "geo_isp", i }, { "geo_as", a }, { "geo_at", today }
+                });
             }
-            catch { }
+            finally { Monitor.Exit(geoGate); }
+        }
+
+        // The answer of ipwho.is ({"success":true,"connection":{"asn":..,"isp":..}}) or ip-api.com ({"status":"success","as":..}).
+        public static bool ParseGeo(string json, out string country, out string city, out string isp, out string asn)
+        {
+            country = city = isp = asn = null;
+            Dictionary<string, object> d;
+            try { d = new JavaScriptSerializer().DeserializeObject(json) as Dictionary<string, object>; }
+            catch { return false; }
+            if (d == null) return false;
+            object v;
+            bool ok = (d.TryGetValue("success", out v) && true.Equals(v)) || (d.TryGetValue("status", out v) && "success".Equals(v));
+            if (!ok) return false;
+            Func<Dictionary<string, object>, string, string> s = (x, k) => { object o; return x != null && x.TryGetValue(k, out o) && o != null ? Convert.ToString(o, System.Globalization.CultureInfo.InvariantCulture) : null; };
+            country = s(d, "country");
+            city = s(d, "city");
+            object conn;
+            var cd = d.TryGetValue("connection", out conn) ? conn as Dictionary<string, object> : null;
+            if (cd != null)
+            {
+                isp = s(cd, "isp") ?? s(cd, "org");
+                string number = s(cd, "asn"), org = s(cd, "org");
+                if (number != null) asn = "AS" + number + (org != null ? " " + org : "");
+            }
+            else
+            {
+                isp = s(d, "isp");
+                asn = s(d, "as");
+            }
+            return country != null;
         }
 
         public static Dictionary<string, string> Headers(string key)
@@ -136,9 +187,12 @@ namespace PingBoost
         }
 
         static void Post(string kind, string server, int ping, string detail, Dictionary<string, object> data, Dictionary<string, object> info,
-                         int timeout = 8000, string game = null)
+                         int timeout = 8000, string game = null, bool lookup = true)
         {
-            EnsureLocation();
+            EnsureLocation(lookup);
+            // never the Windows user name or local folders (exception texts and tool output carry paths)
+            detail = Privacy.Scrub(detail);
+            if (data != null) data = (Dictionary<string, object>)Privacy.ScrubData(data);
             var p = new Dictionary<string, object>
             {
                 { "install_id", InstallId }, { "kind", kind }, { "nickname", Nickname },

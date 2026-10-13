@@ -304,7 +304,7 @@ namespace PingBoost
             }
             catch { }
             string detail = ex != null ? ex.GetType().Name + ": " + ex.Message : "unknown";
-            var data = new System.Collections.Generic.Dictionary<string, object> { { "stack", ex != null ? ex.ToString() : null }, { "fatal", dying } };
+            var data = new System.Collections.Generic.Dictionary<string, object> { { "stack", Privacy.ShortStack(ex) }, { "fatal", dying } };
             if (dying) Telemetry.SendNow("issue", "crash: " + detail, data);
             else Issues.Report("crash", detail, data, ex != null ? ex.GetType().Name + ex.Message : null);
         }

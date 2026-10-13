@@ -316,19 +316,12 @@ namespace PingBoost
             try { Run("pktmon", "stop"); Run("pktmon", "filter remove"); } catch { }
         }
 
+        // A Windows tool (pktmon, netstat, netsh) by its System32 path; killed if it hangs for a minute.
         public static string Run(string exe, string args)
         {
-            var psi = new ProcessStartInfo(exe, args)
-            {
-                UseShellExecute = false, CreateNoWindow = true,
-                RedirectStandardOutput = true, RedirectStandardError = true
-            };
-            using (var p = Process.Start(psi))
-            {
-                string o = p.StandardOutput.ReadToEnd() + p.StandardError.ReadToEnd();
-                p.WaitForExit(60000);
-                return o;
-            }
+            string o;
+            Proc.Run(exe, args, 60000, out o);
+            return o;
         }
     }
 }

@@ -26,6 +26,8 @@ namespace PingBoost
             { "ip_lists_failed", "Official address list didn't download" },
             { "detect_failed", "Traffic capture (pktmon) failed" },
             { "leftover_lock", "Lock rules left from a previous session" },
+            { "leftover_tunnel", "Relay tunnel service left from a previous session" },
+            { "unlock_failed", "Firewall rules still there after unlocking" },
             { "connection_loss", "Heavy packet loss while playing" },
             { "slow_startup", "The app took long to open" },
             { "update_failed", "Self-update failed" },

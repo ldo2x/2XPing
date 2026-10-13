@@ -490,7 +490,7 @@ namespace PingBoost
         static string RelaysFile { get { return Path.Combine(Dir, "relays.txt"); } }
         static string CustomFile { get { return Path.Combine(Dir, "custom.txt"); } }
         static string PicksFile { get { return Path.Combine(Dir, "picks.txt"); } }
-        static string SettingsFile { get { return Path.Combine(Dir, "settings.txt"); } }
+        static string SettingsPath { get { return Path.Combine(Dir, "settings.txt"); } }
 
         static Storage()
         {
@@ -502,35 +502,21 @@ namespace PingBoost
 
         static string Clean(string s) { return (s ?? "").Replace('\t', ' ').Replace('\n', ' ').Replace('\r', ' '); }
 
-        // settings.txt holds key=value lines
-        static Dictionary<string, string> ReadSettings()
-        {
-            var d = new Dictionary<string, string>();
-            try
-            {
-                if (File.Exists(SettingsFile))
-                    foreach (var line in File.ReadAllLines(SettingsFile))
-                    {
-                        int eq = line.IndexOf('=');
-                        if (eq > 0) d[line.Substring(0, eq).Trim()] = line.Substring(eq + 1).Trim();
-                    }
-            }
-            catch { }
-            return d;
-        }
+        // settings.txt holds key=value lines; one shared, thread-safe copy kept in memory (see SettingsFile)
+        static SettingsFile settings;
+        static SettingsFile Settings { get { lock (fileGate) return settings ?? (settings = new SettingsFile(SettingsPath)); } }
 
-        public static string GetSetting(string key)
-        {
-            string v;
-            return ReadSettings().TryGetValue(key, out v) ? v : null;
-        }
+        // the other small files (picks, relays, last results, detected and custom servers): one writer at a time
+        static readonly object fileGate = new object();
 
-        public static void SetSetting(string key, string value)
-        {
-            var d = ReadSettings();
-            d[key] = Clean(value);
-            try { File.WriteAllLines(SettingsFile, d.Select(kv => kv.Key + "=" + kv.Value)); } catch { }
-        }
+        public static string GetSetting(string key) { return Settings.Get(key); }
+
+        // false when the change couldn't be saved to disk (it still holds for this session)
+        public static bool SetSetting(string key, string value) { return Settings.Set(key, value); }
+
+        public static bool SetSettings(IDictionary<string, string> values) { return Settings.Set(values); }
+
+        public static string GetOrAddSetting(string key, Func<string> make) { return Settings.GetOrAdd(key, make); }
 
         public static bool LoadArabic() { return GetSetting("lang") != "en"; }
 
@@ -551,11 +537,16 @@ namespace PingBoost
 
         public static void SavePicks(string appId, IEnumerable<string> codes)
         {
-            var lines = File.Exists(PicksFile)
-                ? File.ReadAllLines(PicksFile).Where(l => !l.StartsWith(appId + "\t")).ToList()
-                : new List<string>();
-            lines.Add(appId + "\t" + string.Join(",", codes));
-            File.WriteAllLines(PicksFile, lines);
+            lock (fileGate)
+                try
+                {
+                    var lines = File.Exists(PicksFile)
+                        ? File.ReadAllLines(PicksFile).Where(l => !l.StartsWith(appId + "\t")).ToList()
+                        : new List<string>();
+                    lines.Add(appId + "\t" + string.Join(",", codes));
+                    AtomicFile.WriteAllLines(PicksFile, lines);
+                }
+                catch { }
         }
 
         public static void ClearPicks()
@@ -578,8 +569,13 @@ namespace PingBoost
 
         public static void SaveRelays(List<Relay> relays)
         {
-            File.WriteAllLines(RelaysFile, relays.Select(r =>
-                string.Join("\t", Clean(r.Name), Clean(r.ConfPath), Clean(r.AgentUrl), Clean(r.Token))));
+            lock (fileGate)
+                try
+                {
+                    AtomicFile.WriteAllLines(RelaysFile, relays.Select(r =>
+                        string.Join("\t", Clean(r.Name), Clean(r.ConfPath), Clean(r.AgentUrl), Clean(r.Token))));
+                }
+                catch { }
         }
 
         public static List<Region> LoadCustom()
@@ -605,13 +601,14 @@ namespace PingBoost
         // Last ping test of each game, shown right away on the next launch: game \t region \t ping \t loss
         public static void SaveLast(Game g)
         {
+            lock (fileGate)
             try
             {
                 var lines = File.Exists(LastFile) ? File.ReadAllLines(LastFile).Where(l => !l.StartsWith(g.Icon + "\t")).ToList() : new List<string>();
                 foreach (var r in g.Regions.Where(r => r.Direct != null && !r.Detected))
                     lines.Add(string.Join("\t", g.Icon, r.Id, Math.Round(r.Direct.Avg).ToString(System.Globalization.CultureInfo.InvariantCulture),
                                           Math.Round(r.Direct.Loss).ToString(System.Globalization.CultureInfo.InvariantCulture)));
-                File.WriteAllLines(LastFile, lines);
+                AtomicFile.WriteAllLines(LastFile, lines);
             }
             catch { }
         }
@@ -646,7 +643,8 @@ namespace PingBoost
             foreach (var line in File.ReadAllLines(DetectedFile))
             {
                 var f = line.Split('\t');
-                if (f.Length < 3 || f[0] != game) continue;
+                // a damaged line (not a plain address) is skipped instead of breaking the game's whole server list
+                if (f.Length < 3 || f[0] != game || !RemoteAddress.Valid(f[1]) || f[1].IndexOfAny(new[] { '/', '-' }) >= 0) continue;
                 list.Add(MakeDetected(f[1], f[2]));
             }
             return list;
@@ -669,16 +667,26 @@ namespace PingBoost
 
         public static void AddDetected(string game, string ip, string location)
         {
-            var lines = File.Exists(DetectedFile)
-                ? File.ReadAllLines(DetectedFile).Where(l => !l.StartsWith(game + "\t" + ip + "\t")).ToList()
-                : new List<string>();
-            lines.Add(string.Join("\t", Clean(game), ip, Clean(location)));
-            File.WriteAllLines(DetectedFile, lines);
+            lock (fileGate)
+                try
+                {
+                    var lines = File.Exists(DetectedFile)
+                        ? File.ReadAllLines(DetectedFile).Where(l => !l.StartsWith(game + "\t" + ip + "\t")).ToList()
+                        : new List<string>();
+                    lines.Add(string.Join("\t", Clean(game), ip, Clean(location)));
+                    AtomicFile.WriteAllLines(DetectedFile, lines);
+                }
+                catch { }
         }
 
         public static void AddCustom(string name, string endpoints, string cidrs)
         {
-            File.AppendAllLines(CustomFile, new[] { string.Join("\t", Clean(name), Clean(endpoints), Clean(cidrs)) });
+            lock (fileGate)
+            {
+                var lines = File.Exists(CustomFile) ? File.ReadAllLines(CustomFile).ToList() : new List<string>();
+                lines.Add(string.Join("\t", Clean(name), Clean(endpoints), Clean(cidrs)));
+                AtomicFile.WriteAllLines(CustomFile, lines);
+            }
         }
     }
 }

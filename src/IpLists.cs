@@ -26,7 +26,7 @@ namespace PingBoost
             try
             {
                 string text = Http.Get(url, 30000);
-                File.WriteAllText(file, text);
+                AtomicFile.WriteAllText(file, text);
                 return text;
             }
             catch (Exception ex)
