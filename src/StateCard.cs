@@ -6,12 +6,13 @@ using System.Windows.Forms;
 
 namespace PingBoost
 {
-    // The main screen's card: says the situation in plain words (CardView from CardLogic.Decide), offers up to three
-    // region tiles to choose from, one main button and two small links. Everything is centred; in Arabic the first
-    // tile and the "Other regions" link sit on the right.
+    // The main screen's card: says the situation in plain words (CardView from CardLogic.Decide), offers region tiles
+    // to choose from (the featured two or three, or every region in rows of three after "Other regions"), one main
+    // button and two small links. Everything is centred; in Arabic the first tile and the "Other regions" link sit on
+    // the right.
     class StateCard : Card
     {
-        const int Pad = 24, TileGap = 14, TileMaxW = 236, LinkGap = 28;
+        const int Pad = 24, TileGap = 14, RowGap = 12, PerRow = 3, TileMaxW = 236, LinkGap = 28;
 
         CardView view;
         readonly List<RegionTile> tiles = new List<RegionTile>();
@@ -20,7 +21,7 @@ namespace PingBoost
         readonly Font titleFont = Fonts.Semi(16f), subFont = Fonts.Ui(10f);
         readonly Timer dots = new Timer { Interval = 380 };
         int dotPhase;
-        bool laying, hasButton, hasLinks, showTiles; // Visible reads false until the window shows, so the layout keeps its own flags
+        bool laying, hasButton, hasLinks, showTiles, otherAvailable = true, manualAvailable = true; // Visible reads false until the window shows, so the layout keeps its own flags
         Rectangle titleRect, subRect, dotsRect;
 
         public event EventHandler ButtonPressed, OtherRegions, Manual, SelectionChanged;
@@ -46,12 +47,23 @@ namespace PingBoost
 
         public CardView View { get { return view; } }
 
-        // Shows a state. choices are the featured regions (at most three are shown) (their Selected flags are the selection); the same list
-        // shown again keeps its tiles, so re-deciding after a click doesn't flicker.
+        // "Other regions" only shows when there are more regions than the featured ones (once open it reads "Fewer
+        // regions"); "Pick by hand" only where the server list is hidden.
+        public void SetLinks(bool otherRegions, bool expanded, bool pickByHand)
+        {
+            otherAvailable = otherRegions;
+            manualAvailable = pickByHand;
+            other.Text = expanded ? Lang.T("Fewer regions", "مناطق أقل") : Lang.T("Other regions", "مناطق ثانية");
+            other.Visible = hasLinks && otherAvailable;
+            manual.Visible = hasLinks && manualAvailable;
+        }
+
+        // Shows a state. choices are the tiles to show, in rows of three (their Selected flags are the selection); the
+        // same list shown again keeps its tiles, so re-deciding after a click doesn't flicker.
         public void Show(CardView v, List<RegionChoice> choices)
         {
             view = v;
-            var list = (choices ?? new List<RegionChoice>()).Take(3).ToList();
+            var list = (choices ?? new List<RegionChoice>()).ToList();
             bool same = list.Count == tiles.Count && list.Select((c, i) => tiles[i].Choice == c).All(x => x);
             if (!same)
             {
@@ -76,7 +88,8 @@ namespace PingBoost
             button.ForeColor = secondary ? MainForm.TextC : Color.Black;
             button.Visible = hasButton;
             hasLinks = v != null && v.ShowLinks;
-            other.Visible = manual.Visible = hasLinks;
+            other.Visible = hasLinks && otherAvailable;
+            manual.Visible = hasLinks && manualAvailable;
 
             var accent = v != null ? v.Accent : MainForm.Accent;
             Border = accent == MainForm.Good || accent == MainForm.Warn ? Shapes.Blend(accent, MainForm.Panel1, 0.6f) : Color.Empty;
@@ -124,18 +137,47 @@ namespace PingBoost
 
         protected override void OnResize(EventArgs e) { base.OnResize(e); PerformLayout(); Invalidate(); }
 
+        // The tiles in rows of three, in order.
+        List<List<RegionTile>> Rows()
+        {
+            var rows = new List<List<RegionTile>>();
+            if (!showTiles) return rows;
+            for (int i = 0; i < tiles.Count; i += PerRow) rows.Add(tiles.Skip(i).Take(PerRow).ToList());
+            return rows;
+        }
+
+        // Height of the tile rows: each row as tall as its tallest needs, a gap between rows.
+        int TilesHeight(List<List<RegionTile>> rows)
+        {
+            int h = 0;
+            foreach (var row in rows) h += (h > 0 ? RowGap : 0) + RegionTile.HeightFor(row.Select(t => t.Choice));
+            return h;
+        }
+
+        int ContentHeight(int w, out int titleH, out int subH, out int tileH)
+        {
+            titleH = Measure(view.Title, titleFont, w);
+            subH = view.Sub != null ? Measure(view.Sub, subFont, w) : Waiting ? 14 : 0;
+            tileH = TilesHeight(Rows());
+            bool actions = hasButton || hasLinks;
+            return titleH + (subH > 0 ? 6 + subH : 0) + (tileH > 0 ? 16 + tileH : 0) + (actions ? 18 + button.Height : 0);
+        }
+
+        // The height the card needs at this width to show everything with its normal margins.
+        public int PreferredHeight(int width)
+        {
+            if (view == null) return 120;
+            int titleH, subH, tileH;
+            return ContentHeight(Math.Max(40, width - 2 * Pad), out titleH, out subH, out tileH) + 2 * (Pad - 4);
+        }
+
         void Arrange()
         {
             int w = Math.Max(40, ClientSize.Width - 2 * Pad);
-            var tileList = showTiles ? tiles : new List<RegionTile>();
-
-            int titleH = Measure(view.Title, titleFont, w);
-            int subH = view.Sub != null ? Measure(view.Sub, subFont, w) : Waiting ? 14 : 0;
-            int tileH = tileList.Count > 0 ? RegionTile.HeightFor(tileList.Select(t => t.Choice)) : 0;
+            var rows = Rows();
+            int titleH, subH, tileH;
+            int total = ContentHeight(w, out titleH, out subH, out tileH);
             bool actions = hasButton || hasLinks;
-            int actionH = actions ? button.Height : 0;
-
-            int total = titleH + (subH > 0 ? 6 + subH : 0) + (tileH > 0 ? 16 + tileH : 0) + (actions ? 18 + actionH : 0);
             int y = Math.Max(Pad - 6, (ClientSize.Height - total) / 2);
 
             titleRect = new Rectangle(Pad, y, w, titleH);
@@ -152,16 +194,21 @@ namespace PingBoost
             if (tileH > 0)
             {
                 y += 16;
-                int n = tileList.Count;
-                int tw = Math.Min(TileMaxW, (w - TileGap * (n - 1)) / n);
-                int rowW = n * tw + (n - 1) * TileGap;
-                int x0 = (ClientSize.Width - rowW) / 2;
-                for (int i = 0; i < n; i++)
+                int cols = rows[0].Count; // every row uses the first row's tile width, a short last row is centred
+                int tw = Math.Min(TileMaxW, (w - TileGap * (cols - 1)) / cols);
+                for (int r = 0; r < rows.Count; r++)
                 {
-                    int slot = LeadRight ? n - 1 - i : i; // the first tile on the reading side
-                    tileList[i].Bounds = new Rectangle(x0 + slot * (tw + TileGap), y, tw, tileH);
+                    var row = rows[r];
+                    int n = row.Count, rowH = RegionTile.HeightFor(row.Select(t => t.Choice));
+                    int x0 = (ClientSize.Width - (n * tw + (n - 1) * TileGap)) / 2;
+                    if (r > 0) y += RowGap;
+                    for (int i = 0; i < n; i++)
+                    {
+                        int slot = LeadRight ? n - 1 - i : i; // the first tile on the reading side
+                        row[i].Bounds = new Rectangle(x0 + slot * (tw + TileGap), y, tw, rowH);
+                    }
+                    y += rowH;
                 }
-                y += tileH;
             }
 
             if (actions)
@@ -188,6 +235,10 @@ namespace PingBoost
                 else if (hasLinks)
                 {
                     int cx = ClientSize.Width / 2;
+                    // only one of the two links: it sits in the middle
+                    if (!otherAvailable) manual.Bounds = new Rectangle(cx - mw / 2, y, mw, button.Height);
+                    if (!manualAvailable) other.Bounds = new Rectangle(cx - ow / 2, y, ow, button.Height);
+                    if (!otherAvailable || !manualAvailable) return;
                     var near = new Rectangle(cx - LinkGap / 2 - ow, y, ow, button.Height);
                     other.Bounds = LeadRight ? new Rectangle(cx + LinkGap / 2, y, ow, button.Height) : near;
                     manual.Bounds = LeadRight ? new Rectangle(cx - LinkGap / 2 - mw, y, mw, button.Height) : new Rectangle(cx + LinkGap / 2, y, mw, button.Height);

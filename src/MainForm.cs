@@ -58,9 +58,8 @@ namespace PingBoost
         Label routeLabel;
         Button btnTest, btnBoost, btnStop, btnLock, btnUnlock, btnDetect;
         Label liveLabel, statusLabel, gameNote, lockLabel, infoLabel;
-        Panel pickBar, tabBar, heroCard, bottomPanel;
-        Label heroTitle, heroSub;
-        Button heroBtn;
+        Panel pickBar, tabBar, bottomPanel, infoBar, infoGap, cardHost, listCard, listGap;
+        StateCard stateCard;
         TextBox logBox;
         PingGraph graph;
         Panel[] pages;
@@ -106,6 +105,16 @@ namespace PingBoost
             ApplyDirection();
             BuildUi();
             ResumeLayout(false);
+            // the advanced layout has the card, the list and the tools on one page: open it taller when the screen allows
+            Load += delegate
+            {
+                if (simple) return;
+                var area = Screen.FromControl(this).WorkingArea;
+                int h = Math.Min(Height + LogicalToDeviceUnits(140), area.Height);
+                if (h <= Height) return;
+                Height = h;
+                CenterToScreen();
+            };
 
             RefreshRelays();
             Task.Run(() =>
@@ -286,7 +295,8 @@ namespace PingBoost
             header.Controls.Add(liveLabel = new Chip
             {
                 Text = StatusOff, Font = Fonts.Semi(11f), ForeColor = Dim, Width = 430,
-                Dock = DockStyle.Right, TextAlign = ContentAlignment.MiddleRight, Padding = new Padding(0, 0, 14, 0)
+                Dock = DockStyle.Right, TextAlign = ContentAlignment.MiddleRight, Padding = new Padding(0, 0, 14, 0),
+                Visible = !simple // the simple layout's card says the state
             });
             header.Controls.Add(HeaderButton(T("Settings", "الإعدادات"), 120, TextC, OpenSettings));
             header.Controls.Add(HeaderButton(T("Feedback", "تواصل معنا"), 120, Warn, () =>
@@ -336,7 +346,8 @@ namespace PingBoost
             statusLabel = new Label
             {
                 Dock = DockStyle.Bottom, Height = 28, BackColor = Panel1, ForeColor = Dim,
-                TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(12, 0, 12, 0), Text = T("Ready", "جاهز")
+                TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(12, 0, 12, 0), Text = T("Ready", "جاهز"),
+                Visible = !simple
             };
             statusLabel.Controls.Add(new Label
             {
@@ -429,7 +440,8 @@ namespace PingBoost
         // The form mirrors only its own children; nested panels are mirrored here for Arabic.
         static void MirrorChildren(Control parent)
         {
-            if (parent is ListView || parent is ListBox || parent is ComboBox || parent is TextBox) return;
+            // the state card places its own tiles and links on the reading side
+            if (parent is ListView || parent is ListBox || parent is ComboBox || parent is TextBox || parent is StateCard) return;
             var flow = parent as FlowLayoutPanel;
             if (flow != null) { flow.FlowDirection = FlowDirection.RightToLeft; return; }
             foreach (Control c in parent.Controls)
@@ -445,39 +457,29 @@ namespace PingBoost
             }
         }
 
-        // "Your best server" card with a one-click "Play on it".
-        Panel BuildHero()
+        // The state card (see CardLogic): the situation in plain words, the region tiles and the one thing to press.
+        // It sits in a plain panel, so it is never a direct child of the mirrored form.
+        Panel BuildStateCard()
         {
-            heroCard = new Card { Dock = DockStyle.Top, Height = 96, Fill = Panel2, Radius = 14, Padding = new Padding(20, 14, 16, 14) };
-            heroBtn = MakeButton(T("Play on it", "العب عليه"), Accent);
-            heroBtn.ForeColor = Color.Black;
-            heroBtn.Font = Fonts.Semi(11f);
-            heroBtn.Dock = DockStyle.Fill;
-            heroBtn.Visible = false;
-            var btnWrap = new Panel { Dock = DockStyle.Right, Width = 170, Padding = new Padding(0, 12, 0, 12) };
-            btnWrap.Controls.Add(heroBtn);
-            heroBtn.Click += delegate { var r = heroBtn.Tag as Region; if (r != null) PlayOn(r); };
-            heroSub = new Label { Dock = DockStyle.Fill, ForeColor = Dim, TextAlign = ContentAlignment.TopLeft, AutoEllipsis = true };
-            heroTitle = new Label
+            cardHost = new Panel { Dock = DockStyle.Top, Height = 280 };
+            stateCard = new StateCard { Dock = DockStyle.Fill };
+            stateCard.ButtonPressed += delegate { CardButton(); };
+            stateCard.SelectionChanged += delegate { userPicked = true; UpdateCard(); };
+            stateCard.OtherRegions += delegate
             {
-                Dock = DockStyle.Top, Height = 38, ForeColor = TextC, Font = Fonts.Semi(15f),
-                TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true
+                expanded = !expanded;
+                if (expanded) Telemetry.Send("use", null, -1, "other regions");
+                UpdateCard();
             };
-            heroCard.Controls.Add(heroSub);
-            heroCard.Controls.Add(heroTitle);
-            heroCard.Controls.Add(new Panel { Dock = DockStyle.Right, Width = 12 });
-            if (simple)
+            stateCard.Manual += delegate
             {
-                // simple layout: the only other action, "Test ping", sits next to "Play on it"
-                var testWrap = new Panel { Dock = DockStyle.Right, Width = 140, Padding = new Padding(0, 12, 0, 12) };
-                btnTest.Dock = DockStyle.Fill;
-                btnTest.BackColor = Bg; // darker than the card, so it reads as a button
-                testWrap.Controls.Add(btnTest);
-                heroCard.Controls.Add(testWrap);
-                heroCard.Controls.Add(new Panel { Dock = DockStyle.Right, Width = 10 });
-            }
-            heroCard.Controls.Add(btnWrap);
-            return heroCard;
+                manualOpen = !manualOpen;
+                if (manualOpen) Telemetry.Send("use", null, -1, "pick by hand");
+                ApplyCardLayout();
+            };
+            cardHost.Controls.Add(stateCard);
+            choicesGame = null;
+            return cardHost;
         }
 
         Panel BuildServersPage()
@@ -568,16 +570,20 @@ namespace PingBoost
             bottom.Controls.Add(controls);
 
             // one card holds the lock bar and the server list: picking and locking read as one task
-            var listCard = new Card { Dock = DockStyle.Fill, Fill = Panel1, Radius = 14, Padding = new Padding(12, 12, 12, 12) };
+            // (the simple layout shows it under the state card only after "Pick by hand")
+            listCard = new Card { Dock = DockStyle.Fill, Fill = Panel1, Radius = 14, Padding = new Padding(12, 12, 12, 12) };
             listCard.Controls.Add(serverList);
             listCard.Controls.Add(pickBar);
             p.Controls.Add(listCard);
-            p.Controls.Add(new Panel { Dock = DockStyle.Top, Height = 12 });
-            p.Controls.Add(BuildInfoBar());
-            p.Controls.Add(new Panel { Dock = DockStyle.Top, Height = 12 });
-            p.Controls.Add(BuildHero());
+            p.Controls.Add(listGap = new Panel { Dock = DockStyle.Top, Height = 12 });
+            p.Controls.Add(infoBar = BuildInfoBar());
+            p.Controls.Add(infoGap = new Panel { Dock = DockStyle.Top, Height = 12 });
+            infoBar.Visible = infoGap.Visible = !simple;
+            p.Controls.Add(BuildStateCard());
             p.Controls.Add(bottom);
             p.Controls.Add(gameNote);
+            p.Resize += delegate { ApplyCardLayout(); };
+            ApplyCardLayout();
             return p;
         }
 
@@ -999,9 +1005,15 @@ namespace PingBoost
             Telemetry.Server = null;
             Storage.SetSetting("last_game", g.Icon);
             ResetDetectButton();
+            // the card starts over for this game: nothing from the previous game's match, tiles or test stays on it
+            ClearMatch();
+            choicesGame = null;
+            userPicked = expanded = false;
+            if (loadFailed == g) loadFailed = null;
             pickBar.Visible = g.CanLock;
             UpdateLockBar();
             serverList.Items.Clear();
+            UpdateCard();
             SetStatus(T("Getting the servers of ", "أجيب سيرفرات ") + g.Name + "...");
             Task.Run(() =>
             {
@@ -1017,12 +1029,16 @@ namespace PingBoost
                     if (CurrentGame != g) return;
                     if (err != null)
                     {
+                        loadFailed = g;
+                        UpdateCard();
                         SetStatus(T("Couldn't get the servers. Check your internet, then pick the game again.",
                                     "ما قدرت أجيب السيرفرات. شيّك على النت، وبعدين اختار اللعبة مرة ثانية."));
                         Log(g.Name + ": " + err);
                         Issues.Report("servers_load_failed", g.Name + ": " + err, null, g.Icon);
                         return;
                     }
+                    loadedGames.Add(g);
+                    if (g.Regions.Count == 0) loadFailed = g;
                     // last time's results show up straight away; the new test then refreshes them
                     if (g.Regions.All(r => r.Direct == null))
                     {
@@ -1035,8 +1051,11 @@ namespace PingBoost
                     LoadStats(g);
                     if (g.Regions.Count == 0)
                         SetStatus(T("No servers for this game right now. Try again in a bit.", "ما لقيت سيرفرات لهادي اللعبة دحين، جرّب بعد شوي."));
-                    else if (Prefs.AutoTest && !tested.Contains(g))
+                    else if ((Prefs.AutoTest && !tested.Contains(g)) || retestGame == g)
+                    {
+                        retestGame = null;
                         RunTest();
+                    }
                     else
                         SetStatus(g.Regions.Count + T(" regions ready. Press Test ping.", " منطقة جاهزة، اضغط «افحص البنق»."));
                 });
@@ -1064,12 +1083,6 @@ namespace PingBoost
             return Stats.EstimatePlayers(matches);
         }
 
-        int MatchesOf(Region r)
-        {
-            string k = RegionKey(r);
-            return k == "" ? -1 : activity[k];
-        }
-
         void FillServers(Game g)
         {
             serverList.BeginUpdate();
@@ -1093,7 +1106,8 @@ namespace PingBoost
             else
                 foreach (var r in g.Regions) AddRegionRow(r);
             serverList.EndUpdate();
-            UpdateHero();
+            RebuildChoices();
+            UpdateCard();
         }
 
         void AddRegionRow(Region r)
@@ -1130,67 +1144,204 @@ namespace PingBoost
             font.Dispose();
         }
 
-        // Best server = lowest ping; for Deadlock only among regions busy enough for quick matches.
-        Region BestServer(Game g)
+        // ---------------------------------------------------------------- the state card
+
+        List<RegionChoice> allChoices = new List<RegionChoice>(); // every region of the game on screen
+        List<RegionChoice> featured = new List<RegionChoice>();   // the two or three tiles shown first
+        List<RegionChoice> everyChoice = new List<RegionChoice>(); // all of them, featured first ("Other regions")
+        Game choicesGame;   // the game the choices were built for
+        string choicesSig;  // what they show, so a rebuild that changes nothing keeps the same tiles
+        bool userPicked;    // the player clicked a tile: keep their selection when the numbers change
+        bool expanded, manualOpen;
+        Game testGame, testNext, retestGame, loadFailed, lockGame;
+        readonly HashSet<Game> loadedGames = new HashSet<Game>();
+        string lockNames;   // the lock in the card's words: region names, or the picked server names
+        // what the automatic check saw: the region of the running match, or (games that can't be locked) the server
+        string matchRegion, currentServer;
+        bool matchOnPicked, matchViaRelay;
+        int currentMs = -1;
+
+        void ClearMatch()
         {
-            var cands = g.Regions.Where(r => g.Hosts(r) && !LockedOut(g, r) && BestLatency(r) < double.MaxValue).ToList();
-            if (Grouped(g))
-            {
-                var busy = cands.Where(r => MatchesOf(r) >= 40).ToList();
-                if (busy.Count > 0) cands = busy;
-            }
-            return cands.OrderBy(BestLatency).FirstOrDefault();
+            matchRegion = null;
+            matchOnPicked = matchViaRelay = false;
+            currentServer = null;
+            currentMs = -1;
         }
 
-        void UpdateHero()
+        void SetMatch(string region, bool onPicked, bool viaRelay)
+        {
+            matchRegion = region;
+            matchOnPicked = onPicked;
+            matchViaRelay = viaRelay;
+        }
+
+        // The region (as the player chooses it) a datacenter belongs to, or the datacenter's own name.
+        static string RegionNameOf(Game g, Region dc)
+        {
+            var def = g.RegionMap != null ? g.RegionMap.FirstOrDefault(d => d.Ids.Contains(dc.Id)) : null;
+            return def != null ? Lang.T(def.En, def.Ar) : ShortName(dc);
+        }
+
+        static string Short(string name) { return name.Split(new[] { "  [", "  (" }, StringSplitOptions.None)[0]; }
+
+        // The regions to choose from. Games without a region table (developer mode only) get one per datacenter.
+        List<RegionChoice> BuildChoices(Game g)
+        {
+            if (g == null || !g.CanLock || !loadedGames.Contains(g)) return new List<RegionChoice>();
+            if (g.RegionMap != null)
+                return RegionGroups.Build(g, g.AppId == "1422450" ? activity : null, PlayersOf, BestLatency);
+            return g.Regions.Where(r => g.Hosts(r) && !r.Detected).Select(r => new RegionChoice
+            {
+                Def = RegionDef.Of(r.Id, Short(r.NameEn), Short(r.NameAr ?? r.NameEn), r.Id),
+                Members = new List<Region> { r },
+                Ping = BestLatency(r)
+            }).ToList();
+        }
+
+        // New pings, player numbers or a new game: build the tiles again. The player's own selection stays as long
+        // as those regions are still there; otherwise the best one starts selected.
+        void RebuildChoices()
         {
             var g = CurrentGame;
-            if (heroCard == null || g == null) return;
-            var best = BestServer(g);
-            if (best == null)
+            if (g == null) return;
+            var all = BuildChoices(g);
+            string sig = string.Join("|", all.Select(c => c.Def.Key + ":" + (c.Ping < double.MaxValue ? Math.Round(c.Ping).ToString() : "-") +
+                                                          ":" + c.Matches + ":" + c.Players).ToArray());
+            if (g == choicesGame && sig == choicesSig) return;
+            var keep = g == choicesGame && userPicked ? allChoices.Where(c => c.Selected).Select(c => c.Def.Key).ToList() : null;
+            var feat = RegionGroups.Featured(all);
+            if (keep != null && (keep.Count == 0 || all.Any(c => keep.Contains(c.Def.Key))))
+                foreach (var c in all) c.Selected = keep.Contains(c.Def.Key);
+            allChoices = all;
+            featured = feat;
+            everyChoice = feat.Concat(all.Where(c => !feat.Contains(c)).OrderBy(c => c.Ping)).ToList();
+            choicesGame = g;
+            choicesSig = sig;
+        }
+
+        // Games that can't be locked: the lowest ping among the game's own servers (not the ones found in a match).
+        static Region CardBest(Game g)
+        {
+            return g.Regions.Where(r => !r.Detected && BestLatency(r) < double.MaxValue).OrderBy(BestLatency).FirstOrDefault();
+        }
+
+        // Puts what the app knows right now on the card.
+        void UpdateCard()
+        {
+            var g = CurrentGame;
+            if (stateCard == null || g == null) return;
+            if (g != choicesGame) RebuildChoices();
+            var input = new CardInput
             {
-                heroTitle.Text = busy ? T("Looking for your best server...", "أدوّر لك أحسن سيرفر...")
-                                      : T("Press Test ping and we'll find your best server", "اضغط «افحص البنق» ونلقى لك أحسن سيرفر");
-                heroSub.Text = "";
-                heroBtn.Visible = false;
+                Game = g.Name,
+                Loaded = loadedGames.Contains(g),
+                LoadFailed = loadFailed == g,
+                // this game's test runs, or it is next in line after another game's
+                Testing = testGame == g || (testGame != null && !tested.Contains(g) && (Prefs.AutoTest || testNext == g)),
+                Tested = tested.Contains(g),
+                CanLock = g.CanLock,
+                Choices = featured,
+                LockedNames = lockSummary != null && lockGame == g ? lockNames : null,
+                MatchRegion = matchRegion,
+                MatchOnPicked = matchOnPicked,
+                MatchViaRelay = matchViaRelay,
+                CurrentServer = currentServer,
+                CurrentMs = currentMs
+            };
+            if (!g.CanLock)
+            {
+                var best = CardBest(g);
+                if (best != null)
+                {
+                    input.BestServer = ShortName(best);
+                    input.BestMs = (int)Math.Round(BestLatency(best));
+                }
+            }
+            // "Pick by hand" only in the simple layout: the advanced one always shows the list
+            stateCard.SetLinks(everyChoice.Count > featured.Count, expanded, simple);
+            stateCard.Show(CardLogic.Decide(input), expanded ? everyChoice : featured);
+            ApplyCardLayout();
+        }
+
+        // Simple layout: the card fills the middle, and "Pick by hand" puts the server list under it.
+        // Advanced: the card on top (as tall as it needs), the info bar and the list under it.
+        void ApplyCardLayout()
+        {
+            if (cardHost == null || listCard == null) return;
+            bool showList = !simple || manualOpen;
+            listCard.Visible = listGap.Visible = showList;
+            if (!showList)
+            {
+                cardHost.Dock = DockStyle.Fill;
                 return;
             }
-            heroTitle.Text = "✦ " + T("Your best server: ", "أحسن سيرفر لك: ") + ShortName(best) + "   " + Ms(BestLatency(best));
-            int m = MatchesOf(best);
-            if (m >= 0)
+            cardHost.Dock = DockStyle.Top;
+            var page = cardHost.Parent;
+            int want = stateCard.PreferredHeight(page != null ? page.ClientSize.Width : cardHost.Width);
+            if (page != null)
             {
-                string mm = RegionKey(best);
-                string reg = Stats.MmRegions.ContainsKey(mm) ? Lang.T(Stats.MmRegions[mm][0], Stats.MmRegions[mm][1]) : mm;
-                heroSub.Text = T("Region ", "منطقة ") + reg + "  ·  " + Stats.Approx(PlayersOf(m)) + T(" online", " أونلاين") +
-                               "  ·  " + T("wait ", "الانتظار ") + Stats.EstimateWait(m) + "  ·  " + T("lowest ping with enough players", "أقل بنق وفيه لاعبين كفاية");
+                const int ListMin = 150, ListGood = 110, GraphFull = 200, GraphMin = 180, ControlsOnly = 56;
+                int others = 0;
+                foreach (Control c in page.Controls)
+                    if (c != cardHost && c != bottomPanel && c.Visible && (c.Dock == DockStyle.Top || c.Dock == DockStyle.Bottom)) others += c.Height;
+                int room = page.ClientSize.Height - others - ListMin;
+                if (bottomPanel.Visible)
+                {
+                    // advanced: the card and the list's rows come first; the live graph gets what is left
+                    // (all of it in a tall window, none in a short one: then only its buttons stay)
+                    int spare = room - want - ListGood;
+                    int bottom = spare >= GraphFull ? GraphFull : spare >= GraphMin ? spare : ControlsOnly;
+                    if (bottomPanel.Height != bottom) bottomPanel.Height = bottom;
+                    room -= bottom;
+                }
+                want = Math.Min(want, room);
             }
-            else heroSub.Text = T("The lowest ping you have right now.", "أقل بنق عندك دحين.");
-
-            heroBtn.Tag = best;
-            heroBtn.Visible = g.CanLock;
-            bool already = lockSummary != null && best.Picked;
-            heroBtn.Enabled = !already;
-            heroBtn.Text = already ? T("Locked ✓", "مثبّت ✓") : T("Play on it", "العب عليه");
+            want = Math.Max(150, want);
+            if (cardHost.Height != want) cardHost.Height = want;
         }
 
-        // One click: lock the whole region this server belongs to (games without regions: just this server).
-        void PlayOn(Region region)
+        // The card's one button: what it does depends on what the card says.
+        void CardButton()
         {
             var g = CurrentGame;
-            if (g == null || !g.CanLock) return;
-            Telemetry.Send("use", region.NameEn, -1, "play on it");
-            var def = g.RegionMap != null ? g.RegionMap.FirstOrDefault(d => d.Ids.Contains(region.Id)) : null;
-            if (def != null)
+            var v = stateCard.View;
+            if (g == null || v == null) return;
+            switch (v.Kind)
             {
-                var choice = RegionGroups.Build(g, null, null, BestLatency).FirstOrDefault(c => c.Def == def);
-                if (choice != null) { LockRegions(new List<RegionChoice> { choice }); return; }
+                case CardKind.Choose:
+                    var chosen = allChoices.Where(c => c.Selected).ToList();
+                    if (chosen.Count == 0 || !btnLock.Enabled) return; // nothing chosen, or a lock is being applied
+                    Telemetry.Send("use", string.Join(", ", chosen.Select(c => c.Def.En).ToArray()), -1, "play on regions");
+                    LockRegions(chosen);
+                    break;
+                case CardKind.Locked:
+                case CardKind.InMatchOk:
+                case CardKind.InMatchRelay:
+                case CardKind.Outside:
+                    UnlockServers();
+                    break;
+                case CardKind.Testing:
+                    Telemetry.Send("use", null, -1, "test button");
+                    RunTest();
+                    break;
+                case CardKind.Offline:
+                    // the same as picking the game again, and test it once it's there
+                    tested.Remove(g);
+                    retestGame = g;
+                    OnGameChanged();
+                    break;
             }
-            var ids = new[] { region.Id };
-            foreach (var r in g.Regions) r.Picked = ids.Contains(r.Id);
-            Storage.SavePicks(g.LockKey, ids);
-            FillServers(g);
-            UpdateLockBar();
-            LockServers();
+        }
+
+        // How the card names a lock: the regions when whole regions are picked, otherwise the picked servers.
+        string CardLockNames(Game g, List<Region> picked)
+        {
+            var ids = new HashSet<string>(picked.Where(r => g.Hosts(r)).Select(r => r.Id));
+            var whole = BuildChoices(g).Where(c => c.Members.All(m => ids.Contains(m.Id))).ToList();
+            var covered = new HashSet<string>(whole.SelectMany(c => c.Members).Select(m => m.Id));
+            if (whole.Count > 0 && ids.All(covered.Contains)) return CardLogic.JoinNames(whole.Select(c => c.Name).ToList());
+            return string.Join(Lang.Ar ? "، " : ", ", picked.Select(ShortName).ToArray());
         }
 
         // Lock the datacenters of the chosen regions (only ones that host matches).
@@ -1266,15 +1417,22 @@ namespace PingBoost
         void RunTest()
         {
             var g = CurrentGame;
-            if (g == null || busy) return;
+            if (g == null) return;
+            if (busy)
+            {
+                // another game's test is running: this one goes next
+                if (testGame != null && testGame != g) { testNext = g; UpdateCard(); }
+                return;
+            }
             if (g.Regions.Count == 0) { SetStatus(T("No servers to test.", "ما في سيرفرات أفحصها.")); return; }
             busy = true;
+            testGame = g;
             btnTest.Enabled = false;
             // regions blocked by the lock can't answer anyway, so skip them
             var regions = g.Regions.Where(r => !LockedOut(g, r)).ToList();
             var rels = relays.ToList();
             SetStatus(rels.Count > 0 ? T("Testing relays...", "أفحص سيرفرات الوسيط...") : T("Testing...", "أفحص..."));
-            UpdateHero();
+            UpdateCard();
             var watch = Stopwatch.StartNew();
 
             Task.Run(() =>
@@ -1315,17 +1473,23 @@ namespace PingBoost
                 Ui(() =>
                 {
                     busy = false;
+                    testGame = null;
                     btnTest.Enabled = true;
                     tested.Add(g);
                     Storage.SaveLast(g);
                     if (pendingRebuild) { pendingRebuild = false; RebuildUi(); return; }
                     // the user switched games while this test ran: test the game they are looking at now
                     var cur = CurrentGame;
-                    if (cur != g && cur != null && Prefs.AutoTest && cur.Regions.Count > 0 && !tested.Contains(cur))
+                    bool wanted = testNext == cur;
+                    testNext = null;
+                    if (cur != g && cur != null && (Prefs.AutoTest || wanted) && cur.Regions.Count > 0 && !tested.Contains(cur))
                     {
                         RunTest();
                         return;
                     }
+                    // the card follows the game on screen: this game's new pings, or just "no test running" for another one
+                    if (cur == g) RebuildChoices();
+                    UpdateCard();
                     var top = regions.Where(r => BestLatency(r) < double.MaxValue).OrderBy(BestLatency).FirstOrDefault();
                     // every result, so ping can be compared by city, ISP and connection type
                     var results = new Dictionary<string, object>();
@@ -1594,7 +1758,7 @@ namespace PingBoost
             if (found.Count == 0 && relay != null)
             {
                 // the game goes through a nearby Valve relay, which hides which datacenter the match is on
-                if (CurrentGame == g) FillServers(g);
+                if (CurrentGame == g) { SetMatch(null, false, true); FillServers(g); }
                 SetStatus(T("Through Valve's relay in ", "داخل شبكة Valve من وسيط ") + ShortName(relay));
                 Telemetry.Send("detect", relay.NameEn, -1, "through relay");
                 Msg(T("Your game goes through Valve's relay in " + ShortName(relay) + ", the shortest way into their network, so the match server itself is hidden. " +
@@ -1612,6 +1776,7 @@ namespace PingBoost
             foreach (var r in found) r.Here = true;
             if (CurrentGame == g)
             {
+                SetMatch(RegionNameOf(g, found[0]), found.All(r => r.Picked), false);
                 FillServers(g);
                 foreach (ListViewItem item in serverList.Items)
                     if (item.Tag == found[0]) { item.Selected = true; item.EnsureVisible(); }
@@ -1660,8 +1825,12 @@ namespace PingBoost
                     g.Regions.RemoveAll(x => x.Id == r.Id);
                     g.Regions.Insert(0, r);
                 }
-                if (CurrentGame == g) FillServers(g);
                 var top = found[0];
+                if (CurrentGame == g)
+                {
+                    if (!g.CanLock) { currentServer = ShortName(top); currentMs = top.Direct.Ok ? (int)Math.Round(top.Direct.Avg) : -1; }
+                    FillServers(g);
+                }
                 SetStatus(T("You are on: ", "إنت دحين على: ") + top.Name);
                 Telemetry.Server = top.NameEn;
                 Telemetry.Send("detect", top.NameEn, top.Direct.Ok ? (int)Math.Round(top.Direct.Avg) : -1, null);
@@ -1714,12 +1883,13 @@ namespace PingBoost
             matchSinceLock = false;
             lastAutoServer = null;
             lastAutoDetect = DateTime.MinValue;
-            if (btnDetect == null) return;
-            if (lockSummary != null)
+            ClearMatch(); // a match from before the change says nothing about the new lock
+            if (btnDetect != null)
             {
-                SetDetect(T("Checking at your next match...", "بنتأكد في مباراتك الجاية..."), Lavender);
+                if (lockSummary != null) SetDetect(T("Checking at your next match...", "بنتأكد في مباراتك الجاية..."), Lavender);
+                else ResetDetectButton();
             }
-            else ResetDetectButton();
+            UpdateCard();
         }
 
         void AutoDetectTick()
@@ -1734,6 +1904,7 @@ namespace PingBoost
             {
                 List<Detector.Hit> hits = null;
                 string where = null;
+                int whereMs = -1;
                 bool running = Detector.IsRunning(g.Processes);
                 if (running)
                     try
@@ -1742,6 +1913,12 @@ namespace PingBoost
                         hits = Detector.Capture(g.Processes, 8, out matched);
                         // games without a datacenter list: the main server's city
                         if (hits.Count > 0 && !hits.Any(h => ValveRegionOf(g, h.Ip) != null)) where = Stats.Locate(hits[0].Ip);
+                        // games that can't be locked: the card shows that server's ping too
+                        if (where != null && !g.CanLock)
+                        {
+                            var p = Pinger.Measure(Storage.MakeDetected(hits[0].Ip, where).Endpoints[0], 3, 1000);
+                            if (p.Ok) whereMs = (int)Math.Round(p.Avg);
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -1752,8 +1929,13 @@ namespace PingBoost
                 {
                     autoDetecting = false;
                     if (CurrentGame != g) return;
-                    if (!running) { if (lastAutoServer != null) ResetDetectButton(); return; }
-                    if (hits != null) ShowAutoDetect(g, hits, where);
+                    if (!running)
+                    {
+                        if (lastAutoServer != null) ResetDetectButton();
+                        if (matchRegion != null || matchViaRelay || currentServer != null) { ClearMatch(); UpdateCard(); }
+                        return;
+                    }
+                    if (hits != null) ShowAutoDetect(g, hits, where, whereMs);
                 });
             });
         }
@@ -1777,10 +1959,12 @@ namespace PingBoost
             });
         }
 
-        void ShowAutoDetect(Game g, List<Detector.Hit> hits, string where)
+        void ShowAutoDetect(Game g, List<Detector.Hit> hits, string where, int whereMs)
         {
             if (hits.Count == 0)
             {
+                // not in a match (any more)
+                if (matchRegion != null || matchViaRelay || currentServer != null) { ClearMatch(); UpdateCard(); }
                 bool waiting = lockSummary != null && !matchSinceLock;
                 SetDetect(waiting ? T("Checking at your next match...", "بنتأكد في مباراتك الجاية...") : T("Not in a match", "مو داخل مباراة"),
                           waiting ? Lavender : Dim);
@@ -1800,11 +1984,17 @@ namespace PingBoost
                 // only a relay in sight: the match server is hidden behind it, so there's nothing to check or report
                 SetDetect(T("Via relay: ", "عن طريق وسيط: ") + ShortName(relay), Lavender);
                 lastAutoServer = relay.Id;
+                SetMatch(null, false, true);
+                UpdateCard();
                 return;
             }
             string name = dc != null ? ShortName(dc) : (where ?? top.Ip);
             bool ok = dc == null ? lockSummary == null : (lockSummary == null || dc.Picked);
             SetDetect(T("On: ", "إنت على: ") + name, ok ? Good : Warn);
+            // the card: a datacenter we know names the region; a game without them shows the city and its ping
+            if (dc != null) SetMatch(RegionNameOf(g, dc), dc.Picked, false);
+            else if (!g.CanLock && where != null) { currentServer = where; currentMs = whereMs; }
+            UpdateCard();
             if (dc != null && !dc.Here)
             {
                 foreach (var r in g.Regions) r.Here = r == dc;
@@ -1888,6 +2078,7 @@ namespace PingBoost
                 }
             }
             WarnLongerRoute(g, picked);
+            string cardNames = CardLockNames(g, picked);
             btnLock.Enabled = false;
             SetStatus(T("Locking your servers...", "أثبّت سيرفراتك..."));
             Task.Run(() =>
@@ -1911,6 +2102,8 @@ namespace PingBoost
                     Ui(() =>
                     {
                         lockSummary = names;
+                        lockGame = g;
+                        lockNames = cardNames;
                         LockChanged(g);
                         Telemetry.Server = string.Join(", ", picked.Select(r => r.NameEn));
                         Telemetry.Send("lock", Telemetry.Server, -1, n + " ranges blocked");
@@ -1994,6 +2187,8 @@ namespace PingBoost
         {
             if (lockSummary == null) return;
             lockSummary = null;
+            lockGame = null;
+            lockNames = null;
             if (!boosting) StopMonitor();
             Telemetry.Server = null;
             Telemetry.Send("unlock", null, -1, null);
@@ -2019,8 +2214,12 @@ namespace PingBoost
             }
 
             lockSummary = null;
+            lockGame = null;
+            lockNames = null;
+            ClearMatch();
             StopAll();
             foreach (var g in games) foreach (var r in g.Regions) { r.Picked = false; r.Here = false; }
+            UpdateCard();
             Storage.ClearPicks();
             Telemetry.Server = null;
             Telemetry.Send("reset", null, -1, null);

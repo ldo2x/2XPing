@@ -106,7 +106,7 @@ namespace PingBoost
         }
 
         // Arabic: "A وB وC"; English: "A, B and C".
-        static string JoinNames(List<string> names)
+        public static string JoinNames(List<string> names)
         {
             if (names.Count == 1) return names[0];
             if (Lang.Ar) return string.Join(" و", names.ToArray());
