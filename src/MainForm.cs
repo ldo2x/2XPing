@@ -113,6 +113,7 @@ namespace PingBoost
             {
                 // leftovers from a crash, and a firewall that's off (locks can't work then)
                 if (ServerLock.Exists()) { Issues.Report("leftover_lock", "rules from a previous session were still there"); ServerLock.Remove(); }
+                Detector.Cleanup(); // a capture left running if the app closed mid-way (e.g. during a lock test)
                 if (!ServerLock.FirewallOn()) Issues.Report("firewall_off", "Windows Firewall is off for the current network profile");
             });
             if (!Tunnel.Installed)
@@ -155,6 +156,7 @@ namespace PingBoost
                 monitorGen++;
                 if (tunnelActive) Tunnel.Stop();
                 if (lockSummary != null) ServerLock.Remove();
+                if (lockTesting) Detector.Cleanup(); // the lock test's thread won't reach its finally once the app exits
                 tray.Visible = false;
                 Telemetry.Exit();
             };
@@ -1723,7 +1725,7 @@ namespace PingBoost
         {
             var g = CurrentGame;
             if (g == null || busy) return;
-            if (lockTesting) { Msg(T("A lock test is recording, wait for it to finish.", "اختبار التثبيت يسجّل، استنى لين يخلص."), ToastKind.Warn); return; }
+            if (LockTestRunning()) return;
             if (autoDetecting)
             {
                 Msg(T("Checking your server right now, the answer shows on the button in a few seconds.",
@@ -2093,6 +2095,7 @@ namespace PingBoost
         {
             var g = CurrentGame;
             if (g == null || !g.CanLock) return;
+            if (LockTestRunning()) return;
             var picked = g.Regions.Where(r => r.Picked).ToList();
             if (picked.Count == 0)
             {
@@ -2242,6 +2245,7 @@ namespace PingBoost
         void UnlockServers()
         {
             if (lockSummary == null) return;
+            if (LockTestRunning()) return;
             lockSummary = null;
             lockGame = null;
             lockNames = null;
@@ -2264,6 +2268,7 @@ namespace PingBoost
         // Undo everything 2X Ping changed on this PC, then verify nothing is left.
         public void ResetEverything()
         {
+            if (LockTestRunning()) return;
             if (busy)
             {
                 Msg(T("Wait for the current test to finish first.", "استنى الفحص الحالي يخلص أول."), ToastKind.Warn);
@@ -2709,6 +2714,14 @@ namespace PingBoost
         RoundButton devLockTestBtn, devFullBlockBtn;
         const int LockTestSeconds = 60;
 
+        // A lock test reads the lock as it was when it started: lock, unlock and reset wait for it.
+        bool LockTestRunning()
+        {
+            if (!lockTesting) return false;
+            Msg(T("A lock test is recording, wait for it to finish.", "اختبار التثبيت يسجّل، استنى لين يخلص."), ToastKind.Warn);
+            return true;
+        }
+
         // «حجب كامل (تجربة)»: only while developer mode is on
         bool FullBlock { get { return devMode && Storage.GetSetting("lock_full_block") == "1"; } }
 
@@ -2735,7 +2748,8 @@ namespace PingBoost
             bool on = Storage.GetSetting("lock_full_block") != "1";
             Storage.SetSetting("lock_full_block", on ? "1" : "0");
             if (devFullBlockBtn != null) devFullBlockBtn.Text = FullBlockText;
-            DevOut("full block (experiment) " + (on ? "ON: games with a lock space are blocked for every protocol, both directions, the whole PC, all ports"
+            DevOut("full block (experiment) " + (on ? "ON: when you lock a game with a lock space, its blocked ranges (whole cloud regions, e.g. Google/Amazon) " +
+                                                      "are blocked for EVERY app on this PC (every protocol, both directions, all ports) while the lock is on"
                                                     : "off: back to the game's own UDP only"));
             if (lockSummary != null) DevOut("the current lock was applied as " + (lockInfo != null ? lockInfo.Mode : "?") + ": unlock and lock again to switch, then restart the game");
         }
@@ -2756,6 +2770,7 @@ namespace PingBoost
                 Scope = "no lock rules", Allow = new List<string>(g.LockAllow ?? new string[0])
             };
             DevOut("---- lock test, " + g.Name + ", mode " + info.Mode + ": start the game now and queue (" + LockTestSeconds + " s)");
+            DevOut(LockTest.Procedure.Replace("\r\n", " "));
             var at = DateTime.Now;
             Task.Run(() =>
             {
@@ -2771,9 +2786,10 @@ namespace PingBoost
                     string text = LockTest.Report(g, cap, info, lines, LockTestSeconds, at);
                     string path = Path.Combine(Storage.Dir, "locktest-" + at.ToString("yyyyMMdd-HHmmss") + ".txt");
                     File.WriteAllText(path, text);
-                    foreach (var l in text.Split('\n')) DevOut(l.TrimEnd('\r'));
-                    DevOut("saved " + path);
-                    Telemetry.Send("locktest", g.Name, -1, LockTest.Summary(g, cap, info, lines), LockTest.Data(cap, info, lines, LockTestSeconds));
+                    // the console gets the header and findings; the table of every address stays in the file
+                    foreach (var l in LockTest.Short(g, cap, info, lines, LockTestSeconds, at).Split('\n')) DevOut(l.TrimEnd('\r'));
+                    DevOut("full table: " + path);
+                    Telemetry.Send("locktest", info.Picked.Count > 0 ? string.Join(", ", info.Picked) : null, -1, LockTest.Summary(g, cap, info, lines), LockTest.Data(cap, info, lines, LockTestSeconds));
                 }
                 catch (Exception ex) { DevOut("! lock test failed: " + ex.Message); }
                 finally

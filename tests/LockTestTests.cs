@@ -221,12 +221,146 @@ namespace PingBoost
                 lines.Add(Hdr(5000 + i, 1, 1, "Tx", "IP", 49));
                 lines.Add("\tip: " + Me + ".50000 > 45." + (i / 250) + "." + (i % 250) + ".1." + (20000 + i) + ": UDP, length 46");
             }
+            // one blocked Chicago address with little traffic: must survive the trimming
+            lines.Add(Hdr(9999, 1, 1, "Tx", "IP", 49));
+            lines.Add("\tip: " + Me + ".50000 > 137.221.69.97.26503: UDP, length 46");
             var c = LockTest.Parse(lines, new[] { Me });
-            Check(c.Rows.Count == 3000, "3000 rows");
-            var info = new LockTest.LockInfo { Mode = "none" };
+            Check(c.Rows.Count == 3001, "3001 rows");
+            var info = new LockTest.LockInfo { Mode = "game-udp", Block = new List<string> { "137.221.64.0/18" } };
             var d = LockTest.Data(c, info, LockTest.Classify(FakeOverwatch(), c, info, null), 60);
             int size = new JavaScriptSerializer().Serialize(d).Length;
-            Check(size <= 20000 && d.ContainsKey("truncated") && ((object[])d["rows"]).Length > 50, "data under 20 KB, truncated: " + size);
+            var rows = (object[])d["rows"];
+            Check(size <= LockTest.DataLimit && d.ContainsKey("truncated") && rows.Length > 50, "data under the limit, truncated: " + size);
+            Check((string)((object[])rows[0])[0] == "137.221.69.97", "the blocked datacenter row goes first and is kept");
+        }
+
+        // IpLists.Subtract returns "a-b" ranges far bigger than 4096 addresses: every address inside must count as blocked
+        static void LockTestBlockRangesFromSubtract()
+        {
+            var block = IpLists.Subtract(new[] { "137.221.0.0/16" }, new[] { "137.221.70.0/24" });
+            Check(block.Count == 2 && block[0] == "137.221.0.0-137.221.69.255", "Subtract gives ranges: " + string.Join(" ", block.ToArray()));
+            Check(LockTest.Blocks(block, "137.221.69.97"), "Chicago 137.221.69.97 is 17,000+ addresses into the range and blocked");
+            Check(LockTest.Blocks(block, "137.221.200.1") && !LockTest.Blocks(block, "137.221.70.5") && !LockTest.Blocks(block, "8.8.8.8"), "range edges");
+            var info = new LockTest.LockInfo { Mode = "game-udp", Block = block, Picked = new List<string> { "SGP1" } };
+            var lines = LockTest.Classify(FakeOverwatch(), LockTest.Parse(SampleLog(), new[] { Me }), info, Owners());
+            Check(lines.Where(l => l.Row.Ip == "137.221.69.97").All(l => l.Status == "BLOCKED" && l.InBlock), "classified BLOCKED");
+        }
+
+        const string NetEventsXml =
+            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\r\n<netEvents>\r\n" +
+            // the game's UDP to Chicago, refused by our rule
+            " <item>\r\n  <header>\r\n   <timeStamp>2026-10-13T09:00:30.123Z</timeStamp>\r\n" +
+            "   <flags numItems=\"2\"><item>FWPM_NET_EVENT_FLAG_IP_PROTOCOL_SET</item><item>FWPM_NET_EVENT_FLAG_APP_ID_SET</item></flags>\r\n" +
+            "   <ipVersion>FWP_IP_VERSION_V4</ipVersion>\r\n   <ipProtocol>17</ipProtocol>\r\n   <localAddrV4>192.168.1.10</localAddrV4>\r\n" +
+            "   <remoteAddrV4>137.221.69.97</remoteAddrV4>\r\n   <localPort>50000</localPort>\r\n   <remotePort>26503</remotePort>\r\n   <scopeId>0</scopeId>\r\n" +
+            "   <appId><data>5c006400</data><asString>\\device\\harddiskvolume3\\games\\overwatch\\_retail_\\overwatch.exe.</asString></appId>\r\n" +
+            "  </header>\r\n  <type>FWPM_NET_EVENT_TYPE_CLASSIFY_DROP</type>\r\n" +
+            "  <classifyDrop><filterId>70123</filterId><layerId>48</layerId><msFwpDirection>MS_FWP_DIRECTION_OUT</msFwpDirection></classifyDrop>\r\n </item>\r\n" +
+            // again, app path printed byte by byte
+            " <item><header><timeStamp>2026-10-13T09:00:31.000Z</timeStamp><ipProtocol>17</ipProtocol><remoteAddrV4>137.221.69.97</remoteAddrV4>" +
+            "<localPort>50000</localPort><remotePort>26503</remotePort><appId><asString>\\.d.e.v.i.c.e.\\.o.v.e.r.w.a.t.c.h...e.x.e...</asString></appId></header>" +
+            "<type>FWPM_NET_EVENT_TYPE_CLASSIFY_DROP</type><classifyDrop><filterId>70124</filterId></classifyDrop></item>\r\n" +
+            // before the test started: ignored
+            " <item><header><timeStamp>2026-10-13T08:00:00.000Z</timeStamp><ipProtocol>17</ipProtocol><remoteAddrV4>137.221.69.98</remoteAddrV4></header>" +
+            "<type>FWPM_NET_EVENT_TYPE_CLASSIFY_DROP</type><classifyDrop><filterId>70123</filterId></classifyDrop></item>\r\n" +
+            // an allow event: ignored
+            " <item><header><timeStamp>2026-10-13T09:00:32.000Z</timeStamp><ipProtocol>6</ipProtocol><remoteAddrV4>34.87.10.20</remoteAddrV4></header>" +
+            "<type>FWPM_NET_EVENT_TYPE_CLASSIFY_ALLOW</type></item>\r\n" +
+            // someone scanning the PC, dropped by Windows' own rules (another filter): a public row, not ours
+            " <item><header><timeStamp>2026-10-13T09:00:33.000Z</timeStamp><ipProtocol>6</ipProtocol><remoteAddrV4>45.1.2.3</remoteAddrV4>" +
+            "<localPort>445</localPort><remotePort>51000</remotePort></header>" +
+            "<type>FWPM_NET_EVENT_TYPE_CLASSIFY_DROP</type><classifyDrop><filterId>9</filterId><msFwpDirection>MS_FWP_DIRECTION_IN</msFwpDirection></classifyDrop></item>\r\n" +
+            "</netEvents>\r\n";
+
+        const string FiltersXml =
+            "<?xml version=\"1.0\"?>\r\n<wfpdiag><filters>" +
+            "<item><filterKey>{1}</filterKey><displayData><name>2XPing-RegionLock</name><description/></displayData><flags numItems=\"1\"><item>FWPM_FILTER_FLAG_INDEXED</item></flags><filterId>70123</filterId></item>" +
+            "<item><filterKey>{2}</filterKey><displayData><name>2XPing-RegionLock</name></displayData><filterId>70124</filterId></item>" +
+            "<item><filterKey>{3}</filterKey><displayData><name>Core Networking - Something</name></displayData><filterId>9</filterId></item>" +
+            "</filters></wfpdiag>";
+
+        static void LockTestNetEvents()
+        {
+            var since = new DateTime(2026, 10, 13, 9, 0, 0, DateTimeKind.Utc);
+            var drops = LockTest.ParseNetEvents(NetEventsXml, since);
+            Check(drops.Count == 3, "3 drops in the window: " + drops.Count);
+            var d = drops[0];
+            Check(d.Ip == "137.221.69.97" && d.Proto == "UDP" && d.RemotePort == 26503 && d.LocalPort == 50000 && d.App == "overwatch.exe" &&
+                  d.FilterId == "70123" && d.Direction == "MS_FWP_DIRECTION_OUT", "first drop fields: " + d.App);
+            Check(drops[1].App == "overwatch.exe", "byte-by-byte app path: " + drops[1].App);
+            Check(drops[2].Proto == "TCP" && drops[2].App == null, "inbound scan, no app");
+            var ours = LockTest.ParseFilterIds(FiltersXml, "2XPing-RegionLock");
+            Check(ours.Count == 2 && ours.Contains("70123") && ours.Contains("70124") && !ours.Contains("9"), "our filter ids");
+            Check(LockTest.AppPath("\\device\\x\\a.b.exe") == "\\device\\x\\a.b.exe", "a normal path is kept");
+        }
+
+        // Hypothesis A: the game tries the blocked datacenter, the firewall refuses it, and pktmon sees nothing.
+        static void LockTestTriedFinding()
+        {
+            var g = FakeOverwatch();
+            var cap = LockTest.Parse(new string[0], new[] { Me });
+            LockTest.AddWfp(cap, LockTest.ParseNetEvents(NetEventsXml, new DateTime(2026, 10, 13, 9, 0, 0, DateTimeKind.Utc)),
+                            LockTest.ParseFilterIds(FiltersXml, "2XPing-RegionLock"));
+            Check(cap.WfpRead && cap.WfpTotal == 3 && cap.WfpOurs == 2, "WFP totals " + cap.WfpTotal + "/" + cap.WfpOurs);
+            var info = new LockTest.LockInfo { Active = true, Mode = "game-udp", Protocol = "UDP", Program = "x", Block = new List<string> { "137.221.0.0-137.221.255.255" },
+                                               Picked = new List<string> { "SGP1" } };
+            var lines = LockTest.Classify(g, cap, info, null);
+            var ord = lines.First(l => l.Row.Ip == "137.221.69.97");
+            Check(ord.Row.Wfp == 2 && ord.Row.WfpOurs == 2 && ord.Game && ord.InBlock && ord.Row.Total == 0, "game tried Chicago twice, no packets");
+            string text = LockTest.Report(g, cap, info, lines, 60, DateTime.Now);
+            Check(text.Contains("TRIED 137.221.69.97 (ORD1, UDP): the game tried this blocked datacenter 2 times") && text.Contains("(2 by the 2X Ping rule)"),
+                  "TRIED finding");
+            Check(text.Contains("3 in the test window, 2 by the 2X Ping rule"), "WFP line");
+            Check(text.Contains("run it once UNLOCKED"), "procedure in the result");
+        }
+
+        static void LockTestNothingSeenNeverClaimsNoTry()
+        {
+            var g = FakeOverwatch();
+            var info = new LockTest.LockInfo { Active = true, Mode = "full", Block = new List<string> { "137.221.0.0/16" }, Picked = new List<string> { "SGP1" } };
+            var cap = LockTest.Parse(new string[0], new[] { Me });
+            string text = LockTest.Short(g, cap, info, LockTest.Classify(g, cap, info, null), 60, DateTime.Now);
+            Check(text.Contains("COULDN'T READ") && text.Contains("doesn't show the game didn't try"), "WFP unreadable");
+            LockTest.AddWfp(cap, new LockTest.WfpDrop[0], null);
+            text = LockTest.Short(g, cap, info, LockTest.Classify(g, cap, info, null), 60, DateTime.Now);
+            Check(text.Contains("NONE in the test window") && text.Contains("does NOT show that the game didn't try"), "WFP empty");
+            Check(!text.Contains("nothing in the blocked datacenters was seen"), "old wording gone");
+        }
+
+        static void LockTestIpv6()
+        {
+            var lines = new[]
+            {
+                Hdr(1, 1, 1, "Tx", "IP", 49), "\tip: 2001:db8::5.50000 > 2606:4700::1.26503: UDP, length 46",
+                Hdr(2, 1, 1, "Rx", "IP", 49), "\tip: 2606:4700::1.26503 > 2001:db8::5.50000: UDP, length 46",
+                Hdr(3, 1, 1, "Tx", "IP", 49), "\tip: fe80::1.546 > ff02::1:2.547: UDP, length 46",
+                Hdr(4, 1, 1, "Tx", "IP", 49), "\tip: 2001:db8::5 > 2606:4700::2: ICMP6, echo request, id 1, seq 1, length 16",
+            };
+            var c = LockTest.Parse(lines, new[] { "2001:db8::5" });
+            var r = R(c, "2606:4700::1", "UDP");
+            Check(r != null && r.V6 && r.Out == 1 && r.In == 1 && r.RemotePorts.Contains(26503) && r.LocalPorts.Contains(50000), "IPv6 UDP row");
+            Check(R(c, "2606:4700::2", "ICMP") != null, "ICMPv6 row");
+            Check(R(c, "ff02::1:2", "UDP") == null && c.V6Packets == 3, "link-local/multicast skipped: " + c.V6Packets);
+            var g = FakeOverwatch();
+            var info = new LockTest.LockInfo { Mode = "game-udp", Block = new List<string> { "137.221.0.0/16" } };
+            var cl = LockTest.Classify(g, c, info, new Dictionary<string, string> { { "UDP 50000", "Overwatch" } });
+            Check(cl.First(l => l.Row.Ip == "2606:4700::1").Status == "IPv6", "IPv6 status");
+            string text = LockTest.Short(g, c, info, cl, 60, DateTime.Now);
+            Check(text.Contains("IPv6  packets by process: game 2") && text.Contains("THE GAME USED IPv6"), "IPv6 finding");
+        }
+
+        static void LockTestUnknownProcess()
+        {
+            var g = FakeOverwatch();
+            var info = new LockTest.LockInfo { Mode = "game-udp", Protocol = "UDP", Program = "x", Block = new List<string> { "137.221.0.0/16" } };
+            var lines = new[]
+            {
+                Hdr(1, 1, 1, "Tx", "IP", 49), "\tip: " + Me + ".40000 > 137.221.69.97.26503: UDP, length 46",
+                Hdr(2, 1, 1, "Rx", "IP", 49), "\tip: 137.221.69.97.26503 > " + Me + ".40000: UDP, length 46",
+            };
+            var c = LockTest.Parse(lines, new[] { Me });
+            string text = LockTest.Report(g, c, info, LockTest.Classify(g, c, info, null), 60, DateTime.Now);
+            Check(text.Contains("process unknown") && !text.Contains("another process") && text.Contains("unknown"), "unknown owner wording");
         }
 
         static void RunLockTestTests()
@@ -240,6 +374,12 @@ namespace PingBoost
             Run("LockTestClassifyFullBlock", LockTestClassifyFullBlock);
             Run("LockTestPorts", LockTestPorts);
             Run("LockTestDataStaysUnderCap", LockTestDataStaysUnderCap);
+            Run("LockTestBlockRangesFromSubtract", LockTestBlockRangesFromSubtract);
+            Run("LockTestNetEvents", LockTestNetEvents);
+            Run("LockTestTriedFinding", LockTestTriedFinding);
+            Run("LockTestNothingSeenNeverClaimsNoTry", LockTestNothingSeenNeverClaimsNoTry);
+            Run("LockTestIpv6", LockTestIpv6);
+            Run("LockTestUnknownProcess", LockTestUnknownProcess);
         }
     }
 }
