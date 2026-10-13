@@ -1280,7 +1280,7 @@ namespace PingBoost
             string name = Stats.MmRegions.ContainsKey(h.Key) ? Lang.T(Stats.MmRegions[h.Key][0], Stats.MmRegions[h.Key][1]) : h.Key;
             if (h.Key == DeadlockData.Russia)
                 return name + "   ·   " + Stats.Approx(PlayersOf(h.Matches)) + T(" online", " أونلاين") + "   ·   " +
-                       T("separate queue on the European servers, the lock can't choose it", "قيم لحاله على سيرفرات أوروبا، والتثبيت ما يقدر يختاره");
+                       T("separate queue on the European servers, the lock can't choose it", "لها كيو خاص يلعب على سيرفرات أوروبا، والتثبيت ما يقدر يختارها");
             return name + "   ·   " + Stats.Approx(PlayersOf(h.Matches)) + T(" online", " أونلاين") +
                    "   ·   " + T("wait ", "الانتظار ") + Stats.EstimateWait(h.Matches);
         }

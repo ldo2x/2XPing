@@ -144,7 +144,7 @@ namespace PingBoost
         public static string RussiaNote(int players)
         {
             string en = "Russia is a separate queue played on the European servers; the lock can't choose it",
-                   ar = "روسيا قيم لحاله يلعب على سيرفرات أوروبا، والتثبيت ما يقدر يختاره";
+                   ar = "روسيا لها كيو خاص يلعب على سيرفرات أوروبا، والتثبيت ما يقدر يختارها";
             if (players >= 0)
             {
                 en += " (" + Stats.Approx(players) + " players)";

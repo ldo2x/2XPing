@@ -347,6 +347,17 @@ namespace PingBoost
             Check(cl.First(l => l.Row.Ip == "2606:4700::1").Status == "IPv6", "IPv6 status");
             string text = LockTest.Short(g, c, info, cl, 60, DateTime.Now);
             Check(text.Contains("IPv6  packets by process: game 2") && text.Contains("THE GAME USED IPv6"), "IPv6 finding");
+
+            // IPv6 entries in the block list (Valve's IPv6 relays, once it lists any) are matched too
+            Check(LockTest.Blocks(new[] { "2606:4700::1/128" }, "2606:4700::1") && !LockTest.Blocks(new[] { "2606:4700::1/128" }, "2606:4700::2"), "IPv6 /128");
+            Check(LockTest.Blocks(new[] { "2606:4700::/32" }, "2606:4700:ffff::9") && !LockTest.Blocks(new[] { "2606:4700::/32" }, "2606:4701::1"), "IPv6 prefix");
+            Check(LockTest.Blocks(new[] { "2001:db8::1-2001:db8::9" }, "2001:db8::5") && !LockTest.Blocks(new[] { "2001:db8::1-2001:db8::9" }, "2001:db8::a"), "IPv6 range");
+            Check(!LockTest.Blocks(new[] { "2606:4700::/32" }, "1.2.3.4") && !LockTest.Blocks(new[] { "0.0.0.0/0" }, "2606:4700::1"), "kinds never mix");
+            info = new LockTest.LockInfo { Mode = "game-udp", Block = new List<string> { "137.221.0.0/16", "2606:4700::1/128" } };
+            cl = LockTest.Classify(g, c, info, new Dictionary<string, string> { { "UDP 50000", "Overwatch" } });
+            Check(cl.First(l => l.Row.Ip == "2606:4700::1").Status == "BLOCKED", "an IPv6 row in the block list is BLOCKED");
+            text = LockTest.Short(g, c, info, cl, 60, DateTime.Now);
+            Check(!text.Contains("THE GAME USED IPv6"), "no IPv6 warning once the game's IPv6 traffic is blocked");
         }
 
         static void LockTestUnknownProcess()

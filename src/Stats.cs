@@ -44,7 +44,8 @@ namespace PingBoost
             if (shared != null && DateTime.Now - sharedAt < TimeSpan.FromSeconds(60)) return shared;
             try
             {
-                string json = Http.Send("GET", Telemetry.SupabaseUrl + "/rest/v1/game_stats?game=eq.deadlock&select=regions,matches_per_day,now_factor,updated_at",
+                // every column: "regions_source" only exists once the newer setup SQL ran, and naming it would fail before that
+                string json = Http.Send("GET", Telemetry.SupabaseUrl + "/rest/v1/game_stats?game=eq.deadlock&select=*",
                                         null, Telemetry.Headers(Telemetry.SupabaseKey), 8000);
                 var rows = (object[])new JavaScriptSerializer().DeserializeObject(json);
                 if (rows.Length == 0) return null;
@@ -83,8 +84,7 @@ namespace PingBoost
                     deadlockPerDayAt = DateTime.Now;
                 }
                 double inMatches = deadlockPerDay / 24.0 * PlayersPerMatch * AvgMatchMinutes / 60.0;
-                // the day's average, scaled to how busy this hour is (about 0.5 at night, 1.5 at the evening peak) when
-                // Supabase has that factor; without it (null: no longer computed, see tools/supabase-setup.sql) the day's average
+                // the day's average, scaled to how busy this hour is (about 0.5 at night, 1.5 at the evening peak)
                 double busy = 1;
                 if (s != null && s.ContainsKey("now_factor") && s["now_factor"] != null)
                     busy = Math.Max(0.3, Math.Min(2.5, Convert.ToDouble(s["now_factor"], CultureInfo.InvariantCulture)));
@@ -104,9 +104,9 @@ namespace PingBoost
             lock (MmRegions)
             {
                 var s = SharedDeadlock();
-                var regions = s != null ? s["regions"] as Dictionary<string, object> : null;
-                if (regions != null)
-                    return regions.ToDictionary(kv => kv.Key, kv => Convert.ToInt32(kv.Value, CultureInfo.InvariantCulture));
+                // only regions counted from the live list (the old /v1/sql count was on another scale)
+                var regions = DeadlockData.SharedRegions(s);
+                if (regions != null) return regions;
                 if (deadlockCache != null && DateTime.Now - deadlockAt < TimeSpan.FromMinutes(3)) return deadlockCache;
                 string json = Http.Get("https://api.deadlock-api.com/v1/matches/active", 30000);
                 var result = DeadlockData.CountRegions(json, DeadlockData.UnixNow());

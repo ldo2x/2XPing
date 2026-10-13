@@ -15,12 +15,16 @@ namespace PingBoost
         // South Africa (jnb) is in the Europe pool. India (bom/bom2/maa/maa2), Guam (gum), Dubai (dxb) and
         // Fujairah (dfjr) host no Deadlock region: they are only relays, see RelayOnly.
         // Helsinki (hel), Falkenstein (fsn) and US West (eat, alias mwh) host matches but Valve lists no relay for
-        // them, so the lock can never block them: they show as "can't be locked" rows (Game.NoRelayHosts).
+        // them, so the lock can never block them: they show as "can't be locked" rows (Game.NoRelayHosts), as do the
+        // relay-less Datapacket sites dsto and dlhr below.
         public static readonly Dictionary<string, string> Hosting = new Dictionary<string, string>
         {
             {"ams","Europe"}, {"fra","Europe"}, {"dfra","Europe"}, {"lhr","Europe"}, {"par","Europe"}, {"mad","Europe"},
             {"vie","Europe"}, {"dvie","Europe"}, {"waw","Europe"}, {"sto","Europe"}, {"sto2","Europe"}, {"jnb","Europe"},
             {"hel","Europe"}, {"helm","Europe"}, {"fsn","Europe"},
+            // Datapacket Stockholm and London: no relays, and no Deadlock server region names them, so hosting is
+            // unverified. Listed as hosts so they show as "can't be locked" rows like Helsinki (they can't be blocked anyway).
+            {"dsto","Europe"}, {"dlhr","Europe"},
             {"iad","Row"}, {"atl","Row"}, {"ord","Row"}, {"dfw","Row"}, {"lax","Row"}, {"sea","Row"}, {"eat","Row"}, {"mwh","Row"},
             {"sgp","SEAsia"}, {"hkg","SEAsia"}, {"tyo","SEAsia"}, {"seo","SEAsia"},
             {"gru","SAmerica"}, {"eze","SAmerica"}, {"lim","SAmerica"}, {"scl","SAmerica"},
@@ -28,10 +32,10 @@ namespace PingBoost
         };
 
         // Datacenters Valve lists that host no Deadlock region: entry relays (the game enters Valve's network there and
-        // rides it to the match server), and Datapacket sites without relays that no Deadlock server region names.
+        // rides it to the match server).
         public static readonly HashSet<string> RelayOnly = new HashSet<string>
         {
-            "dxb", "dfjr", "bom", "bom2", "maa", "maa2", "gum", "dsto", "dlhr",
+            "dxb", "dfjr", "bom", "bom2", "maa", "maa2", "gum",
         };
 
         // Russia is a player pool, not a place: its matches are played on the European datacenters, and no lock can
@@ -97,6 +101,26 @@ namespace PingBoost
                 int n;
                 result.TryGetValue(key, out n);
                 result[key] = n + 1;
+            }
+            return result;
+        }
+
+        // Supabase's shared row (game_stats): its regions, only when they were counted from /v1/matches/active
+        // (regions_source = "active"); null otherwise, so the app counts the live list itself. The old /v1/sql numbers
+        // were about 2.6 times higher and would make every wait look shorter (Stats.FastQueue etc.).
+        public static Dictionary<string, int> SharedRegions(Dictionary<string, object> row)
+        {
+            object src, regions;
+            if (row == null || !row.TryGetValue("regions_source", out src) || !(src is string) || (string)src != "active") return null;
+            if (!row.TryGetValue("regions", out regions)) return null;
+            var d = regions as Dictionary<string, object>;
+            if (d == null) return null;
+            var result = new Dictionary<string, int>();
+            foreach (var kv in d)
+            {
+                int n;
+                if (kv.Value == null || !int.TryParse(Convert.ToString(kv.Value, CultureInfo.InvariantCulture), NumberStyles.Integer, CultureInfo.InvariantCulture, out n)) continue;
+                result[kv.Key] = n;
             }
             return result;
         }

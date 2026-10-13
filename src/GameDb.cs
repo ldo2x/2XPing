@@ -269,7 +269,8 @@ namespace PingBoost
             {"mad", "مدريد - إسبانيا"}, {"vie", "فيينا - النمسا"}, {"dvie", "فيينا (Datapacket) - النمسا"},
             {"waw", "وارسو - بولندا"}, {"sto", "ستوكهولم (Kista) - السويد"}, {"sto2", "ستوكهولم (Bromma) - السويد"},
             {"hel", "هلسنكي - فنلندا"}, {"fsn", "فالكنشتاين - ألمانيا"}, {"eat", "ويناتشي - أمريكا"},
-            {"dfjr", "الفجيرة (Datapacket) - الإمارات"}, {"bom", "مومباي - الهند"}, {"bom2", "مومباي - الهند"},
+            {"dfjr", "الفجيرة (Datapacket) - الإمارات"}, {"dsto", "ستوكهولم (Datapacket) - السويد"}, {"dlhr", "لندن (Datapacket) - بريطانيا"},
+            {"bom", "مومباي - الهند"}, {"bom2", "مومباي - الهند"},
             {"maa", "تشيناي - الهند"}, {"maa2", "تشيناي - الهند"}, {"sgp", "سنغافورة"},
             {"hkg", "هونغ كونغ"}, {"tyo", "طوكيو - اليابان"}, {"seo", "سيول - كوريا"},
             {"syd", "سيدني - أستراليا"}, {"gum", "غوام"}, {"jnb", "جوهانسبرغ - جنوب أفريقيا"},
@@ -404,7 +405,7 @@ namespace PingBoost
                 var cfg = ParseValve(Http.Get("https://api.steampowered.com/ISteamApps/GetSDRConfig/v1/?appid=" + g.AppId, 10000), g.Backbone);
                 list = cfg.Regions;
                 var picks = Storage.LoadPicks(g.AppId);
-                foreach (var r in list) r.Picked = picks.Contains(r.Id);
+                foreach (var r in list) r.Picked = PickedAtLoad(g, r, picks);
                 g.NoRelayHosts = NoRelayHostsOf(g, cfg);
                 if (g.Icon == "deadlock") ReportNewPops(g, cfg);
             }
@@ -521,6 +522,13 @@ namespace PingBoost
             cfg.Regions = cfg.Regions.OrderBy(x => x.NameEn).ToList();
             cfg.NoRelay = cfg.NoRelay.OrderBy(x => x.NameEn).ToList();
             return cfg;
+        }
+
+        // A saved pick only counts for a datacenter that still hosts matches: one that became relay-only (e.g. India,
+        // 2026-10-13) would otherwise stay "picked" without a tile, and be named in the lock.
+        public static bool PickedAtLoad(Game g, Region r, ICollection<string> picks)
+        {
+            return picks.Contains(r.Id) && g.Hosts(r);
         }
 
         // The datacenters of the config that host this game's matches but have no relay (display-only rows, with flags).

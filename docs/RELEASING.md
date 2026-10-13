@@ -27,6 +27,7 @@ The public version only shows the games marked `Released = true` in `src/GameDb.
 
 ## 4. قاعدة البيانات | Database
 - [ ] `tools/supabase-setup.sql`: new columns, indexes or kinds the version sends; tell the developer to run it in the SQL Editor
+- [ ] Run the SQL in Supabase **before** publishing a build that depends on it (e.g. `game_stats.regions_source`: until the SQL runs, the new app ignores the shared numbers and every PC asks deadlock-api itself)
 
 ## 5. النشر | Publish
 - [ ] Commit, push `main`, then `git tag vX.Y.Z-beta` and push the tag: GitHub Actions builds and publishes the release with the zip and SHA256

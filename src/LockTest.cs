@@ -390,9 +390,11 @@ namespace PingBoost
             return false;
         }
 
-        class Span { public uint Lo, Hi; }
+        // An address range: IPv4 as numbers, IPv6 as 16 bytes (big-endian, compared byte by byte).
+        class Span { public uint Lo, Hi; public byte[] Lo6, Hi6; }
 
-        // "a.b.c.d/n", "a.b.c.d" or "a.b.c.d-e.f.g.h" (the form IpLists.Subtract and Windows Firewall use) as lo..hi.
+        // "a.b.c.d/n", "a.b.c.d" or "a.b.c.d-e.f.g.h" (the form IpLists.Subtract and Windows Firewall use) as lo..hi;
+        // the same forms in IPv6 ("2001:db8::/32", "2001:db8::1", "2001:db8::1-2001:db8::9", e.g. Valve's IPv6 relays).
         static List<Span> Spans(IEnumerable<string> cidrs)
         {
             var list = new List<Span>();
@@ -401,6 +403,7 @@ namespace PingBoost
             {
                 try
                 {
+                    if (c.IndexOf(':') >= 0) { var v6 = Span6(c.Trim()); if (v6 != null) list.Add(v6); continue; }
                     int dash = c.IndexOf('-');
                     if (dash > 0)
                     {
@@ -418,6 +421,43 @@ namespace PingBoost
             return list;
         }
 
+        static Span Span6(string c)
+        {
+            int dash = c.IndexOf('-');
+            if (dash > 0)
+            {
+                byte[] a = V6Bytes(c.Substring(0, dash)), b = V6Bytes(c.Substring(dash + 1));
+                return a != null && b != null ? new Span { Lo6 = a, Hi6 = b } : null;
+            }
+            var parts = c.Split('/');
+            int bits = parts.Length > 1 ? int.Parse(parts[1]) : 128;
+            var ip = V6Bytes(parts[0]);
+            if (ip == null || bits < 0 || bits > 128) return null;
+            byte[] lo = new byte[16], hi = new byte[16];
+            for (int i = 0; i < 16; i++)
+            {
+                int keep = Math.Max(0, Math.Min(8, bits - 8 * i));
+                byte mask = (byte)(keep == 0 ? 0 : (0xFF << (8 - keep)) & 0xFF);
+                lo[i] = (byte)(ip[i] & mask);
+                hi[i] = (byte)(lo[i] | (~mask & 0xFF));
+            }
+            return new Span { Lo6 = lo, Hi6 = hi };
+        }
+
+        static byte[] V6Bytes(string s)
+        {
+            System.Net.IPAddress ip;
+            if (s == null || s.IndexOf(':') < 0 || !System.Net.IPAddress.TryParse(s.Trim(), out ip) ||
+                ip.AddressFamily != System.Net.Sockets.AddressFamily.InterNetworkV6) return null;
+            return ip.GetAddressBytes();
+        }
+
+        static int Compare6(byte[] a, byte[] b)
+        {
+            for (int i = 0; i < 16; i++) if (a[i] != b[i]) return a[i] < b[i] ? -1 : 1;
+            return 0;
+        }
+
         static uint ToUInt(string ip)
         {
             var b = ip.Trim().Split('.').Select(uint.Parse).ToArray();
@@ -427,9 +467,13 @@ namespace PingBoost
 
         static bool InAny(string ip, List<Span> spans)
         {
-            if (ip.Contains(":")) return false; // the lock's ranges are IPv4
+            if (ip.Contains(":"))
+            {
+                var a6 = V6Bytes(ip);
+                return a6 != null && spans.Any(x => x.Lo6 != null && Compare6(a6, x.Lo6) >= 0 && Compare6(a6, x.Hi6) <= 0);
+            }
             uint a = ToUInt(ip);
-            return spans.Any(x => a >= x.Lo && a <= x.Hi);
+            return spans.Any(x => x.Lo6 == null && a >= x.Lo && a <= x.Hi);
         }
 
         // Is this address inside the lock's block list (ranges as IpLists.Subtract returns them)?
@@ -449,7 +493,7 @@ namespace PingBoost
             foreach (var row in cap.Rows.Values.OrderByDescending(r => r.Total + r.Wfp))
             {
                 var l = new Line { Row = row };
-                var dc = row.V6 ? null : g.DatacenterOf(row.Ip);
+                var dc = g.DatacenterOf(row.Ip);
                 if (dc != null) l.Dc = dc.Id;
                 var names = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
                 if (owners != null)
@@ -463,11 +507,11 @@ namespace PingBoost
                 l.Game = names.Any(x => gameNames.Contains(x.ToLowerInvariant()));
                 bool allowed = InAny(row.Ip, allow);
                 l.InBlock = info.Block != null && InAny(row.Ip, block) && !allowed;
-                if (row.V6) l.Status = "IPv6";
-                else if (l.InBlock) l.Status = "BLOCKED";
+                if (l.InBlock) l.Status = "BLOCKED";
                 else if (allowed) l.Status = "allowed";
                 else if (dc != null && picked.Contains(dc.Id)) l.Status = "picked";
                 else if (dc != null) l.Status = info.Block != null ? "open" : "not picked";
+                else if (row.V6) l.Status = "IPv6";
                 // would the rule catch this traffic? (program, protocol and port scope)
                 bool portOk;
                 if (info.Ports == null) portOk = true;
@@ -545,7 +589,8 @@ namespace PingBoost
             {
                 findings++;
                 sb.AppendLine("  IPv6  packets by process: " + string.Join(", ", v6.Select(x => x.Key + " " + x.Sum(y => y.Row.Total))) +
-                              (v6.Any(x => x.Key == "game") ? "   THE GAME USED IPv6: the lock only covers IPv4." : ""));
+                              (lines.Any(x => x.Row.V6 && x.Row.Total > 0 && x.Game && !x.InBlock)
+                                  ? "   THE GAME USED IPv6 outside the block list: the lock only blocks the IPv6 addresses in its list." : ""));
             }
             var gameDcs = lines.Where(x => x.Game && x.Dc != "-").Select(x => x.Dc + (x.InBlock ? "(blocked)" : "")).Distinct().ToList();
             if (gameDcs.Count > 0) { findings++; sb.AppendLine("  The game talked to datacenters: " + string.Join(", ", gameDcs)); }

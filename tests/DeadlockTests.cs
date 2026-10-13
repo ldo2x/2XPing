@@ -46,7 +46,7 @@ namespace PingBoost
             Check(DeadlockData.Hosting["jnb"] == "Europe", "Johannesburg hosts the Europe pool");
             foreach (var id in new[] { "bom", "bom2", "maa", "maa2", "gum", "dxb", "dfjr" })
                 Check(!DeadlockData.Hosting.ContainsKey(id) && DeadlockData.RelayOnly.Contains(id), id + " is relay-only");
-            foreach (var id in new[] { "hel", "fsn", "eat", "mwh" })
+            foreach (var id in new[] { "hel", "fsn", "eat", "mwh", "dsto", "dlhr" })
                 Check(DeadlockData.Hosting.ContainsKey(id), id + " is a known host");
             Check(!DeadlockData.Hosting.ContainsKey(DeadlockData.Russia) && !DeadlockData.Hosting.ContainsValue(DeadlockData.Russia),
                   "no datacenter maps to Russia");
@@ -70,7 +70,7 @@ namespace PingBoost
 
             var g = SavedDeadlock();
             var hostsNoRelay = g.NoRelayHosts.Select(r => r.Id).OrderBy(x => x, StringComparer.Ordinal).ToList();
-            Check(hostsNoRelay.SequenceEqual(new[] { "eat", "fsn", "hel" }), "can't-be-locked rows: " + string.Join(",", hostsNoRelay.ToArray()));
+            Check(hostsNoRelay.SequenceEqual(new[] { "dlhr", "dsto", "eat", "fsn", "hel" }), "can't-be-locked rows: " + string.Join(",", hostsNoRelay.ToArray()));
             Check(g.NoRelayHosts.All(r => r.Flag != null), "no-relay rows have flags");
             Check(g.Regions.All(r => !r.NoRelay), "no-relay datacenters stay out of the lockable list");
         }
@@ -85,7 +85,7 @@ namespace PingBoost
                   "SE Asia is sgp, hkg, tyo, seo: " + (sea == null ? "-" : string.Join(",", sea.Ids)));
             Check(Def(g, DeadlockData.Russia) == null, "Russia is never a tile");
             foreach (var d in g.RegionMap)
-                foreach (var id in new[] { "dxb", "dfjr", "bom2", "maa2", "gum", "hel", "fsn", "eat" })
+                foreach (var id in new[] { "dxb", "dfjr", "bom2", "maa2", "gum", "hel", "fsn", "eat", "dsto", "dlhr" })
                     Check(!d.Ids.Contains(id), d.Key + " must not contain " + id);
             // a tile's members are what its lock picks: never a relay-only or a no-relay datacenter
             var all = RegionGroups.Build(g, null, null, r => 50);
@@ -119,6 +119,37 @@ namespace PingBoost
             bool threw = false;
             try { DeadlockData.CountRegions("{\"error\":\"rate limited\"}", 4000); } catch (FormatException) { threw = true; }
             Check(threw, "an answer that isn't a list is an error, not zero matches");
+        }
+
+        // Shared numbers are only used when Supabase counted them from the live list: the old /v1/sql count is on
+        // another scale (about 2.6 times higher) and would make every wait look shorter.
+        static void DeadlockSharedRegionsNeedTheMarker()
+        {
+            var regions = new Dictionary<string, object> { { "Europe", 70 }, { "Russia", "27" }, { "Row", null } };
+            var row = new Dictionary<string, object> { { "regions", regions }, { "regions_source", "active" } };
+            var got = DeadlockData.SharedRegions(row);
+            Check(got != null && got.Count == 2 && got["Europe"] == 70 && got["Russia"] == 27, "marked row is used");
+            row["regions_source"] = null;
+            Check(DeadlockData.SharedRegions(row) == null, "no marker (old /v1/sql job): ignored");
+            row["regions_source"] = "sql";
+            Check(DeadlockData.SharedRegions(row) == null, "another source: ignored");
+            row.Remove("regions_source");
+            Check(DeadlockData.SharedRegions(row) == null, "column missing (SQL not applied yet): ignored");
+            Check(DeadlockData.SharedRegions(null) == null, "no row");
+            Check(DeadlockData.SharedRegions(new Dictionary<string, object> { { "regions_source", "active" }, { "regions", null } }) == null, "no regions");
+        }
+
+        // A saved pick of a datacenter that no longer hosts matches (India became relay-only) is dropped at load.
+        static void StalePicksAreDropped()
+        {
+            var g = SavedDeadlock();
+            var picks = new HashSet<string> { "fra", "bom2", "dxb" };
+            Check(GameDb.PickedAtLoad(g, g.Regions.First(r => r.Id == "fra"), picks), "fra stays picked");
+            Check(!GameDb.PickedAtLoad(g, g.Regions.First(r => r.Id == "bom2"), picks), "bom2 is relay-only now: dropped");
+            Check(!GameDb.PickedAtLoad(g, g.Regions.First(r => r.Id == "dxb"), picks), "dxb never picked");
+            Check(!GameDb.PickedAtLoad(g, g.Regions.First(r => r.Id == "ams"), picks), "not saved: not picked");
+            var cs2 = new Game { Name = "CS2" }; // no hosting list: every datacenter can be picked
+            Check(GameDb.PickedAtLoad(cs2, new Region { Id = "dxb" }, picks), "games without a hosting list keep every pick");
         }
 
         static void Ipv6AddressValidation()
@@ -174,10 +205,10 @@ namespace PingBoost
             Check(CardLogic.Decide(i).Note == null, "no footnote unless asked (other games)");
             i.RussiaNote = true;
             var v = CardLogic.Decide(i);
-            Check(v.Kind == CardKind.Choose && v.Note == "روسيا قيم لحاله يلعب على سيرفرات أوروبا، والتثبيت ما يقدر يختاره.", "Arabic, no number: " + v.Note);
+            Check(v.Kind == CardKind.Choose && v.Note == "روسيا لها كيو خاص يلعب على سيرفرات أوروبا، والتثبيت ما يقدر يختارها.", "Arabic, no number: " + v.Note);
             i.RussiaPlayers = 4321;
             v = CardLogic.Decide(i);
-            Check(v.Note == "روسيا قيم لحاله يلعب على سيرفرات أوروبا، والتثبيت ما يقدر يختاره (تقريباً 4,321 لاعب).", "Arabic: " + v.Note);
+            Check(v.Note == "روسيا لها كيو خاص يلعب على سيرفرات أوروبا، والتثبيت ما يقدر يختارها (تقريباً 4,321 لاعب).", "Arabic: " + v.Note);
             Lang.Ar = false;
             v = CardLogic.Decide(i);
             Check(v.Note == "Russia is a separate queue played on the European servers; the lock can't choose it (~4,321 players).", "English: " + v.Note);
@@ -196,6 +227,8 @@ namespace PingBoost
             Run("DeadlockConfigSplitsRelaysAndNoRelayHosts", DeadlockConfigSplitsRelaysAndNoRelayHosts);
             Run("DeadlockRegionsFromSavedConfig", DeadlockRegionsFromSavedConfig);
             Run("DeadlockCountsRegionsFromActiveMatches", DeadlockCountsRegionsFromActiveMatches);
+            Run("DeadlockSharedRegionsNeedTheMarker", DeadlockSharedRegionsNeedTheMarker);
+            Run("StalePicksAreDropped", StalePicksAreDropped);
             Run("Ipv6AddressValidation", Ipv6AddressValidation);
             Run("Ipv6RelaysAreParsedAndBlocked", Ipv6RelaysAreParsedAndBlocked);
             Run("CardRussiaFootnote", CardRussiaFootnote);
