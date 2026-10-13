@@ -49,6 +49,8 @@ create index if not exists installs_last_seen_idx on public.installs (last_seen 
 create index if not exists events_kind_at_idx on public.events (kind, at desc);
 -- per-player flood guard (see checkin below)
 create index if not exists events_install_at_idx on public.events (install_id, at desc);
+-- 0.12: global guards in checkin (new installs per minute)
+create index if not exists installs_first_seen_idx on public.installs (first_seen desc);
 -- the one-time setup check report (install id of zeros), if it is still there
 delete from public.events where install_id = '00000000-0000-0000-0000-000000000000';
 delete from public.installs where install_id = '00000000-0000-0000-0000-000000000000';
@@ -60,25 +62,49 @@ revoke all on public.installs from anon, authenticated;
 revoke all on public.events from anon, authenticated;
 
 -- One call per heartbeat / event. Updates the user's row and logs non-heartbeat events.
+-- The public key is in every copy of the app, so anyone can call this: everything here is treated as untrusted.
 create or replace function public.checkin(p jsonb)
 returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, pg_temp
 as $$
 declare
-  iid  uuid  := (p->>'install_id')::uuid;
+  iid  uuid;
   k    text  := coalesce(left(p->>'kind', 20), 'heartbeat');
   -- size caps, so a broken client can't fill the database
   inf  jsonb := case when pg_column_size(p->'info') < 8000 then p->'info' end;
   dat  jsonb := case when pg_column_size(p->'data') < 32000 then p->'data' end;
+  -- a ping that isn't a small whole number is dropped instead of failing the whole call
+  png  int   := case when p->>'ping' ~ '^-?[0-9]{1,6}$' then (p->>'ping')::int end;
 begin
+  -- a damaged install id: ignored (an error here would only make the client retry)
+  begin
+    iid := (p->>'install_id')::uuid;
+  exception when others then
+    return;
+  end;
+  if iid is null then return; end if;
+
+  -- only the event kinds the app sends
+  if k not in ('heartbeat', 'start', 'exit', 'test', 'lock', 'unlock', 'detect', 'boost', 'reset', 'error', 'issue',
+               'use', 'settings', 'traffic', 'update', 'locktest') then
+    return;
+  end if;
+
+  -- global guard against random new install ids (the per-install guard below can't see those):
+  -- at most 60 new installs a minute for everyone together
+  if not exists (select 1 from installs where install_id = iid)
+     and (select count(*) from installs where first_seen > now() - interval '1 minute') >= 60 then
+    return;
+  end if;
+
   insert into installs (install_id, nickname, device_name, app_version, os, lang, mode, country, city, isp, asn, info,
                         current_game, current_server, current_ping, last_seen)
   values (iid, left(p->>'nickname', 40), left(p->>'device_name', 80), left(p->>'app_version', 20),
           left(p->>'os', 60), left(p->>'lang', 5), left(p->>'mode', 10), left(p->>'country', 60), left(p->>'city', 80),
           left(p->>'isp', 100), left(p->>'asn', 100), inf,
-          left(p->>'game', 60), left(p->>'server', 80), nullif(p->>'ping', '')::int, now())
+          left(p->>'game', 60), left(p->>'server', 80), png, now())
   on conflict (install_id) do update set
     nickname       = excluded.nickname,
     device_name    = excluded.device_name,
@@ -96,10 +122,13 @@ begin
     current_ping   = excluded.current_ping,
     last_seen      = now();
 
-  -- a broken client stuck in a loop can't flood the table: at most 60 events a minute per install
-  if k <> 'heartbeat' and (select count(*) from events where install_id = iid and at > now() - interval '1 minute') < 60 then
+  -- a broken client stuck in a loop can't flood the table: at most 60 events a minute per install,
+  -- and at most 1200 a minute for everyone together (far above real use)
+  if k <> 'heartbeat'
+     and (select count(*) from events where install_id = iid and at > now() - interval '1 minute') < 60
+     and (select count(*) from events where at > now() - interval '1 minute') < 1200 then
     insert into events (install_id, kind, game, server, ping, detail, app_version, data, session)
-    values (iid, k, left(p->>'game', 60), left(p->>'server', 80), nullif(p->>'ping', '')::int,
+    values (iid, k, left(p->>'game', 60), left(p->>'server', 80), png,
             left(p->>'detail', 4000), left(p->>'app_version', 20), dat, left(p->>'session', 20));
   end if;
 end;
@@ -156,7 +185,7 @@ create or replace function public.refresh_stats()
 returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, pg_temp
 as $$
 declare
   resp    record;
@@ -164,29 +193,42 @@ declare
   per_day int;
   factor  real;
 begin
-  -- 1) last run's answers
+  -- 1) last run's answers. Each one is read on its own: an answer that isn't the JSON expected (an HTML error page,
+  -- a changed format) is skipped, so step 2 still asks again and the job never gets stuck failing every minute.
   select r.status_code, r.content into resp from net._http_response r
     where r.id = (select request_id from stats_requests where name = 'regions');
   if found and resp.status_code = 200 then
-    select jsonb_object_agg(e->>'region', (e->>'matches')::int) into reg from jsonb_array_elements(resp.content::jsonb) e;
+    begin
+      select jsonb_object_agg(e->>'region', (e->>'matches')::int) into reg from jsonb_array_elements(resp.content::jsonb) e;
+    exception when others then
+      reg := null;
+    end;
   end if;
   select r.status_code, r.content into resp from net._http_response r
     where r.id = (select request_id from stats_requests where name = 'info');
   if found and resp.status_code = 200 then
-    per_day := (resp.content::jsonb->>'fetched_matches_per_day')::int;
+    begin
+      per_day := (resp.content::jsonb->>'fetched_matches_per_day')::int;
+    exception when others then
+      per_day := null;
+    end;
   end if;
   -- matches per hour (the newest two hours are still coming in, so the hour before them is "now")
   select r.status_code, r.content into resp from net._http_response r
     where r.id = (select request_id from stats_requests where name = 'hourly');
   if found and resp.status_code = 200 then
-    with h as (
-      select (e->>'h')::timestamp as h, (e->>'m')::int as m from jsonb_array_elements(resp.content::jsonb) e
-    ), ref as (
-      select date_trunc('hour', now() at time zone 'utc') - interval '2 hours' as at
-    )
-    select (select h.m from h, ref where h.h = ref.at)::real /
-           nullif((select avg(h.m) from h, ref where h.h >= ref.at - interval '24 hours' and h.h < ref.at), 0)
-      into factor;
+    begin
+      with h as (
+        select (e->>'h')::timestamp as h, (e->>'m')::int as m from jsonb_array_elements(resp.content::jsonb) e
+      ), ref as (
+        select date_trunc('hour', now() at time zone 'utc') - interval '2 hours' as at
+      )
+      select (select h.m from h, ref where h.h = ref.at)::real /
+             nullif((select avg(h.m) from h, ref where h.h >= ref.at - interval '24 hours' and h.h < ref.at), 0)
+        into factor;
+    exception when others then
+      factor := null;
+    end;
   end if;
 
   if reg is not null or per_day is not null or factor is not null then
@@ -225,3 +267,11 @@ revoke all on function public.refresh_stats() from public, anon, authenticated;
 
 -- once a minute (running this file again just updates the job)
 select cron.schedule('2xping-stats', '* * * * *', 'select public.refresh_stats()');
+
+-- ---------------------------------------------------------------------------------------------------------------
+-- Optional retention (NOT enabled: it permanently deletes data, so the developer decides). Uncomment to keep events
+-- for 90 days and installs not seen for a year:
+-- select cron.schedule('2xping-retention', '17 3 * * *', $r$
+--   delete from public.events where at < now() - interval '90 days';
+--   delete from public.installs where last_seen < now() - interval '1 year';
+-- $r$);
