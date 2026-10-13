@@ -113,7 +113,8 @@ namespace PingBoost
             {
                 // leftovers from a crash, and a firewall that's off (locks can't work then)
                 if (ServerLock.Exists()) { Issues.Report("leftover_lock", "rules from a previous session were still there"); ServerLock.Remove(); }
-                Detector.Cleanup(); // a capture left running if the app closed mid-way (e.g. during a lock test)
+                // a capture of ours left running if the app closed mid-way (e.g. during a lock test); never someone else's
+                try { if (Detector.Run("pktmon", "filter list").IndexOf("2XPing", StringComparison.OrdinalIgnoreCase) >= 0) Detector.Cleanup(); } catch { }
                 if (!ServerLock.FirewallOn()) Issues.Report("firewall_off", "Windows Firewall is off for the current network profile");
             });
             if (!Tunnel.Installed)

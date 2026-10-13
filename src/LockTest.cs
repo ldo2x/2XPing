@@ -65,6 +65,20 @@ namespace PingBoost
             @"(?<![0-9A-Fa-f:.])([0-9A-Fa-f]{0,4}(?::[0-9A-Fa-f]{0,4}){2,7})(?:\.(\d{1,5}))? > ([0-9A-Fa-f]{0,4}(?::[0-9A-Fa-f]{0,4}){2,7})(?:\.(\d{1,5}))?:\s*(.*)$",
             RegexOptions.Compiled);
 
+        // Ethernet addresses written with colons ("aa:bb:cc:dd:ee:ff", or its first five groups when the pattern backs off):
+        // every group exactly two hex digits. No real IPv6 address in a capture looks like that.
+        static readonly Regex MacLike = new Regex(@"^[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){4,5}$", RegexOptions.Compiled);
+
+        // The IPv6 packet on a line, skipping a colon-form MAC pair in front of it
+        // ("aa:bb:cc:dd:ee:ff > 11:22:33:44:55:66, ethertype IPv6 (0x86dd), length 86: 2001:db8::5.500 > ...").
+        static Match Match6(string line)
+        {
+            var m = Packet6.Match(line);
+            while (m.Success && (MacLike.IsMatch(m.Groups[1].Value) || MacLike.IsMatch(m.Groups[3].Value)))
+                m = Packet6.Match(line, m.Groups[3].Index + m.Groups[3].Length);
+            return m;
+        }
+
         // Reads pktmon etl2txt output. Every snapshot is a header line (timestamp, PktGroupId, PktNumber, "Drop:" when
         // the packet was dropped there, DropReason) followed by the parsed packet (tcpdump style). A packet shows up once
         // per component it crosses: snapshots with the same PktGroupId + PktNumber are one packet, counted once, and it
@@ -103,7 +117,7 @@ namespace PingBoost
                 if (sawHeader && used) continue; // inner lines of an encapsulated packet, or the tables at the end
                 bool v6 = false;
                 var m = Packet.Match(line);
-                if (!m.Success) { m = Packet6.Match(line); v6 = m.Success; }
+                if (!m.Success) { m = Match6(line); v6 = m.Success; }
                 if (!m.Success) continue;
                 string snapKey = sawHeader ? key : "line" + n;
                 bool snapDrop = sawHeader ? drop : line.TrimStart().StartsWith("Drop", StringComparison.OrdinalIgnoreCase);
@@ -437,7 +451,7 @@ namespace PingBoost
                 var l = new Line { Row = row };
                 var dc = row.V6 ? null : g.Regions.FirstOrDefault(r => r.Cidrs.Any(c => Detector.InCidr(row.Ip, c)));
                 if (dc != null) l.Dc = dc.Id;
-                var names = new SortedSet<string>();
+                var names = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
                 if (owners != null)
                     foreach (var p in row.LocalPorts)
                     {
@@ -537,7 +551,9 @@ namespace PingBoost
             if (gameDcs.Count > 0) { findings++; sb.AppendLine("  The game talked to datacenters: " + string.Join(", ", gameDcs)); }
             var seenDcs = lines.Where(x => !x.Game && x.Dc != "-").Select(x => x.Dc + (x.InBlock ? "(blocked)" : "")).Distinct().ToList();
             if (seenDcs.Count > 0) { findings++; sb.AppendLine("  Other processes (or unknown) talked to datacenters: " + string.Join(", ", seenDcs)); }
-            if (!lines.Any(x => x.InBlock))
+            if (info.Block == null)
+                sb.AppendLine("  Unlocked baseline: nothing is blocked, so this run only shows which datacenters the game uses. Now lock, restart the game and run it again.");
+            else if (!lines.Any(x => x.InBlock))
                 sb.AppendLine("  No traffic to or from blocked datacenters was captured" +
                               (cap.WfpRead && cap.WfpTotal > 0 ? " and the firewall refused nothing there." : "; that alone doesn't show the game didn't try (see the firewall line above)."));
             else if (findings == 0)

@@ -363,8 +363,41 @@ namespace PingBoost
             Check(text.Contains("process unknown") && !text.Contains("another process") && text.Contains("unknown"), "unknown owner wording");
         }
 
+        static void LockTestEthernetIpv6()
+        {
+            var lines = new[]
+            {
+                Hdr(1, 1, 1, "Tx", "Ethernet", 13),
+                "\taa:bb:cc:dd:ee:ff > 11:22:33:44:55:66, ethertype IPv6 (0x86dd), length 86: 2001:db8::5.50000 > 2606:4700::1.26503: UDP, length 32",
+                Hdr(2, 1, 1, "Rx", "Ethernet", 13),
+                "\t11:22:33:44:55:66 > aa:bb:cc:dd:ee:ff, ethertype IPv6 (0x86dd), length 86: 2606:4700::1.26503 > 2001:db8::5.50000: UDP, length 32",
+                // a MAC pair with nothing behind it: no row
+                Hdr(3, 1, 1, "Tx", "Ethernet", 13),
+                "\taa:bb:cc:dd:ee:ff > 11:22:33:44:55:66, ethertype ARP (0x0806), length 42: Request who-has 192.168.1.1 tell 192.168.1.10",
+            };
+            var c = LockTest.Parse(lines, new[] { "2001:db8::5" });
+            var r = R(c, "2606:4700::1", "UDP");
+            Check(r != null && r.V6 && r.Out == 1 && r.In == 1 && r.RemotePorts.SequenceEqual(new[] { 26503 }), "IPv6 behind a colon MAC pair");
+            Check(c.Rows.Count == 1, "no bogus MAC rows: " + string.Join(" | ", c.Rows.Keys.ToArray()));
+        }
+
+        static void LockTestOwnerCaseAndBaseline()
+        {
+            var g = FakeOverwatch();
+            var info = new LockTest.LockInfo { Mode = "none (not locked)", Picked = new List<string> { "SGP1" } };
+            var cap = LockTest.Parse(SampleLog(), new[] { Me });
+            LockTest.AddWfp(cap, new[] { new LockTest.WfpDrop { Ip = "34.87.10.20", Proto = "UDP", App = "overwatch.exe", LocalPort = 50000 } }, null);
+            var lines = LockTest.Classify(g, cap, info, Owners());
+            var sgp = lines.First(l => l.Row.Ip == "34.87.10.20" && l.Row.Proto == "UDP");
+            Check(sgp.Owner == "Overwatch" && sgp.Game, "one owner, any case: " + sgp.Owner);
+            string text = LockTest.Short(g, cap, info, lines, 60, DateTime.Now);
+            Check(text.Contains("Unlocked baseline") && !text.Contains("No traffic to or from blocked datacenters"), "baseline wording");
+        }
+
         static void RunLockTestTests()
         {
+            Run("LockTestEthernetIpv6", LockTestEthernetIpv6);
+            Run("LockTestOwnerCaseAndBaseline", LockTestOwnerCaseAndBaseline);
             Run("LockTestCountsEachPacketOnce", LockTestCountsEachPacketOnce);
             Run("LockTestProtocols", LockTestProtocols);
             Run("LockTestDropEvents", LockTestDropEvents);
