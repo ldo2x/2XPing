@@ -31,14 +31,14 @@ namespace PingBoost
             using (var path = Shapes.Round(new RectangleF(0, 0, Width - 1, Height - 1), 12))
             using (var b = new SolidBrush(Theme.Panel1)) g.FillPath(b, path);
             bool rtl = RightToLeft == RightToLeft.Yes;
-            var flags = TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis | TextFormatFlags.VerticalCenter |
+            var flags = TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix | TextFormatFlags.VerticalCenter |
                         (rtl ? TextFormatFlags.Right | TextFormatFlags.RightToLeft : TextFormatFlags.Left);
             int w = Width - 24;
             using (var f = Fonts.Semi(18f))
-                TextRenderer.DrawText(g, Value, f, new Rectangle(12, 8, w, 34), ValueColor, flags);
-            TextRenderer.DrawText(g, Caption, Font, new Rectangle(12, 44, w, 18), Theme.Dim, flags);
+                ChartBase.DrawFit(g, Value, f, new Rectangle(12, 8, w, 34), ValueColor, flags);
+            ChartBase.DrawFit(g, Caption, Font, new Rectangle(12, 44, w, 18), Theme.Dim, flags);
             if (DeltaText != "")
-                TextRenderer.DrawText(g, DeltaText, Font, new Rectangle(12, 63, w, 18), DeltaColor, flags);
+                ChartBase.DrawFit(g, DeltaText, Font, new Rectangle(12, 63, w, 18), DeltaColor, flags);
         }
     }
 
@@ -89,10 +89,10 @@ namespace PingBoost
             range.SelectedIndexChanged += delegate { Load(false); };
             refreshBtn = new RoundButton { Text = T("Refresh", "حدّث"), Dock = Lang.Ar ? DockStyle.Left : DockStyle.Right, Width = 96, BackColor = Theme.Panel2 };
             refreshBtn.Click += delegate { Load(true); };
-            status = new Label { Dock = DockStyle.Fill, TextAlign = Lang.Ar ? ContentAlignment.MiddleRight : ContentAlignment.MiddleLeft, ForeColor = Theme.Dim, Font = Fonts.Ui(9f) };
+            status = new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Theme.Dim, Font = Fonts.Ui(9f) };
             var title = new Label { Text = T("Dashboard", "لوحة الأرقام"), Dock = Lang.Ar ? DockStyle.Right : DockStyle.Left, AutoSize = false, Width = 170,
                                     Font = Fonts.Semi(13f), ForeColor = Theme.Accent,
-                                    TextAlign = Lang.Ar ? ContentAlignment.MiddleRight : ContentAlignment.MiddleLeft };
+                                    TextAlign = ContentAlignment.MiddleLeft };
             top.Controls.Add(status);
             top.Controls.Add(title);
             top.Controls.Add(range);
@@ -176,7 +176,7 @@ namespace PingBoost
                 DateTime at;
                 fetched.TryGetValue(s.Days, out at);
                 status.Text = T("Updated ", "آخر تحديث ") + (at == DateTime.MinValue ? s.GeneratedAt : at).ToLocalTime().ToString("HH:mm", CultureInfo.InvariantCulture) +
-                              "  ·  " + T("last " + s.Days + " days", "آخر " + s.Days + " يوم");
+                              "  ·  " + T("last " + s.Days + " days", "آخر " + s.Days + (s.Days <= 10 ? " أيام" : " يوم"));
             }
             Build(s ?? new DashStats { Days = Days });
         }
@@ -199,7 +199,7 @@ namespace PingBoost
             Tile(s, "new_7d", T("New 7 days", "جدد 7 أيام"), T("vs the 7 days before", "عن الأسبوع اللي قبله"), empty);
             Tile(s, "matches_today", T("Matches today", "مباريات اليوم"), T("vs yesterday", "عن أمس"), empty);
             Tile(s, "locks_today", T("Locks today", "تثبيتات اليوم"), T("vs yesterday", "عن أمس"), empty);
-            Tile(s, "issues_24h", T("Problems 24 h", "مشاكل آخر 24 ساعة"), T("vs the 24 h before", "عن الـ24 ساعة اللي قبلها"), empty, true);
+            Tile(s, "issues_24h", T("Problems 24 h", "مشاكل آخر 24 ساعة"), T("vs the 24 h before", "عن اليوم اللي قبله"), empty, true);
 
             var days = s.Series;
             Func<Func<DashDay, long>, double[]> col = f => days.Select(d => (double)f(d)).ToArray();
@@ -213,7 +213,7 @@ namespace PingBoost
             AddPair(Breakdown(s, "version", T("App version", "نسخة البرنامج"), null),
                     Breakdown(s, "country", T("Country", "الدولة"), null));
             AddPair(Breakdown(s, "game", T("Games used", "الألعاب المستخدمة"), null),
-                    Breakdown(s, "lock_region", T("Regions picked to lock", "المناطق اللي ثبّتوا عليها"), null));
+                    Breakdown(s, "lock_region", T("Regions picked to lock", "المناطق اللي ثبّتوا عليها"), RegionWords()));
             AddPair(Breakdown(s, "mode", T("Layout", "الواجهة"), Words("simple", T("Simple", "بسيطة"), "advanced", T("Advanced", "متقدمة"))),
                     Breakdown(s, "lang", T("Language", "اللغة"), Words("ar", "عربي", "en", "English")));
             AddPair(Breakdown(s, "os", T("Windows", "الويندوز"), null), null);
@@ -235,8 +235,9 @@ namespace PingBoost
 
             var inside = Bars(T("Inside the lock, per picked region", "داخل التثبيت حسب المنطقة"),
                               s.Regions.Where(r => !double.IsNaN(r.InsidePct))
-                                       .Select(r => Bar(RegionName(r.Region), r.InsidePct, DashFmt.Pct(r.InsidePct) + "  /" + DashFmt.Count(r.Matches),
+                                       .Select(r => Bar(RegionName(r.Region), r.InsidePct, DashFmt.Pct(r.InsidePct) + T(" of ", " من ") + DashFmt.Count(r.Inside + r.Outside),
                                                         r.InsidePct >= 95 ? Theme.Good : r.InsidePct >= 80 ? Theme.Warn : Theme.Bad)), 100);
+            inside.ValueW = 96;
             var queues = s.Regions.Where(r => !double.IsNaN(r.QueueMedianS)).ToList();
             var queue = Bars(T("Median queue per picked region (min:s)", "متوسط الانتظار حسب المنطقة (دقيقة:ثانية)"),
                              queues.Select(r => Bar(RegionName(r.Region), r.QueueMedianS, DashFmt.Duration(r.QueueMedianS), Theme.Accent)), double.NaN);
@@ -244,8 +245,8 @@ namespace PingBoost
 
             var scatter = new ScatterChart
             {
-                Title = T("Expected vs actual ping", "البنق المتوقع والحقيقي") + (s.PingN > 0
-                    ? "  ·  " + T("off by ", "الفرق ") + DashFmt.Ms(s.AvgDiff, true) + T(" on average", " بالمتوسط") : ""),
+                Title = T("Expected vs actual ping (average gap)", "البنق المتوقع والحقيقي (متوسط الفرق)"),
+                Note = s.PingN > 0 ? DashFmt.Ms(s.AvgDiff, true).Trim('\u200E') : "",
                 Points = s.Pairs, XName = T("expected (ms)", "المتوقع (ms)"), YName = T("actual (ms)", "الحقيقي (ms)")
             };
             var buckets = DashMath.DiffBuckets(s.Pairs);
@@ -257,11 +258,11 @@ namespace PingBoost
             };
             AddPair(scatter, diff, 250);
 
-            var dcs = Bars(T("Datacenters seen per picked region", "الداتا سنترات اللي طلعت حسب المنطقة") +
-                           (s.UnknownDc > 0 ? "  ·  " + T("unknown to the app: ", "مو معروفة للبرنامج: ") + s.UnknownDc : ""),
+            var dcs = Bars(T("Datacenters seen per picked region (red: unknown to the app)", "الداتا سنترات اللي طلعت حسب المنطقة (الأحمر: مو معروف للبرنامج)"),
                            s.Dcs.Select(d => Bar(RegionName(d.Region) + " → " + d.Dc, d.Count, DashFmt.Count(d.Count),
                                                  d.Known ? Theme.Lavender : Theme.Bad)), double.NaN);
             dcs.LabelW = 190;
+            if (s.UnknownDc > 0) dcs.Note = "? " + s.UnknownDc;
             Add(dcs, "full", dcs.PreferredHeightFor(Math.Min(18, s.Dcs.Count)));
 
             // problems
@@ -270,9 +271,10 @@ namespace PingBoost
             prob.Lines.Add(new LineChart.Series { Name = T("Problems", "مشاكل"), Color = Theme.Warn, Values = col(d => d.Issues) });
             prob.Lines.Add(new LineChart.Series { Name = T("Errors", "أخطاء"), Color = Theme.Bad, Values = col(d => d.Errors) });
             var issues = Bars(T("Top problems, last 7 days", "أكثر المشاكل، آخر 7 أيام"),
-                              s.Issues.Select(i => Bar(i.Code, i.Count, DashFmt.Count(i.Count) + " · " + i.Players + T(" pl.", " لاعب"),
+                              s.Issues.Select(i => Bar(i.Code, i.Count, T(DashFmt.Count(i.Count) + "x, " + i.Players + " pl.", DashFmt.Count(i.Count) + " مرة، " + i.Players + " لاعب"),
                                                        i.Code == "crash" || i.Code == "lock_outside" ? Theme.Bad : Theme.Warn)), double.NaN);
             issues.LabelW = 170;
+            issues.ValueW = 120;
             AddPair(prob, issues, Math.Max(220, issues.PreferredHeightFor(Math.Min(15, s.Issues.Count))));
 
             body.ResumeLayout();
@@ -316,7 +318,7 @@ namespace PingBoost
         Label Section(string text)
         {
             return new Label { Text = text, Font = Fonts.Semi(12f), ForeColor = Theme.Lavender, AutoSize = false,
-                               TextAlign = Lang.Ar ? ContentAlignment.BottomRight : ContentAlignment.BottomLeft };
+                               TextAlign = ContentAlignment.BottomLeft }; // right-to-left flips it to the right
         }
 
         void Tile(DashStats s, string key, string caption, string deltaWhat, bool empty, bool lowerIsBetter = false)
@@ -378,7 +380,7 @@ namespace PingBoost
             {
                 case "inside": return T("Inside the lock", "داخل التثبيت");
                 case "outside": return T("Outside the lock", "برا التثبيت");
-                case "outside_gateway": return T("Outside via kept gateway", "برا التثبيت عن طريق بوابة مفتوحة");
+                case "outside_gateway": return T("Outside via kept gateway", "برا عبر بوابة مفتوحة");
                 case "nolock": return T("No lock", "بدون تثبيت");
                 default: return T("Can't tell", "ما ندري");
             }
@@ -403,6 +405,14 @@ namespace PingBoost
         }
 
         // the match reports use Deadlock's region keys (Europe, Row, SEAsia...): shown with their names
+        static Dictionary<string, string> RegionWords()
+        {
+            var d = new Dictionary<string, string>();
+            // the match reports use the keys (SEAsia), the simple layout's picks the English names (SE Asia)
+            foreach (var kv in Stats.MmRegions) d[kv.Key] = d[kv.Value[0]] = Lang.T(kv.Value[0], kv.Value[1]);
+            return d;
+        }
+
         static string RegionName(string r)
         {
             if (r == "(none)") return T("(no lock)", "(بدون تثبيت)");

@@ -68,6 +68,9 @@ namespace PingBoost
     abstract class ChartBase : Control
     {
         public string Title = "";
+        // a short number line on the far side of the title ("+6 ms"), drawn left to right so its sign and unit keep
+        // their order in Arabic too
+        public string Note = "";
         public string EmptyText { get; set; }
         protected const int Pad = 14, TitleH = 30;
 
@@ -88,10 +91,21 @@ namespace PingBoost
         {
             get
             {
-                return TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis | TextFormatFlags.VerticalCenter |
+                return TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix | TextFormatFlags.VerticalCenter |
                        (Rtl ? TextFormatFlags.Right | TextFormatFlags.RightToLeft : TextFormatFlags.Left);
             }
         }
+
+        // Text on the reading side, cut with "..." only when it doesn't fit: GDI's ellipsis reorders mixed Arabic and
+        // numbers ("+6 ms" came out as "ms 6+") even when nothing is cut.
+        public static void DrawFit(Graphics g, string text, Font font, Rectangle r, Color color, TextFormatFlags flags)
+        {
+            if (TextRenderer.MeasureText(g, text ?? "", font, new Size(int.MaxValue, r.Height), flags).Width > r.Width)
+                flags |= TextFormatFlags.EndEllipsis;
+            TextRenderer.DrawText(g, text, font, r, color, flags);
+        }
+
+        protected void DrawLead(Graphics g, string text, Font font, Rectangle r, Color color) { DrawFit(g, text, font, r, color, Lead); }
 
         protected TextFormatFlags Trail
         {
@@ -112,8 +126,13 @@ namespace PingBoost
             g.SmoothingMode = SmoothingMode.AntiAlias;
             using (var path = Shapes.Round(new RectangleF(0, 0, Width - 1, Height - 1), 12))
             using (var b = new SolidBrush(Theme.Panel1)) g.FillPath(b, path);
+            int noteW = string.IsNullOrEmpty(Note) ? 0 : TextRenderer.MeasureText(g, Note, Font).Width + 12;
             using (var f = Fonts.Semi(10f))
-                TextRenderer.DrawText(g, Title, f, new Rectangle(Pad, 6, Width - 2 * Pad, TitleH - 6), Theme.TextC, Lead);
+                DrawLead(g, Title, f, Rtl ? new Rectangle(Pad + noteW, 6, Width - 2 * Pad - noteW, TitleH - 6)
+                                          : new Rectangle(Pad, 6, Width - 2 * Pad - noteW, TitleH - 6), Theme.TextC);
+            if (noteW > 0)
+                TextRenderer.DrawText(g, Note, Font, new Rectangle(Pad, 6, Width - 2 * Pad, TitleH - 6), Theme.Warn,
+                    TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix | TextFormatFlags.VerticalCenter | (Rtl ? TextFormatFlags.Left : TextFormatFlags.Right));
             var plot = new Rectangle(Pad, TitleH + 4, Width - 2 * Pad, Height - TitleH - 4 - Pad / 2 - 4);
             if (plot.Width < 20 || plot.Height < 20) return;
             if (IsEmpty)
@@ -258,8 +277,8 @@ namespace PingBoost
                 using (var pen = new Pen(Color.FromArgb(90, Theme.Lavender))) g.DrawPath(pen, path);
             }
             for (int k = 0; k < lines.Count; k++)
-                TextRenderer.DrawText(g, lines[k], Font, new Rectangle((int)box.X + 8, (int)box.Y + 4 + k * 17, w - 12, 17),
-                                      k == 0 ? Theme.Dim : Lines[k - 1].Color, Lead);
+                DrawLead(g, lines[k], Font, new Rectangle((int)box.X + 8, (int)box.Y + 4 + k * 17, w - 12, 17),
+                         k == 0 ? Theme.Dim : Lines[k - 1].Color);
             foreach (var s in Lines)
                 if (i < s.Values.Length)
                     using (var b = new SolidBrush(s.Color)) g.FillEllipse(b, px - 4, y(s.Values[i]) - 4, 8, 8);
@@ -280,6 +299,7 @@ namespace PingBoost
         public double Max = double.NaN;   // NaN = the largest bar fills the row (100 for percentages)
         public int RowH = 22;
         public int LabelW = 130;
+        public int ValueW = 64;
 
         protected override bool IsEmpty { get { return Bars.Count == 0; } }
 
@@ -290,14 +310,14 @@ namespace PingBoost
         {
             double max = double.IsNaN(Max) ? Bars.Max(b => b.Value) : Max;
             if (max <= 0) max = 1;
-            int labelW = Math.Min(LabelW, plot.Width / 2), valueW = 64;
+            int labelW = Math.Min(LabelW, plot.Width / 2), valueW = ValueW;
             int rows = Math.Max(1, plot.Height / RowH);
             for (int i = 0; i < Bars.Count && i < rows; i++)
             {
                 var b = Bars[i];
                 int top = plot.Top + 2 + i * RowH;
                 var lr = Rtl ? new Rectangle(plot.Right - labelW, top, labelW, RowH) : new Rectangle(plot.Left, top, labelW, RowH);
-                TextRenderer.DrawText(g, b.Label, Font, lr, Theme.TextC, Lead);
+                DrawLead(g, b.Label, Font, lr, Theme.TextC);
                 int trackW = plot.Width - labelW - valueW - 12;
                 if (trackW < 10) continue;
                 float w = (float)Math.Max(b.Value > 0 ? 3 : 0, Math.Min(1, b.Value / max) * trackW);
@@ -365,8 +385,13 @@ namespace PingBoost
                 int dot = Rtl ? lx + lw - 10 : lx;
                 using (var b = new SolidBrush(s.Color)) g.FillEllipse(b, dot, y + 6, 9, 9);
                 var r = Rtl ? new Rectangle(lx, y, lw - 16, rowH) : new Rectangle(lx + 16, y, lw - 16, rowH);
-                TextRenderer.DrawText(g, s.Label + "  " + DashFmt.Pct(DashMath.Percent((long)s.Value, (long)total)) + "  (" + DashFmt.Count((long)s.Value) + ")",
-                                      Font, r, Theme.TextC, Lead);
+                // the name on the reading side, the share and count at the far end (never mixed in one string)
+                const int valueW = 84;
+                var nr = Rtl ? new Rectangle(r.X + valueW, y, r.Width - valueW, rowH) : new Rectangle(r.X, y, r.Width - valueW, rowH);
+                var vr = Rtl ? new Rectangle(r.X, y, valueW, rowH) : new Rectangle(r.Right - valueW, y, valueW, rowH);
+                DrawLead(g, s.Label, Font, nr, Theme.TextC);
+                TextRenderer.DrawText(g, DashFmt.Pct(DashMath.Percent((long)s.Value, (long)total)) + "  " + DashFmt.Count((long)s.Value),
+                                      Font, vr, Theme.Dim, Trail);
             }
         }
     }
@@ -394,7 +419,7 @@ namespace PingBoost
             foreach (var t in ticks)
                 TextRenderer.DrawText(g, ChartScale.TickText(t), Font, new Rectangle((int)x(t) - 24, a.Bottom + 2, 48, 16), Theme.Dim, Center);
             TextRenderer.DrawText(g, XName, Font, new Rectangle(a.Left, a.Bottom + 17, a.Width, 16), Theme.Dim, Center | (Rtl ? TextFormatFlags.RightToLeft : 0));
-            TextRenderer.DrawText(g, YName, Font, new Rectangle(a.Left + 6, a.Top, a.Width - 12, 16), Theme.Dim, Lead);
+            DrawLead(g, YName, Font, new Rectangle(a.Left + 6, a.Top, a.Width - 12, 16), Theme.Dim);
             using (var pen = new Pen(Color.FromArgb(150, Theme.Good), 1.5f) { DashStyle = DashStyle.Dash })
                 g.DrawLine(pen, x(0), y(0), x(top), y(top));
             using (var b = new SolidBrush(Color.FromArgb(170, Dot)))
@@ -441,7 +466,7 @@ namespace PingBoost
                 if (Values[i] > 0)
                     TextRenderer.DrawText(g, ChartScale.TickText(Values[i]), Font, new Rectangle((int)(cx - slot / 2), (int)top2 - 16, (int)slot, 15), Theme.Dim, Center);
                 if (i < Labels.Length)
-                    TextRenderer.DrawText(g, Labels[i], Font, new Rectangle((int)(cx - slot / 2), a.Bottom + 2, (int)slot, xLabelH), Theme.Dim, Center);
+                    TextRenderer.DrawText(g, "\u200E" + Labels[i], Font, new Rectangle((int)(cx - slot / 2), a.Bottom + 2, (int)slot, xLabelH), Theme.Dim, Center);
             }
         }
     }
