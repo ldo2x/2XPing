@@ -3,7 +3,7 @@
 <h1 align="center">2X Ping</h1>
 
 <p align="center">
-<b>Lower ping, better games.</b><br>
+<b>Lower ping, faster queues.</b><br>
 Tests your game's servers in seconds, tells you where to play, and locks you to the server you want.<br>
 Made by <b>lDo2x</b>
 </p>

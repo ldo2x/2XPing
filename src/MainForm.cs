@@ -386,7 +386,7 @@ namespace PingBoost
                 });
             header.Controls.Add(new Label
             {
-                Text = T("by " + Brand.Developer + "  ·  lower ping, better games", "بنق أقل، لعب أحلى  ·  من " + Brand.Developer),
+                Text = T("by " + Brand.Developer + "  ·  lower ping, faster queues", "بنق أقل، بحث أسرع  ·  من " + Brand.Developer),
                 ForeColor = Theme.Dim, AutoSize = true, Location = new Point(67, 38), Font = Fonts.Ui(9f)
             });
 
