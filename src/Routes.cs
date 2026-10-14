@@ -50,6 +50,9 @@ namespace PingBoost
             return net;
         }
 
+        // Every POP the table knows.
+        public IEnumerable<string> Ids { get { return index.Keys; } }
+
         // Valve's shortest ping from a to b over its own network in ms; 0 for the same place, -1 = no path known.
         public int Dist(string a, string b)
         {

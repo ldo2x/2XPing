@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -11,6 +13,14 @@ namespace PingBoost
     {
         public string Code;   // the datacenter as the game wrote it, cut to its POP id ("fra"), lowercase
         public DateTime At;   // when it was written: the line's own time, or when the app first read it; MinValue = unknown (old)
+    }
+
+    // The relays the game asked for a session to the current match server, each with its delay to that server ("back").
+    class SessionSet
+    {
+        public string Conn;   // the connection id ("#1671292347"): a new id is a new server
+        public DateTime At;   // when its newest line was written (as ConsoleLine.At)
+        public readonly List<KeyValuePair<string, int>> Backs = new List<KeyValuePair<string, int>>(); // POP id -> back ms
     }
 
     // Deadlock's own console log (game\citadel\console.log, written while the game runs with the launch option
@@ -37,6 +47,7 @@ namespace PingBoost
         Decoder decoder;
         string partial = "";
         public ConsoleLine LastDc, LastRelay; // newest "Remote host is in data center '…'" / "Communicating via relay in '…'"
+        public SessionSet LastSessions;       // the session relays of the newest connection (null = none)
 
         public GameConsole(string path) { Path = path; }
 
@@ -113,6 +124,7 @@ namespace PingBoost
             partial = "";
             decoder = null;
             LastDc = LastRelay = null; // no log, nothing current
+            LastSessions = null;
         }
 
         static int ReadFully(Stream s, byte[] buf)
@@ -157,11 +169,66 @@ namespace PingBoost
             foreach (var raw in all.Substring(0, end).Split('\n'))
             {
                 string kind;
-                var line = Parse(raw.TrimEnd('\r'), now, out kind);
+                string text1 = raw.TrimEnd('\r');
+                Session(text1, now, old);
+                var line = Parse(text1, now, out kind);
                 if (line == null) continue;
                 if (line.At == DateTime.MaxValue) line.At = old ? DateTime.MinValue : now;
                 if (kind == "dc") LastDc = line; else LastRelay = line;
             }
+        }
+
+        static readonly Regex SessionConn = new Regex(@"\[(#\d+)\s", RegexOptions.CultureInvariant);
+
+        // A session line adds its relay and back delay to its connection's set (a new connection starts a new set).
+        void Session(string line, DateTime now, bool old)
+        {
+            var m = SessionLine.Match(line);
+            int back;
+            if (!m.Success || !int.TryParse(m.Groups[2].Value, NumberStyles.None, CultureInfo.InvariantCulture, out back)) return;
+            var c = SessionConn.Match(line);
+            string conn = c.Success ? c.Groups[1].Value : "";
+            var at = TimeOf(line, now);
+            if (at == DateTime.MaxValue) at = old ? DateTime.MinValue : now;
+            if (LastSessions == null || LastSessions.Conn != conn) LastSessions = new SessionSet { Conn = conn };
+            string pop = m.Groups[1].Value.ToLowerInvariant();
+            if (!LastSessions.Backs.Any(kv => kv.Key == pop)) LastSessions.Backs.Add(new KeyValuePair<string, int>(pop, back));
+            LastSessions.At = at;
+        }
+
+        // Where the match server is, from its session relays' back delays and Valve's own ping table (dist: shortest ms
+        // between two POPs, -1 = unknown): the place whose distances to those relays fit them best, within ToleranceMs
+        // each. Needs two relays or more (one delay fits a whole ring of places); null when nothing fits or when places
+        // far apart fit as well. A relay next to the server (back <= ColocatedMs) is already named by Parse.
+        public const int ToleranceMs = 4;
+
+        public static string Locate(SessionSet set, IEnumerable<string> places, Func<string, string, int> dist)
+        {
+            if (set == null || set.Backs.Count < 2 || places == null || dist == null) return null;
+            string best = null;
+            int bestErr = int.MaxValue;
+            var fits = new List<string>();
+            foreach (var p in places)
+            {
+                int err = 0;
+                foreach (var kv in set.Backs)
+                {
+                    int d = dist(kv.Key, p);
+                    if (d < 0) { err = int.MaxValue; break; }
+                    err = Math.Max(err, Math.Abs(d - kv.Value));
+                }
+                if (err > ToleranceMs) continue;
+                fits.Add(p);
+                if (err < bestErr) { bestErr = err; best = p; }
+            }
+            if (best == null) return null;
+            // another fitting place far from the best one: the delays can't tell them apart
+            foreach (var f in fits)
+            {
+                int apart = dist(best, f);
+                if (f != best && (apart < 0 || apart > 2 * ToleranceMs)) return null;
+            }
+            return best;
         }
 
         // The line when it is about the current match, or null: written at or after the running game started and the

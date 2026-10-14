@@ -83,7 +83,7 @@ namespace PingBoost
                     log.Read(readAt);
                     // a read that failed for a moment (the game writing) doesn't turn the log off: only a missing file does
                     on = log.Exists;
-                    return log.LastDc;
+                    return Newest(log.LastDc, log.LastSessions, g.Routes);
                 }
             }
             catch (Exception ex)
@@ -91,6 +91,15 @@ namespace PingBoost
                 crashed(ex);
                 return null;
             }
+        }
+
+        // The newest place the log tells: a relay next to the server (dc), or else the place the newer connection's
+        // session delays point to (GameConsole.Locate over Valve's ping table), e.g. Frankfurt behind a Dubai entry.
+        internal static ConsoleLine Newest(ConsoleLine dc, SessionSet sessions, SdrRoutes net)
+        {
+            if (sessions == null || net == null || (dc != null && dc.At >= sessions.At)) return dc;
+            string at = GameConsole.Locate(sessions, net.Ids, net.Dist);
+            return at != null ? new ConsoleLine { Code = at, At = sessions.At } : dc;
         }
 
         // UI: a check saw no match, so a console line read up to now (in this check or before) is about an earlier match.

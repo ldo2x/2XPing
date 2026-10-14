@@ -35,6 +35,40 @@ namespace PingBoost
             return g;
         }
 
+        // Real matches (2026-10-14, from Riyadh): the session relays' delays to the server point at its place.
+        static void ConsoleLocatesTheServerFromSessionDelays()
+        {
+            var g = SavedDeadlock();
+            var now = new DateTime(2026, 10, 14, 13, 0, 0);
+            Func<string, SessionSet> feed = text =>
+            {
+                var gc = new GameConsole("unused");
+                gc.Feed(text + "\n", now, false);
+                return gc.LastSessions;
+            };
+            // SE Asia lock: Mumbai 27 ms and Singapore 76 ms from the server = Dubai (bom2-dxb 27, sgp-bom2-dxb 76)
+            var se = feed("10/14 12:45:22 [SteamNetSockets] [#2801803541 SDR server steamid:90294867661491215 vport 0] Requesting session from bom2#91 (155.133.224.21:27059).  Ping = 210 = 183+27 (front+back).  Rank=1 Score=260\n" +
+                          "10/14 12:45:22 [SteamNetSockets] [#2801803541 SDR server steamid:90294867661491215 vport 0] Requesting session from sgp#103 (103.10.124.118:27025).  Ping = 293 = 217+76 (front+back).  Rank=2 Score=355");
+            Check(se != null && se.Backs.Count == 2 && se.Conn == "#2801803541", "two session relays of one connection");
+            string at = GameConsole.Locate(se, g.Routes.Ids, g.Routes.Dist);
+            Check(at == "dxb", "Mumbai 27 + Singapore 76 = Dubai, not " + (at ?? "null"));
+            // one relay alone fits a ring of places: no answer
+            var one = new SessionSet { Conn = "#1" };
+            one.Backs.Add(new KeyValuePair<string, int>("bom2", 27));
+            Check(GameConsole.Locate(one, g.Routes.Ids, g.Routes.Dist) == null, "one delay names no place");
+            // a set that fits nowhere: no answer
+            var none = new SessionSet { Conn = "#2" };
+            none.Backs.Add(new KeyValuePair<string, int>("sgp", 5));
+            none.Backs.Add(new KeyValuePair<string, int>("fra", 5));
+            Check(GameConsole.Locate(none, g.Routes.Ids, g.Routes.Dist) == null, "Singapore and Frankfurt both 5 ms away: nowhere");
+            // the newest answer: a relay next to the server wins for its own connection, a newer connection's delays win after it
+            var dc = new ConsoleLine { Code = "fra", At = now.AddMinutes(-30) };
+            se.At = now;
+            var newest = DeadlockLog.Newest(dc, se, g.Routes);
+            Check(newest != null && newest.Code == "dxb" && newest.At == now, "the newer connection's place");
+            Check(DeadlockLog.Newest(new ConsoleLine { Code = "dfra", At = now }, se, g.Routes).Code == "dfra", "same time: the relay next to the server");
+        }
+
         static void DeadlockTableKnowsEveryPopOfTheConfig()
         {
             var cfg = SavedSdr();
@@ -265,6 +299,7 @@ namespace PingBoost
             Run("Ipv6AddressValidation", Ipv6AddressValidation);
             Run("Ipv6RelaysAreParsedAndBlocked", Ipv6RelaysAreParsedAndBlocked);
             Run("CardRussiaFootnote", CardRussiaFootnote);
+            Run("ConsoleLocatesTheServerFromSessionDelays", ConsoleLocatesTheServerFromSessionDelays);
             RunRouteTests();
         }
     }
