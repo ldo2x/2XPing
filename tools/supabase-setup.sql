@@ -88,7 +88,7 @@ begin
 
   -- only the event kinds the app sends
   if k not in ('heartbeat', 'start', 'exit', 'test', 'lock', 'unlock', 'detect', 'boost', 'reset', 'error', 'issue',
-               'use', 'settings', 'traffic', 'update', 'locktest') then
+               'use', 'settings', 'traffic', 'update', 'locktest', 'match') then
     return;
   end if;
 
