@@ -47,7 +47,7 @@ To have your data removed, contact the developer (Discord `2x.x`) with the name 
 | Service | What is sent | Why |
 |---|---|---|
 | Steam Web API | Game app id | Online player count, Valve server list |
-| deadlock-api.com | Nothing (download only: `/v1/info` and `/v1/matches/active`), and only when the shared numbers from the developer's database are missing or more than 10 minutes old | Deadlock players per region |
+| deadlock-api.com | Nothing (download only: `/v1/info` and `/v1/matches/active`), and only when the shared numbers from the developer's database (refreshed there every 2 minutes) are missing or more than 10 minutes old: then about 200 KB every 5 minutes, only while the window is in front | Deadlock players per region |
 | ip-ranges.amazonaws.com, www.gstatic.com | Nothing (download only) | Amazon and Google Cloud game server IP ranges |
 | stat.ripe.net | Nothing (download only) | Blizzard network IP ranges (Overwatch 2) |
 | gamelift-ping.*.api.aws | A small ping packet | Dead by Daylight ping per region |
