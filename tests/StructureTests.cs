@@ -735,6 +735,63 @@ namespace PingBoost
             finally { try { System.IO.Directory.Delete(tmp, true); } catch { } }
         }
 
+        static bool WaitFor(Func<bool> cond)
+        {
+            for (int i = 0; i < 300; i++) { if (cond()) return true; System.Threading.Thread.Sleep(10); }
+            return cond();
+        }
+
+        static void LiveMonitorStopsAndRestarts()
+        {
+            var samples = new List<string>();
+            var gate = new System.Threading.ManualResetEventSlim(true);
+            int pings = 0;
+            var m = new LiveMonitor(new InlineDispatcher(), () => true,
+                                    (ep, timeout) => { gate.Wait(); System.Threading.Interlocked.Increment(ref pings); return 42; },
+                                    ms => System.Threading.Thread.Sleep(5), () => DateTime.Now);
+            m.Sample += (label, v) => { lock (samples) samples.Add(label + ":" + v); };
+            m.Start(new Endpoint("a", 0), "A");
+            Check(WaitFor(() => { lock (samples) return samples.Count >= 3; }), "samples come in");
+            // a ping in flight when Stop comes: its answer is dropped
+            gate.Reset();
+            int inFlight = pings;
+            System.Threading.Thread.Sleep(30);
+            m.Stop();
+            int count;
+            lock (samples) count = samples.Count;
+            gate.Set();
+            System.Threading.Thread.Sleep(100);
+            lock (samples) Check(samples.Count == count, "Stop -> no Sample after: " + (samples.Count - count));
+            // started twice: only the new label samples
+            m.Start(new Endpoint("a", 0), "A");
+            m.Start(new Endpoint("b", 0), "B");
+            lock (samples) samples.Clear();
+            Check(WaitFor(() => { lock (samples) return samples.Count >= 3; }), "the new one samples");
+            m.Stop();
+            System.Threading.Thread.Sleep(50);
+            lock (samples) Check(samples.All(x => x == "B:42"), "only B after the restart: " + string.Join(",", samples.ToArray()));
+        }
+
+        static void LiveMonitorSlowsDownWhileTheGameIsInFront()
+        {
+            var clock = new DateTime(2026, 10, 14, 12, 0, 0);
+            int pings = 0;
+            var stepped = new System.Threading.AutoResetEvent(false);
+            LiveMonitor m = null;
+            m = new LiveMonitor(new InlineDispatcher(), () => false,
+                                (ep, t) => { System.Threading.Interlocked.Increment(ref pings); return 10; },
+                                ms => { lock (stepped) clock = clock.AddMilliseconds(ms); if (pings >= 3) m.Stop(); System.Threading.Thread.Sleep(1); },
+                                () => { lock (stepped) return clock; });
+            var start = clock;
+            m.Start(new Endpoint("a", 0), "A");
+            Check(WaitFor(() => pings >= 3), "pings while in the background");
+            System.Threading.Thread.Sleep(50);
+            DateTime end;
+            lock (stepped) end = clock;
+            // 3 pings with the game in front: 15 s apart (the first at once)
+            Check(pings == 3 && end - start >= TimeSpan.FromSeconds(30), "one ping per 15 s: " + pings + " in " + (end - start).TotalSeconds + " s");
+        }
+
         static void RunStructureTests()
         {
             Run("RoutingRelayMarginIsThreeMs", RoutingRelayMarginIsThreeMs);
@@ -767,6 +824,8 @@ namespace PingBoost
             Run("MatchStateSaysWhenTheMatchChanged", MatchStateSaysWhenTheMatchChanged);
             Run("ZoneMemoryCachesAndLearns", ZoneMemoryCachesAndLearns);
             Run("RelayStoreAddRemoveRoundTrip", RelayStoreAddRemoveRoundTrip);
+            Run("LiveMonitorStopsAndRestarts", LiveMonitorStopsAndRestarts);
+            Run("LiveMonitorSlowsDownWhileTheGameIsInFront", LiveMonitorSlowsDownWhileTheGameIsInFront);
         }
     }
 }

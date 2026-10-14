@@ -55,7 +55,7 @@ namespace PingBoost
         bool busy, boosting, clickedCheck;
         readonly GameSession session; // what this session knows about each game (loaded, tested...)
         volatile bool tunnelActive;
-        int monitorGen;     // read by the monitor thread: always through Volatile/Interlocked
+        readonly LiveMonitor monitor; // the live ping of the locked or boosted server
         int boostGen;       // bumped by Stop: a relay route still being built then goes away instead of starting
         string lockSummary; // null = no region lock
         LockTest.LockInfo lockInfo; // how the current lock was applied (developer lock test)
@@ -79,6 +79,8 @@ namespace PingBoost
             session = new GameSession(ui, () => CurrentGame);
             session.Failed += ServersFailed;
             session.Loaded += ServersLoaded;
+            monitor = new LiveMonitor(ui, () => appActive);
+            monitor.Sample += ShowLivePing;
             tests = new PingTestService(ui, new LiveProbe(), ex => ReportCrash("ping test", ex));
             tests.RelaysMeasured += RefreshRelays;
             tests.RegionDone += (tg, r, n, total) => { UpdateRegion(r); SetStatus(T("Testing... ", "نفحص... ") + n + "/" + total); };
@@ -178,7 +180,7 @@ namespace PingBoost
             };
             FormClosing += delegate
             {
-                Interlocked.Increment(ref monitorGen);
+                monitor.Stop();
                 Interlocked.Increment(ref boostGen);
                 bool tunnel = tunnelActive, locked = lockSummary != null, testing = lockTesting;
                 // from here on, no queued step adds rules or starts the tunnel (one already queued returns at once)
@@ -2648,35 +2650,22 @@ namespace PingBoost
 
         void StartMonitor(Endpoint target, string label)
         {
-            int gen = Interlocked.Increment(ref monitorGen);
             graph.Clear();
             graph.Label = label;
             SetStatus(label);
             SetGraphLive(true);
-            var t = new Thread(() =>
-            {
-                var last = DateTime.MinValue;
-                while (gen == Volatile.Read(ref monitorGen))
-                {
-                    // while the game is in front: one ping every 15 s, just for the taskbar title
-                    if (!appActive && DateTime.Now - last < TimeSpan.FromSeconds(15)) { Thread.Sleep(500); continue; }
-                    last = DateTime.Now;
-                    double v = Pinger.Once(target, 1500);
-                    if (gen != Volatile.Read(ref monitorGen)) break;
-                    Ui(() =>
-                    {
-                        if (gen != Volatile.Read(ref monitorGen)) return;
-                        liveLabel.Text = T("Status: ", "الحالة: ") + label + "  ·  " + Fmt.Ms(v);
-                        liveLabel.ForeColor = Fmt.PingColor(v);
-                        SetLiveStatus(label + " · " + Fmt.Ms(v));
-                        Telemetry.Ping = v < 0 ? -1 : (int)Math.Round(v);
-                        graph.Add(v);
-                        TrackLoss(label, v);
-                    });
-                    Thread.Sleep(1000);
-                }
-            }) { IsBackground = true };
-            t.Start();
+            monitor.Start(target, label);
+        }
+
+        // One live ping (LiveMonitor.Sample, on the UI thread).
+        void ShowLivePing(string label, double v)
+        {
+            liveLabel.Text = T("Status: ", "الحالة: ") + label + "  ·  " + Fmt.Ms(v);
+            liveLabel.ForeColor = Fmt.PingColor(v);
+            SetLiveStatus(label + " · " + Fmt.Ms(v));
+            Telemetry.Ping = v < 0 ? -1 : (int)Math.Round(v);
+            graph.Add(v);
+            TrackLoss(label, v);
         }
 
         // Packet loss to the locked/boosted server over the last minute: heavy loss is reported (once per server).
@@ -2692,7 +2681,7 @@ namespace PingBoost
 
         void StopMonitor()
         {
-            Interlocked.Increment(ref monitorGen);
+            monitor.Stop();
             Telemetry.Ping = -1;
             liveLabel.Text = StatusOff;
             liveLabel.ForeColor = Theme.Dim;
