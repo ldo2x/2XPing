@@ -23,8 +23,12 @@
 --   "match": { "total", "verdict": [{"k","n"}] (inside | outside | outside_gateway | unknown | nolock), "source": [{"k","n"}],
 --              "by_region": [{"region", "n", "inside", "outside", "gateway", "unknown", "nolock", "queue_median_s", "avg_diff_ms"}],
 --              (region keys are Deadlock's: Europe, SEAsia, Row = North America, SAmerica, Oceania; "(none)" = no lock)
---              "ping": {"n", "avg_expected", "avg_actual", "avg_diff", "median_diff", "pairs": [[expected, actual], ...]},
---              "dcs": [{"region", "dc", "n", "known"}], "unknown_dc": N },
+--              "ping": {"n", "avg_expected", "avg_actual", "avg_diff", "median_diff" (every valid pair of the period),
+--                       "pairs": [[expected, actual], ...the latest 400]},
+--              "dcs": [{"region", "dc", "n", "known"}], "unknown_dc": N,
+--              "dup_suspect": N (reports with same_server_as_prev = true, left out of every match number) },
+--   (match facts are read only from data: on match rows the row's game/server/ping columns hold live heartbeat values;
+--    the lock_region breakdown counts Deadlock only, keyed Europe, SEAsia, Row, SAmerica, Oceania)
 --   "issues": [ {"code": "crash", "n": 5, "players": 2}, ... top 15 of the last 7 days ]
 -- }
 
@@ -71,11 +75,11 @@ begin
     'active_period',  (select count(*) from installs where last_seen >= p0),
     'new_today',      (select count(*) from installs where first_seen >= t0),
     'new_7d',         (select count(*) from installs where first_seen > now() - interval '7 days'),
-    'matches_today',  (select count(*) from events where kind = 'match' and at >= t0),
+    'matches_today',  (select count(*) from events where kind = 'match' and coalesce(data->>'same_server_as_prev', 'false') <> 'true' and at >= t0),
     'locks_today',    (select count(*) from events where kind = 'lock' and at >= t0),
     'issues_24h',     (select count(*) from events where kind = 'issue' and at > now() - interval '24 hours'),
     'errors_24h',     (select count(*) from events where kind = 'error' and at > now() - interval '24 hours'),
-    'matches_period', (select count(*) from events where kind = 'match' and at >= p0),
+    'matches_period', (select count(*) from events where kind = 'match' and coalesce(data->>'same_server_as_prev', 'false') <> 'true' and at >= p0),
     'locks_period',   (select count(*) from events where kind = 'lock' and at >= p0)
   ) into c;
 
@@ -89,8 +93,8 @@ begin
                    - (select count(*) from installs where first_seen >= t0 - interval '1 day' and first_seen < now() - interval '1 day'),
     'new_7d',        (select count(*) from installs where first_seen > now() - interval '7 days')
                    - (select count(*) from installs where first_seen > now() - interval '14 days' and first_seen <= now() - interval '7 days'),
-    'matches_today', (select count(*) from events where kind = 'match' and at >= t0)
-                   - (select count(*) from events where kind = 'match' and at >= t0 - interval '1 day' and at < now() - interval '1 day'),
+    'matches_today', (select count(*) from events where kind = 'match' and coalesce(data->>'same_server_as_prev', 'false') <> 'true' and at >= t0)
+                   - (select count(*) from events where kind = 'match' and coalesce(data->>'same_server_as_prev', 'false') <> 'true' and at >= t0 - interval '1 day' and at < now() - interval '1 day'),
     'locks_today',   (select count(*) from events where kind = 'lock' and at >= t0)
                    - (select count(*) from events where kind = 'lock' and at >= t0 - interval '1 day' and at < now() - interval '1 day'),
     'issues_24h',    (select count(*) from events where kind = 'issue' and at > now() - interval '24 hours')
@@ -105,7 +109,7 @@ begin
   ), ev as (
     select ((e.at at time zone 'utc') + tz_off)::date as d,
            count(distinct e.install_id)               as active,
-           count(*) filter (where e.kind = 'match')   as matches,
+           count(*) filter (where e.kind = 'match' and coalesce(e.data->>'same_server_as_prev', 'false') <> 'true') as matches,
            count(*) filter (where e.kind = 'lock')    as locks,
            count(*) filter (where e.kind = 'error')   as errors,
            count(*) filter (where e.kind = 'issue')   as issues
@@ -136,16 +140,22 @@ begin
                                 else coalesce(nullif(os, ''), '?') end, install_id from a
   ), multi as (
     -- the games each install used in the period
-    select 'game' as b, e.game as k, e.install_id from events e
-    where e.at >= p0 and coalesce(e.game, '') <> ''
-    -- the regions each install picked: the simple layout's "play on regions" and the match reports' picked regions
+    -- (on match rows the row's game column is the live heartbeat value: the match's own game is data->>'game')
+    select 'game' as b, case when e.kind = 'match' then nullif(e.data->>'game', '') else e.game end as k, e.install_id from events e
+    where e.at >= p0 and (e.kind <> 'match' or coalesce(e.data->>'same_server_as_prev', 'false') <> 'true')
+    -- the Deadlock regions each install picked: the simple layout's "play on regions" (English names: SE Asia, North
+    -- America, South America) and the match reports' picked regions (keys: SEAsia, Row, SAmerica), as one key each
     union all
-    select 'lock_region', trim(r), e.install_id from events e, unnest(string_to_array(e.server, ',')) r
+    select 'lock_region', case trim(r) when 'SE Asia' then 'SEAsia' when 'North America' then 'Row'
+                                       when 'South America' then 'SAmerica' else trim(r) end, e.install_id
+    from events e, unnest(string_to_array(e.server, ',')) r
     where e.kind = 'use' and e.detail = 'play on regions' and e.at >= p0 and coalesce(e.server, '') <> ''
+      and e.game ilike 'deadlock%'
     union all
     select 'lock_region', r, e.install_id from events e,
            jsonb_array_elements_text(case when jsonb_typeof(e.data->'picked_regions') = 'array' then e.data->'picked_regions' else '[]'::jsonb end) r
-    where e.kind = 'match' and e.at >= p0
+    where e.kind = 'match' and e.at >= p0 and coalesce(e.data->>'same_server_as_prev', 'false') <> 'true'
+      and coalesce(e.data->>'game', '') ilike 'deadlock%'
   ), all_rows as (
     select b, k, install_id, false as m from single
     union all select b, k, install_id, true from multi where coalesce(k, '') <> ''
@@ -175,7 +185,7 @@ begin
            dev_num(e.data->>'queue_s') as queue_s,
            nullif(e.data->>'dc', '') as dc, nullif(e.data->>'region', '') as region
     from events e
-    where e.kind = 'match' and e.at >= p0 and jsonb_typeof(e.data) = 'object'
+    where e.kind = 'match' and e.at >= p0 and jsonb_typeof(e.data) = 'object' and coalesce(e.data->>'same_server_as_prev', 'false') <> 'true'
   ), mr as (
     -- one row per picked region (a match with two picked regions counts under both); no pick = "(none)"
     select m.*, coalesce(r, '(none)') as picked
@@ -186,10 +196,11 @@ begin
     select picked, dc, count(*) as n, bool_or(region is not null) as known,
            row_number() over (partition by picked order by count(*) desc, dc) as rn
     from mr where dc is not null group by picked, dc
-  ), pairs as (
-    select exp_ms, act_ms from m
+  ), valid as (
+    select at, exp_ms, act_ms from m
     where exp_ms > 0 and act_ms > 0 and exp_ms < 2000 and act_ms < 2000
-    order by at desc limit 400
+  ), pairs as (
+    select exp_ms, act_ms from valid order by at desc limit 400
   )
   select jsonb_build_object(
     'total', (select count(*) from m),
@@ -214,12 +225,15 @@ begin
                'avg_expected', round(avg(exp_ms), 1), 'avg_actual', round(avg(act_ms), 1),
                'avg_diff', round(avg(act_ms - exp_ms), 1),
                'median_diff', round((percentile_cont(0.5) within group (order by act_ms - exp_ms))::numeric, 1),
-               'pairs', coalesce(jsonb_agg(jsonb_build_array(exp_ms, act_ms)), '[]'::jsonb))
-             from pairs),
+               'pairs', (select coalesce(jsonb_agg(jsonb_build_array(p.exp_ms, p.act_ms)), '[]'::jsonb) from pairs p))
+             from valid),
     'dcs', (select coalesce(jsonb_agg(jsonb_build_object('region', picked, 'dc', dc, 'n', n, 'known', known)
                                       order by picked, n desc), '[]'::jsonb)
             from dcs where rn <= 6),
-    'unknown_dc', (select count(*) from m where dc is not null and region is null)
+    'unknown_dc', (select count(*) from m where dc is not null and region is null),
+    -- left out above: reports that may repeat the match before (same server, no clean boundary between them)
+    'dup_suspect', (select count(*) from events e where e.kind = 'match' and e.at >= p0
+                      and coalesce(e.data->>'same_server_as_prev', 'false') = 'true')
   ) into mt;
 
   -- the problems the apps reported by themselves in the last 7 days
