@@ -76,6 +76,11 @@ namespace PingBoost
             stats = new StatsService(ui, PlayerStats.Fetch, () => CurrentGame);
             stats.Updated += ShowStats;
             notices = new NoticeCenter(ui, () => Minimized, () => simple, ShowChat, FlashTaskbar);
+            tests = new PingTestService(ui, new LiveProbe(), ex => ReportCrash("ping test", ex));
+            tests.RelaysMeasured += RefreshRelays;
+            tests.RegionDone += (tg, r, n, total) => { UpdateRegion(r); SetStatus(T("Testing... ", "نفحص... ") + n + "/" + total); };
+            tests.Completed += TestDone;
+            tests.Failed += TestFailed;
             updates = new UpdateService(ui, () => { var running = Detector.Processes(); return games.Any(g => Detector.IsRunning(running, g.Processes)); });
             updates.Changed += r => ShowUpdateBar();
             updates.Available += r => Log(T("New version available: ", "في نسخة جديدة: ") + r.Ver.ToString(3));
@@ -1218,7 +1223,7 @@ namespace PingBoost
         // ---------------------------------------------------------------- the state card
 
         readonly ChoiceSet choices = new ChoiceSet(); // the region tiles and the player's selection
-        Game testGame, testNext, retestGame, loadFailed, lockGame;
+        Game retestGame, loadFailed, lockGame;
         Game lockingGame;   // a lock for this game is being applied right now (the card says so)
         readonly HashSet<Game> loadedGames = new HashSet<Game>();
         string lockNames;   // the lock in the card's words: region names, or the picked server names
@@ -1489,8 +1494,8 @@ namespace PingBoost
                 Tested = tested.Contains(g),
                 NotAutoTested = notAutoTested.Contains(g),
                 AutoTest = Prefs.AutoTest,
-                TestGame = testGame,
-                TestNext = testNext,
+                TestGame = tests.Testing,
+                TestNext = tests.Next,
                 LockingGame = lockingGame,
                 LockingNames = lockingNames,
                 LockGame = lockSummary != null ? lockGame : null,
@@ -1691,7 +1696,7 @@ namespace PingBoost
 
         // Regions pinged at the same time in a test. Deadlock's 32 regions (63 addresses): 1.85-1.88 s at 16 against 1.49-1.72 s
         // at 64 (a little slower), with at most 32 probes in flight instead of 43 (measured 2026-10-13).
-        internal const int TestParallel = 16;
+        readonly PingTestService tests; // runs the ping test; the queue rules stay here
 
         void RunTest()
         {
@@ -1700,120 +1705,77 @@ namespace PingBoost
             if (busy)
             {
                 // another game's test is running: this one goes next
-                if (testGame != null && testGame != g) { testNext = g; UpdateCard(); }
+                if (tests.Testing != null && tests.Testing != g) { tests.Next = g; UpdateCard(); }
                 return;
             }
             if (g.Regions.Count == 0) { SetStatus(T("No servers to test.", "ما في سيرفرات نفحصها.")); return; }
             busy = true;
-            testGame = g;
+            tests.Prepare(g);
             btnTest.Enabled = false;
             // regions blocked by the lock can't answer anyway, so skip them
             var regions = g.Regions.Where(r => !LockedOut(g, r)).ToList();
             var rels = relays.ToList();
             SetStatus(rels.Count > 0 ? T("Testing relays...", "نفحص سيرفرات الوسيط...") : T("Testing...", "نفحص..."));
             UpdateCard();
-            var watch = Stopwatch.StartNew();
+            tests.Run(regions, rels);
+        }
 
-            Task.Run(() =>
+        // The ping test of g finished (PingTestService.Completed, on the UI thread).
+        void TestDone(Game g, List<Region> regions, long ms)
+        {
+            busy = false;
+            btnTest.Enabled = true;
+            tested.Add(g);
+            Storage.SaveLast(g);
+            if (pendingRebuild) { pendingRebuild = false; RebuildUi(); return; }
+            // the user switched games while this test ran: test the game they are looking at now
+            var cur = CurrentGame;
+            bool wanted = tests.Next == cur;
+            tests.Next = null;
+            if (cur != g && cur != null && (Prefs.AutoTest || wanted) && cur.Regions.Count > 0 && !tested.Contains(cur))
             {
-                try
-                {
-                    foreach (var rel in rels) rel.Ping = rel.MeasurePing();
-                    Ui(RefreshRelays);
+                RunTest();
+                return;
+            }
+            // the card follows the game on screen: this game's new pings, or just "no test running" for another one
+            if (cur == g) RebuildChoices();
+            UpdateCard();
+            var top = Routing.Best(regions);
+            // every result, so ping can be compared by city, ISP and connection type
+            var results = new Dictionary<string, object>();
+            foreach (var r in regions.Where(r => r.Direct != null))
+                results[r.Id] = new object[] { r.Direct.Ok ? (object)Math.Round(r.Direct.Avg) : null, Math.Round(r.Direct.Loss), Math.Round(r.Direct.Jitter, 1) };
+            var data = new Dictionary<string, object> { { "ms", ms }, { "regions", results }, { "best", top != null ? top.Id : null } };
+            if (top == null)
+            {
+                SetStatus(T("No server replied. Check your internet or firewall.", "ولا سيرفر رد، شيّك على النت أو جدار الحماية."));
+                Telemetry.Send("test", null, -1, "no reply, " + regions.Count + " regions", data);
+                Issues.Report("all_down", g.Name + ": none of " + regions.Count + " regions answered", data, g.Icon);
+                return;
+            }
+            if (CurrentGame == g)
+            {
+                // closest first; regions blocked by the lock go to the end
+                g.Regions = Routing.SortForList(g.Regions, r => LockedOut(g, r));
+                FillServers(g);
+            }
+            SetStatus(T("Done. Your best region: ", "خلص الفحص. أحسن منطقة لك: ") + Fmt.ShortName(top) + "  " + Fmt.Ms(Routing.BestLatency(top)));
+            Telemetry.Send("test", top.NameEn, (int)Math.Round(Routing.BestLatency(top)), regions.Count + " regions, " + ms + " ms", data);
+            var down = regions.Where(r => r.Direct != null && !r.Direct.Ok && !r.Detected).Select(r => r.Id).ToList();
+            if (down.Count > 0)
+                Issues.Report("region_down", g.Name + ": " + string.Join(", ", down),
+                    new Dictionary<string, object> { { "game", g.Name }, { "regions", down.ToArray() } }, g.Icon + string.Join(",", down));
+            Log(g.Name + ": " + T("best region ", "أحسن منطقة ") + top.Name + " " + Fmt.Ms(Routing.BestLatency(top)));
+        }
 
-                    int done = 0;
-                    // TestParallel regions (and each one's addresses) at a time: fewer probes at once for about the same
-                    // test time (performance audit item 4)
-                    Parallel.ForEach(regions, new ParallelOptions { MaxDegreeOfParallelism = TestParallel }, r =>
-                    {
-                        var results = r.Endpoints.AsParallel().AsOrdered().Select(ep => Pinger.Measure(ep, 3, 1000)).ToList();
-                        PingResult best = null;
-                        Endpoint bestEp = null;
-                        for (int i = 0; i < results.Count; i++)
-                        {
-                            var res = results[i];
-                            if (best == null || (res.Ok && (!best.Ok || res.Avg < best.Avg))) { best = res; bestEp = r.Endpoints[i]; }
-                        }
-                        r.Direct = best ?? new PingResult();
-                        r.BestEndpoint = best != null && best.Ok ? bestEp : null;
-
-                        var via = new Dictionary<string, double>();
-                        var target = r.Target;
-                        foreach (var rel in rels)
-                        {
-                            if (rel.Ping < 0 || !rel.HasAgent || target == null) continue;
-                            double v = rel.ProbeFromRelay(target);
-                            if (v >= 0) via[rel.Name] = rel.Ping + v;
-                        }
-                        r.ViaRelay = via;
-
-                        int n = Interlocked.Increment(ref done);
-                        Ui(() => { UpdateRegion(r); SetStatus(T("Testing... ", "نفحص... ") + n + "/" + regions.Count); });
-                    });
-
-                    long ms = watch.ElapsedMilliseconds;
-                    Ui(() =>
-                    {
-                        busy = false;
-                        testGame = null;
-                        btnTest.Enabled = true;
-                        tested.Add(g);
-                        Storage.SaveLast(g);
-                        if (pendingRebuild) { pendingRebuild = false; RebuildUi(); return; }
-                        // the user switched games while this test ran: test the game they are looking at now
-                        var cur = CurrentGame;
-                        bool wanted = testNext == cur;
-                        testNext = null;
-                        if (cur != g && cur != null && (Prefs.AutoTest || wanted) && cur.Regions.Count > 0 && !tested.Contains(cur))
-                        {
-                            RunTest();
-                            return;
-                        }
-                        // the card follows the game on screen: this game's new pings, or just "no test running" for another one
-                        if (cur == g) RebuildChoices();
-                        UpdateCard();
-                        var top = Routing.Best(regions);
-                        // every result, so ping can be compared by city, ISP and connection type
-                        var results = new Dictionary<string, object>();
-                        foreach (var r in regions.Where(r => r.Direct != null))
-                            results[r.Id] = new object[] { r.Direct.Ok ? (object)Math.Round(r.Direct.Avg) : null, Math.Round(r.Direct.Loss), Math.Round(r.Direct.Jitter, 1) };
-                        var data = new Dictionary<string, object> { { "ms", ms }, { "regions", results }, { "best", top != null ? top.Id : null } };
-                        if (top == null)
-                        {
-                            SetStatus(T("No server replied. Check your internet or firewall.", "ولا سيرفر رد، شيّك على النت أو جدار الحماية."));
-                            Telemetry.Send("test", null, -1, "no reply, " + regions.Count + " regions", data);
-                            Issues.Report("all_down", g.Name + ": none of " + regions.Count + " regions answered", data, g.Icon);
-                            return;
-                        }
-                        if (CurrentGame == g)
-                        {
-                            // closest first; regions blocked by the lock go to the end
-                            g.Regions = Routing.SortForList(g.Regions, r => LockedOut(g, r));
-                            FillServers(g);
-                        }
-                        SetStatus(T("Done. Your best region: ", "خلص الفحص. أحسن منطقة لك: ") + Fmt.ShortName(top) + "  " + Fmt.Ms(Routing.BestLatency(top)));
-                        Telemetry.Send("test", top.NameEn, (int)Math.Round(Routing.BestLatency(top)), regions.Count + " regions, " + ms + " ms", data);
-                        var down = regions.Where(r => r.Direct != null && !r.Direct.Ok && !r.Detected).Select(r => r.Id).ToList();
-                        if (down.Count > 0)
-                            Issues.Report("region_down", g.Name + ": " + string.Join(", ", down),
-                                new Dictionary<string, object> { { "game", g.Name }, { "regions", down.ToArray() } }, g.Icon + string.Join(",", down));
-                        Log(g.Name + ": " + T("best region ", "أحسن منطقة ") + top.Name + " " + Fmt.Ms(Routing.BestLatency(top)));
-                    });
-                }
-                catch (Exception ex)
-                {
-                    ReportCrash("ping test", ex);
-                    Ui(() =>
-                    {
-                        testGame = null;
-                        btnTest.Enabled = true;
-                        SetStatus(T("The ping test stopped with an error. Press Test ping to try again.",
-                                    "فحص البنق وقف بخطأ. اضغط «افحص البنق» وجرّب مرة ثانية."));
-                        UpdateCard();
-                        SetIdle();
-                    });
-                }
-            });
+        // The ping test stopped with an error (already reported as a crash).
+        void TestFailed(Game g, Exception ex)
+        {
+            btnTest.Enabled = true;
+            SetStatus(T("The ping test stopped with an error. Press Test ping to try again.",
+                        "فحص البنق وقف بخطأ. اضغط «افحص البنق» وجرّب مرة ثانية."));
+            UpdateCard();
+            SetIdle();
         }
 
         // An unexpected error on a background task: reported like a crash, without ending the app.

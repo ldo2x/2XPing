@@ -532,6 +532,72 @@ namespace PingBoost
             Check(n.HeldCount == 1, "simple + minimized + warning: held");
         }
 
+        sealed class FakeProbe : IPingProbe
+        {
+            public Dictionary<string, double> Ms = new Dictionary<string, double>(); // host -> ping (missing or < 0 = no answer)
+            public double Relay = 10, Behind = 25;
+            public bool Throw;
+            public PingResult Measure(Endpoint ep, int count, int timeoutMs)
+            {
+                if (Throw) throw new InvalidOperationException("probe broke");
+                double v;
+                lock (Ms) if (!Ms.TryGetValue(ep.Host, out v)) v = -1;
+                return v < 0 ? new PingResult() : new PingResult { Avg = v, Loss = 0 };
+            }
+            public double RelayPing(Relay relay) { return Relay; }
+            public double FromRelay(Relay relay, Endpoint target) { return Behind; }
+        }
+
+        static Region Endpoints(string id, params string[] hosts)
+        {
+            var r = new Region { Id = id, NameEn = id };
+            foreach (var h in hosts) r.Endpoints.Add(new Endpoint(h, 27015));
+            return r;
+        }
+
+        static void PingTestPicksTheBestAddressAndReportsOnce()
+        {
+            var probe = new FakeProbe();
+            probe.Ms["a1"] = 80; probe.Ms["a2"] = 30; probe.Ms["b1"] = -1;
+            var g = new Game { Name = "G" };
+            var a = Endpoints("a", "a1", "a2", "a3");
+            var b = Endpoints("b", "b1");
+            var t = new PingTestService(new InlineDispatcher(), probe, ex => { }, work => work());
+            int relaysMeasured = 0, done = 0, completed = 0;
+            Game testingDuringCompleted = g;
+            long tookMs = -1;
+            t.RelaysMeasured += () => relaysMeasured++;
+            t.RegionDone += (tg, r, n, total) => { System.Threading.Interlocked.Increment(ref done); };
+            t.Completed += (tg, regions, ms) => { completed++; testingDuringCompleted = t.Testing; tookMs = ms; };
+            t.Prepare(g);
+            Check(t.Testing == g, "prepared: Testing says so before it runs");
+            var relays = new List<Relay> { new Relay { Name = "fra", AgentUrl = "http://1.2.3.4:8080", Token = "t" }, new Relay { Name = "noagent" } };
+            t.Run(new List<Region> { a, b }, relays);
+            Check(relaysMeasured == 1 && done == 2 && completed == 1, "relays once, each region once, completed once");
+            Check(testingDuringCompleted == null && t.Testing == null && tookMs >= 0, "Testing cleared before Completed");
+            Check(a.Direct.Ok && a.Direct.Avg == 30 && a.BestEndpoint.Host == "a2", "the lowest answering address: " + a.BestEndpoint);
+            Check(!b.Direct.Ok && b.BestEndpoint == null, "no answer: no best address");
+            Check(relays[0].Ping == 10 && a.ViaRelay.Count == 1 && a.ViaRelay["fra"] == 35, "relay ping + the relay's own ping");
+            Check(!a.ViaRelay.ContainsKey("noagent"), "a relay without an agent can't probe");
+            var empty = Endpoints("none");
+            PingTestService.Measure(empty, new List<Relay>(), probe);
+            Check(empty.Direct != null && !empty.Direct.Ok && empty.BestEndpoint == null, "no addresses: an empty result");
+        }
+
+        static void PingTestFailureIsReportedThenRaised()
+        {
+            var probe = new FakeProbe { Throw = true };
+            var g = new Game { Name = "G" };
+            var order = new List<string>();
+            var t = new PingTestService(new InlineDispatcher(), probe, ex => order.Add("crashed"), work => work());
+            t.Failed += (tg, ex) => order.Add("failed " + (t.Testing == null ? "cleared" : "still set"));
+            t.Completed += (tg, r, ms) => order.Add("completed");
+            t.Prepare(g);
+            t.Run(new List<Region> { Endpoints("a", "a1") }, new List<Relay>());
+            Check(string.Join(",", order.ToArray()) == "crashed,failed cleared", "crash report, then Failed with Testing cleared: " + string.Join(",", order.ToArray()));
+            Check(PingTestService.Parallel == 16, "16 regions at a time");
+        }
+
         static void RunStructureTests()
         {
             Run("RoutingRelayMarginIsThreeMs", RoutingRelayMarginIsThreeMs);
@@ -557,6 +623,8 @@ namespace PingBoost
             Run("PlayerStatsPlayersAndSummary", PlayerStatsPlayersAndSummary);
             Run("UpdateServicePromptsOnceAndNeverMidMatch", UpdateServicePromptsOnceAndNeverMidMatch);
             Run("NoticeCenterHoldsWarningsWhileMinimized", NoticeCenterHoldsWarningsWhileMinimized);
+            Run("PingTestPicksTheBestAddressAndReportsOnce", PingTestPicksTheBestAddressAndReportsOnce);
+            Run("PingTestFailureIsReportedThenRaised", PingTestFailureIsReportedThenRaised);
         }
     }
 }

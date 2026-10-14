@@ -123,7 +123,7 @@ namespace PingBoost
 
         static void TestParallelismIsCapped()
         {
-            Check(MainForm.TestParallel == 16, "16 regions at a time: " + MainForm.TestParallel);
+            Check(PingTestService.Parallel == 16, "16 regions at a time: " + PingTestService.Parallel);
         }
 
         static void UpdateCheckKeepsTheAnswerWithItsETag()
