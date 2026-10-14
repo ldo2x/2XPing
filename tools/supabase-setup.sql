@@ -308,7 +308,11 @@ begin
     values ('info', net.http_get('https://api.deadlock-api.com/v1/info'), now())
     on conflict (name) do update set request_id = excluded.request_id, at = excluded.at;
   end if;
-  if not exists (select 1 from stats_requests where name = 'hourly' and at > now() - interval '1 hour') then
+  -- after an error (e.g. 429: the 20-an-hour quota is per address, and Supabase's outgoing address is shared with other
+  -- projects) it asks again after 10 minutes instead of an hour
+  if not exists (select 1 from stats_requests s where s.name = 'hourly' and s.at > now() -
+                   case when coalesce((select r.status_code from net._http_response r where r.id = s.request_id), 200) = 200
+                        then interval '1 hour' else interval '10 minutes' end) then
     insert into stats_requests (name, request_id, at)
     values ('hourly', net.http_get('https://api.deadlock-api.com/v1/sql?query=SELECT%20toString%28toStartOfHour%28start_time%29%29%20h%2C%20uniq%28match_id%29%20m%20FROM%20player_match_history%20WHERE%20start_time%20%3E%20now%28%29%20-%20INTERVAL%2030%20HOUR%20GROUP%20BY%20h%20ORDER%20BY%20h'), now())
     on conflict (name) do update set request_id = excluded.request_id, at = excluded.at;
