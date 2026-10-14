@@ -521,24 +521,24 @@ namespace PingBoost
             cardHost = new Panel { Dock = DockStyle.Top, Height = 280 };
             stateCard = new StateCard { Dock = DockStyle.Fill };
             stateCard.ButtonPressed += delegate { CardButton(); };
-            stateCard.SelectionChanged += delegate { userPicked = true; UpdateCard(); };
+            stateCard.SelectionChanged += delegate { choices.UserPicked = true; UpdateCard(); };
             stateCard.OtherRegions += delegate
             {
-                expanded = !expanded;
-                if (expanded) Telemetry.Send("use", null, -1, "other regions");
+                choices.Expanded = !choices.Expanded;
+                if (choices.Expanded) Telemetry.Send("use", null, -1, "other regions");
                 UpdateCard();
             };
             stateCard.Manual += delegate
             {
-                manualOpen = !manualOpen;
-                if (manualOpen) Telemetry.Send("use", null, -1, "pick by hand");
+                choices.ManualOpen = !choices.ManualOpen;
+                if (choices.ManualOpen) Telemetry.Send("use", null, -1, "pick by hand");
                 ApplyCardLayout();
             };
             stateCard.TestPing += delegate { Telemetry.Send("use", null, -1, "test link"); RunTest(); };
             stateCard.HintToggled += delegate { ApplyCardLayout(); };
             cardHost.Controls.Add(stateCard);
             cardHost.Resize += delegate { FitCard(stateCard.PreferredHeight(cardHost.Width)); };
-            choicesGame = null;
+            choices.Forget();
             return cardHost;
         }
 
@@ -1003,7 +1003,7 @@ namespace PingBoost
             var g = CurrentGame;
             // re-selecting the game below starts its card over: the match seen and the player's choices survive a rebuild
             string keepRegion = matchRegion, keepServer = currentServer;
-            bool keepOnPicked = matchOnPicked, keepViaRelay = matchViaRelay, keepUserPicked = userPicked, keepExpanded = expanded;
+            bool keepOnPicked = matchOnPicked, keepViaRelay = matchViaRelay, keepUserPicked = choices.UserPicked, keepExpanded = choices.Expanded;
             int keepMs = currentMs;
             SuspendLayout();
             var old = Controls.Cast<Control>().ToArray();
@@ -1022,7 +1022,7 @@ namespace PingBoost
                 gameList.SelectedItem = g;
                 matchRegion = keepRegion; currentServer = keepServer; currentMs = keepMs;
                 matchOnPicked = keepOnPicked; matchViaRelay = keepViaRelay;
-                userPicked = keepUserPicked; expanded = keepExpanded;
+                choices.UserPicked = keepUserPicked; choices.Expanded = keepExpanded;
                 UpdateCard();
             }
             else if (gameList.Items.Count > 0) gameList.SelectedIndex = 0; // the open game was hidden in Settings
@@ -1117,8 +1117,8 @@ namespace PingBoost
             ResetDetectButton();
             // the card starts over for this game: nothing from the previous game's match, tiles or test stays on it
             ClearMatch();
-            choicesGame = null;
-            userPicked = expanded = false;
+            choices.Forget();
+            choices.UserPicked = choices.Expanded = false;
             if (loadFailed == g) loadFailed = null;
             pickBar.Visible = g.CanLock;
             // the lock bar tells Valve games what to do, so their note would say it a second time; games locked by their
@@ -1291,13 +1291,7 @@ namespace PingBoost
 
         // ---------------------------------------------------------------- the state card
 
-        List<RegionChoice> allChoices = new List<RegionChoice>(); // every region of the game on screen
-        List<RegionChoice> featured = new List<RegionChoice>();   // the two or three tiles shown first
-        List<RegionChoice> everyChoice = new List<RegionChoice>(); // all of them, featured first ("Other regions")
-        Game choicesGame;   // the game the choices were built for
-        string choicesSig;  // what they show, so a rebuild that changes nothing keeps the same tiles
-        bool userPicked;    // the player clicked a tile: keep their selection when the numbers change
-        bool expanded, manualOpen;
+        readonly ChoiceSet choices = new ChoiceSet(); // the region tiles and the player's selection
         Game testGame, testNext, retestGame, loadFailed, lockGame;
         Game lockingGame;   // a lock for this game is being applied right now (the card says so)
         readonly HashSet<Game> loadedGames = new HashSet<Game>();
@@ -1346,14 +1340,12 @@ namespace PingBoost
         // the last time a server check saw the game in no match: a console line from before it is about an earlier match
         DateTime noMatchAt = DateTime.MinValue;
 
-        static bool IsDeadlock(Game g) { return g != null && g.Icon == "deadlock"; }
-
         // Before the first check reads it: is the log there, from the exe path saved last time? (once, in the background,
         // so the hint doesn't show to a player who already has -condebug)
         bool gameLogPeeked;
         void PeekGameLog(Game g)
         {
-            if (gameLogPeeked || !IsDeadlock(g)) return;
+            if (gameLogPeeked || !DeadlockData.Is(g)) return;
             gameLogPeeked = true;
             string exe = Storage.GetSetting("exe_" + g.Icon);
             Task.Run(() =>
@@ -1374,7 +1366,7 @@ namespace PingBoost
             gameLogTimer = new System.Windows.Forms.Timer { Interval = 20000 };
             gameLogTimer.Tick += delegate
             {
-                var g = games.FirstOrDefault(IsDeadlock);
+                var g = games.FirstOrDefault(DeadlockData.Is);
                 if (g == null || gameLogBusy) return;
                 gameLogBusy = true;
                 Task.Run(() =>
@@ -1398,7 +1390,7 @@ namespace PingBoost
         ConsoleLine ReadGameLog(Game g, out DateTime gameStart, out DateTime readAt)
         {
             gameStart = readAt = DateTime.MinValue;
-            if (!IsDeadlock(g)) return null;
+            if (!DeadlockData.Is(g)) return null;
             try
             {
                 foreach (var name in g.Processes)
@@ -1623,25 +1615,7 @@ namespace PingBoost
         {
             var g = CurrentGame;
             if (g == null) return;
-            var all = BuildChoices(g);
-            string sig = string.Join("|", all.Select(c => c.Def.Key + ":" + (c.Ping < double.MaxValue ? Math.Round(c.Ping).ToString() : "-") +
-                                                          ":" + c.Via + ":" + c.Matches + ":" + c.Players).ToArray());
-            if (g == choicesGame && sig == choicesSig) return;
-            var keep = g == choicesGame && userPicked ? allChoices.Where(c => c.Selected).Select(c => c.Def.Key).ToList() : null;
-            var feat = RegionGroups.Featured(all);
-            if (keep != null && (keep.Count == 0 || all.Any(c => keep.Contains(c.Def.Key))))
-                foreach (var c in all) c.Selected = keep.Contains(c.Def.Key);
-            allChoices = all;
-            featured = feat;
-            everyChoice = RegionGroups.FeaturedFirst(all, feat);
-            choicesGame = g;
-            choicesSig = sig;
-        }
-
-        // Games that can't be locked: the lowest ping among the game's own servers (not the ones found in a match).
-        static Region CardBest(Game g)
-        {
-            return Routing.Best(g.Regions.Where(r => !r.Detected));
+            choices.Rebuild(g, BuildChoices(g));
         }
 
         // Puts what the app knows right now on the card.
@@ -1649,64 +1623,42 @@ namespace PingBoost
         {
             var g = CurrentGame;
             if (stateCard == null || g == null) return;
-            if (g != choicesGame) RebuildChoices();
+            if (g != choices.Game) RebuildChoices();
             PeekGameLog(g);
-            var input = new CardInput
+            var input = CardInputBuilder.Build(g, choices.Every, new CardFacts
             {
-                Game = g.Name,
                 Loaded = loadedGames.Contains(g),
                 LoadFailed = loadFailed == g,
-                // this game's test runs, or it is next in line after another game's
-                Testing = testGame == g || (testGame != null && !tested.Contains(g) && (Prefs.AutoTest || testNext == g)),
                 Tested = tested.Contains(g),
-                CanLock = g.CanLock,
-                Locking = lockingGame == g,
-                LockingNames = lockingGame == g ? lockingNames : null,
-                InDevelopment = g.InDevelopment,
-                // every region, shown or folded away: the button names and locks all the selected ones
-                Choices = everyChoice,
-                LockedNames = lockSummary != null && lockGame == g ? lockNames : null,
+                NotAutoTested = notAutoTested.Contains(g),
+                AutoTest = Prefs.AutoTest,
+                TestGame = testGame,
+                TestNext = testNext,
+                LockingGame = lockingGame,
+                LockingNames = lockingNames,
+                LockGame = lockSummary != null ? lockGame : null,
+                LockNames = lockNames,
+                LockRoute = lockRoute,
                 MatchRegion = matchRegion,
                 MatchOnPicked = matchOnPicked,
                 MatchViaRelay = matchViaRelay,
                 MatchEntry = matchEntry,
                 MatchPlace = matchPlace,
-                // Deadlock without its console log: how to switch it on (a link in the simple layout, the steps in the advanced one)
-                Hint = !IsDeadlock(g) || gameLogOn ? ExactHint.None : simple && !devMode ? ExactHint.Link : ExactHint.Shown,
                 CurrentServer = currentServer,
                 CurrentMs = currentMs,
-                NoMatchYet = noMatchLong && lockSummary != null && lockGame == g,
-                RussiaNote = g.AppId == "1422450",
-                OldPings = notAutoTested.Contains(g) && !tested.Contains(g)
-            };
-            int russia;
-            if (input.RussiaNote && activity != null && activity.TryGetValue(DeadlockData.Russia, out russia)) input.RussiaPlayers = PlayersOf(russia);
-            // Overwatch: the picked regions are all outside the game regions the player's matches were on
-            if (g.CanLock && HasZones(g)) input.ZoneWarning = Zones.Warning(RegionGroups.Chosen(everyChoice), SeenZones(g));
-            // Valve: what the strict lock on the chosen regions costs, before it is applied; the lock that is on keeps its own
-            if (g.CanLock && g.Provider == Provider.Valve && g.Routes != null)
-            {
-                if (input.LockedNames != null) input.Route = lockRoute;
-                else
-                {
-                    var chosen = RegionGroups.Chosen(everyChoice);
-                    if (chosen.Count > 0)
-                        input.Route = NoteOf(g, StrictLock.For(g, RegionGroups.PickIds(g, chosen), StrictLock.Pings(g)),
-                                             CardLogic.JoinNames(chosen.Select(c => c.Name).ToList()));
-                }
-            }
-            if (!g.CanLock)
-            {
-                var best = CardBest(g);
-                if (best != null)
-                {
-                    input.BestServer = Fmt.ShortName(best);
-                    input.BestMs = (int)Math.Round(Routing.BestLatency(best));
-                }
-            }
+                NoMatchLong = noMatchLong,
+                GameLogOn = gameLogOn,
+                Simple = simple,
+                DevMode = devMode,
+                Activity = activity,
+                PlayersOf = PlayersOf,
+                SeenZones = () => SeenZones(g),
+                RoutePreview = chosen => NoteOf(g, StrictLock.For(g, RegionGroups.PickIds(g, chosen), StrictLock.Pings(g)),
+                                                CardLogic.JoinNames(chosen.Select(c => c.Name).ToList()))
+            });
             // "Pick by hand" and "Test ping" only in the simple layout: the advanced one always shows the list and the test button
-            stateCard.SetLinks(everyChoice.Count > featured.Count, expanded, simple, simple);
-            stateCard.Show(CardLogic.Decide(input), expanded ? everyChoice : featured);
+            stateCard.SetLinks(choices.Every.Count > choices.Featured.Count, choices.Expanded, simple, simple);
+            stateCard.Show(CardLogic.Decide(input), choices.Expanded ? choices.Every : choices.Featured);
             ApplyCardLayout();
         }
 
@@ -1717,7 +1669,7 @@ namespace PingBoost
         void ApplyCardLayout()
         {
             if (cardHost == null || listCard == null) return;
-            bool showList = !simple || manualOpen;
+            bool showList = !simple || choices.ManualOpen;
             listCard.Visible = listGap.Visible = showList;
             int want = stateCard.PreferredHeight(cardHost.Parent != null ? cardHost.Parent.ClientSize.Width : cardHost.Width);
             if (!showList)
@@ -1777,7 +1729,7 @@ namespace PingBoost
             switch (v.Kind)
             {
                 case CardKind.Choose:
-                    var chosen = RegionGroups.Chosen(everyChoice);
+                    var chosen = RegionGroups.Chosen(choices.Every);
                     if (chosen.Count == 0 || !btnLock.Enabled) return; // nothing chosen, or a lock is being applied
                     Telemetry.Send("use", string.Join(", ", chosen.Select(c => c.Def.En).ToArray()), -1, "play on regions");
                     LockRegions(chosen);
@@ -2177,8 +2129,6 @@ namespace PingBoost
         // Overwatch: the game regions (Zones) the player's matches were on, learned from the server checks; never shrinks.
         static string ZonesKey(Game g) { return "zones_seen_" + g.Icon; }
 
-        static bool HasZones(Game g) { return g.RegionMap != null && g.RegionMap.Any(d => d.Zone != null); }
-
         // SeenZones is asked at every card update: read settings.txt once per game, again after LearnZones or an hour
         // later (zones age out after Zones.FreshDays days)
         readonly Dictionary<string, KeyValuePair<DateTime, List<string>>> seenZonesCache = new Dictionary<string, KeyValuePair<DateTime, List<string>>>();
@@ -2203,7 +2153,7 @@ namespace PingBoost
 
         void LearnZones(Game g, IEnumerable<Region> datacenters)
         {
-            if (!HasZones(g)) return; // Valve and the rest: nothing to learn
+            if (!Zones.Has(g)) return; // Valve and the rest: nothing to learn
             string next = Zones.Learn(g, Storage.GetSetting(ZonesKey(g)), datacenters.Select(r => r.Id), DateTime.UtcNow);
             if (string.IsNullOrEmpty(next)) return;
             Storage.SetSetting(ZonesKey(g), next);
@@ -2330,9 +2280,9 @@ namespace PingBoost
                 SetStatus(T("Entering Valve's network at ", "داخل شبكة Valve من ") + at);
                 Telemetry.Send("detect", relay.NameEn, -1, "through relay");
                 AdvancedMsg(T("Your game enters Valve's network at " + at + "; the match server can't be seen from here." +
-                              (IsDeadlock(g) && !gameLogOn ? " " + CardLogic.ExactSteps() : ""),
+                              (DeadlockData.Is(g) && !gameLogOn ? " " + CardLogic.ExactSteps() : ""),
                               "لعبتك داخلة شبكة Valve من " + at + "، وسيرفر المباراة ما يبان من هنا." +
-                              (IsDeadlock(g) && !gameLogOn ? " " + CardLogic.ExactSteps() : "")));
+                              (DeadlockData.Is(g) && !gameLogOn ? " " + CardLogic.ExactSteps() : "")));
                 return;
             }
             if (found.Count == 0)
@@ -2583,7 +2533,7 @@ namespace PingBoost
             var checkedAt = DateTime.Now;
             observedSinceLock = Zones.AddObserved(observedSinceLock, lastObservedCheck, checkedAt);
             lastObservedCheck = checkedAt;
-            bool noMatch = Zones.NoMatchYet(lockSummary != null && lockGame == g, HasZones(g), dcSinceLock, observedSinceLock);
+            bool noMatch = Zones.NoMatchYet(lockSummary != null && lockGame == g, Zones.Has(g), dcSinceLock, observedSinceLock);
             if (noMatch != noMatchLong)
             {
                 noMatchLong = noMatch;
@@ -2691,7 +2641,7 @@ namespace PingBoost
             string names = lockSummary != null && lockGame == CurrentGame ? lockNames : null;
             if (names == null)
             {
-                var chosen = RegionGroups.Chosen(everyChoice);
+                var chosen = RegionGroups.Chosen(choices.Every);
                 if (chosen.Count > 0) names = CardLogic.JoinNames(chosen.Select(c => c.Name).ToList());
             }
             return names != null ? T("Play in ", "العب على ") + names : T("Play", "العب");
@@ -3474,7 +3424,7 @@ namespace PingBoost
                     check("Exe " + g.Name, () => SystemInfo.FindExe(g) ?? "not found");
                 check("Deadlock console log", () =>
                 {
-                    var dl = games.FirstOrDefault(IsDeadlock);
+                    var dl = games.FirstOrDefault(DeadlockData.Is);
                     string path = dl != null ? GameConsole.PathFromExe(SystemInfo.FindExe(dl)) : null;
                     if (path == null) return "game not found";
                     return File.Exists(path) ? "on (" + new FileInfo(path).Length / 1024 + " KB): " + path : "off (no -condebug): " + path;

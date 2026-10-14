@@ -11,6 +11,9 @@ namespace PingBoost
     {
         public const string Americas = "am", Europe = "eu", Asia = "as";
 
+        // the game's regions belong to game regions (Overwatch)
+        public static bool Has(Game g) { return g.RegionMap != null && g.RegionMap.Any(d => d.Zone != null); }
+
         public static string Name(string zone)
         {
             if (zone == Americas) return Lang.T("Americas", "أمريكا");

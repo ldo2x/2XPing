@@ -11,6 +11,8 @@ namespace PingBoost
     // regions) agrees with the game's own Citadel_ServerRegion_* strings; ECitadelRegionMode from the game's protobufs.
     static class DeadlockData
     {
+        public static bool Is(Game g) { return g != null && g.Icon == "deadlock"; }
+
         // Valve datacenter (SDR POP id) -> the matchmaking region (region_mode) whose matches it hosts.
         // South Africa (jnb) is in the Europe pool. India (bom/bom2/maa/maa2), Guam (gum), Dubai (dxb) and
         // Fujairah (dfjr) host no Deadlock region: they are only relays, see RelayOnly.
