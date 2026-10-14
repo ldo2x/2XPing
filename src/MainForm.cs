@@ -314,8 +314,6 @@ namespace PingBoost
         [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
         struct FlashInfo { public uint Size; public IntPtr Hwnd; public uint Flags, Count, Timeout; }
         [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool FlashWindowEx(ref FlashInfo info);
-        [System.Runtime.InteropServices.DllImport("uxtheme.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
-        static extern int SetWindowTheme(IntPtr hWnd, string app, string idList);
 
         // Flash the taskbar button until the window comes to the front.
         void FlashTaskbar()
@@ -562,10 +560,11 @@ namespace PingBoost
             pickBar.Controls.Add(new Panel { Dock = DockStyle.Right, Width = 8 });
             pickBar.Controls.Add(btnLock);
 
-            serverList = MakeListView(new[] { T("Server", "السيرفر"), T("Ping", "البنق"), T("Jitter", "التذبذب"),
+            serverList = ListStyle.Make(new[] { T("Server", "السيرفر"), T("Ping", "البنق"), T("Jitter", "التذبذب"),
                                               T("Loss", "الفقد"), T("Players", "اللاعبين"), T("Wait", "الانتظار"),
                                               T("Via relay", "بالوسيط"), T("Best route", "أحسن طريق") },
-                                      simple ? SimpleWidths : AdvancedWidths);
+                                      simple ? SimpleWidths : AdvancedWidths, () => Font,
+                                      e => e.ColumnIndex == 0 || e.Item.Tag is GroupHeader, ColPing); // the first column: DrawRegionCheck
             serverList.DrawSubItem += DrawRegionCheck;
             serverList.MouseDown += (s, e) =>
             {
@@ -573,7 +572,7 @@ namespace PingBoost
                 var item = serverList.GetItemAt(e.X, e.Y);
                 var g = CurrentGame;
                 if (item == null || g == null || !g.CanLock || !(item.Tag is Region) || ((Region)item.Tag).NoRelay) return;
-                var cell = FirstCell(serverList, item, item.Bounds);
+                var cell = ListStyle.FirstCell(serverList, item, item.Bounds);
                 bool onBox = Lang.Ar ? e.X >= cell.Right - CheckArea && e.X <= cell.Right : e.X >= cell.X && e.X <= cell.X + CheckArea;
                 if (!onBox) return;
                 clickedCheck = true;
@@ -654,8 +653,8 @@ namespace PingBoost
                          "الوسيط سيرفر VPS حقك عليه WireGuard (تجهّزه بسكربت setup-relay.sh). لو طلع الطريق عن طريقه أسرع، " +
                          "اتصال اللعبة بس هو اللي يمشي منه، والباقي (المتصفح، التحميل، ديسكورد) يمشي على نتك العادي.")
             };
-            relayList = MakeListView(new[] { T("Name", "الاسم"), T("Server", "السيرفر"), T("Ping", "البنق"), T("Agent", "أداة القياس") },
-                                     new[] { 180, 220, 90, 300 });
+            relayList = ListStyle.Make(new[] { T("Name", "الاسم"), T("Server", "السيرفر"), T("Ping", "البنق"), T("Agent", "أداة القياس") },
+                                     new[] { 180, 220, 90, 300 }, () => Font, e => false, -1);
 
             var bar = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 56, Padding = new Padding(0, 10, 0, 0) };
             bar.Controls.Add(ToolButton(T("Add relay (.conf)", "ضيف وسيط (.conf)"), AddRelay));
@@ -706,126 +705,20 @@ namespace PingBoost
             return new RoundButton { Text = text, BackColor = bg, ForeColor = Theme.TextC };
         }
 
-        static ListViewItem hotRow; // the row under the mouse
-
-        static Color RowBack(ListViewItem item, int index)
-        {
-            if (item.Selected) return Theme.RowSel;
-            if (item == hotRow) return Theme.RowHover;
-            return index % 2 == 0 ? Theme.Panel1 : Theme.RowAlt;
-        }
-
-        ListView MakeListView(string[] cols, int[] widths)
-        {
-            var lv = new ListView
-            {
-                Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true, MultiSelect = false,
-                HideSelection = false, BorderStyle = BorderStyle.None, BackColor = Theme.Panel1, ForeColor = Theme.TextC,
-                OwnerDraw = true, HeaderStyle = ColumnHeaderStyle.Nonclickable,
-                // with an embedded (private) font WinForms stops owner-drawing the header, so the control keeps a
-                // system font; all text is still drawn with the form's font (Readex Pro) in the Draw* handlers below
-                Font = new Font("Segoe UI", 10f),
-                // Kept left-to-right internally; for Arabic the column order is reversed and text is right-aligned.
-                RightToLeft = RightToLeft.No, RightToLeftLayout = false,
-                SmallImageList = new ImageList { ImageSize = new Size(1, 30) }
-            };
-            typeof(Control).GetProperty("DoubleBuffered", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(lv, true, null);
-            for (int i = 0; i < cols.Length; i++) lv.Columns.Add(cols[i], widths[i]);
-            if (Lang.Ar)
-                for (int i = 0; i < cols.Length; i++) lv.Columns[i].DisplayIndex = cols.Length - 1 - i;
-
-            // hidden columns (width 0 in the simple layout) cannot be dragged open
-            lv.ColumnWidthChanging += (s, e) =>
-            {
-                if (widths[e.ColumnIndex] == 0) { e.Cancel = true; e.NewWidth = 0; }
-            };
-            // the first column (server name) takes the remaining width
-            lv.Resize += delegate
-            {
-                int used = 0;
-                for (int i = 1; i < lv.Columns.Count; i++) used += lv.Columns[i].Width;
-                // room for the vertical scrollbar even before it shows, so the list never scrolls sideways
-                lv.Columns[0].Width = Math.Max(widths[0], lv.ClientSize.Width - used - (lv.ClientSize.Width < lv.Width ? 0 : SystemInformation.VerticalScrollBarWidth));
-            };
-            // dark scrollbars on the dark list (Windows 10 1809 and later; older ones keep the light ones)
-            lv.HandleCreated += delegate { try { SetWindowTheme(lv.Handle, "DarkMode_Explorer", null); } catch { } };
-
-            lv.DrawColumnHeader += (s, e) =>
-            {
-                if (e.Bounds.Width <= 0) return;
-                using (var b = new SolidBrush(Theme.Panel2)) e.Graphics.FillRectangle(b, e.Bounds);
-                TextRenderer.DrawText(e.Graphics, e.Header.Text, Font, Rectangle.Inflate(e.Bounds, -8, 0), Theme.Dim,
-                    TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | Align);
-            };
-            lv.DrawItem += (s, e) => { };
-            lv.MouseMove += (s, e) =>
-            {
-                var item = lv.GetItemAt(e.X, e.Y);
-                if (item == hotRow) return;
-                var old = hotRow;
-                hotRow = item;
-                if (old != null && old.ListView == lv) lv.Invalidate(old.Bounds);
-                if (item != null) lv.Invalidate(item.Bounds);
-            };
-            lv.MouseLeave += delegate { var old = hotRow; hotRow = null; if (old != null && old.ListView == lv) lv.Invalidate(old.Bounds); };
-            lv.DrawSubItem += (s, e) =>
-            {
-                if (lv == serverList && (e.ColumnIndex == 0 || e.Item.Tag is GroupHeader)) return; // drawn by DrawRegionCheck
-                var rc = e.ColumnIndex == 0 ? FirstCell(lv, e.Item, e.Bounds) : e.Bounds;
-                if (rc.Width <= 0) return;
-                using (var b = new SolidBrush(RowBack(e.Item, e.ItemIndex))) e.Graphics.FillRectangle(b, rc);
-                var textRc = Rectangle.Inflate(rc, -8, 0);
-                if (lv == serverList && e.ColumnIndex == ColPing && e.SubItem.Text.Contains("ms"))
-                {
-                    // a dot in the ping colour, on the reading side of the number
-                    const int d = 8;
-                    var size = TextRenderer.MeasureText(e.SubItem.Text, Font);
-                    int x = Lang.Ar ? textRc.Right - size.Width - d - 6 : textRc.X;
-                    e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-                    using (var b = new SolidBrush(e.SubItem.ForeColor)) e.Graphics.FillEllipse(b, x, rc.Y + (rc.Height - d) / 2f, d, d);
-                    if (!Lang.Ar) textRc = new Rectangle(textRc.X + d + 6, textRc.Y, textRc.Width - d - 6, textRc.Height);
-                }
-                TextRenderer.DrawText(e.Graphics, e.SubItem.Text, Font, textRc, e.SubItem.ForeColor,
-                    TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | Align);
-            };
-            return lv;
-        }
-
-        // Text alignment inside owner-drawn lists (right-aligned, RTL reading for Arabic).
-        static TextFormatFlags Align
-        {
-            get { return Lang.Ar ? TextFormatFlags.Right | TextFormatFlags.RightToLeft : TextFormatFlags.Left; }
-        }
-
-        // Bounds of the first column (ListView reports the whole row for column 0, and it may not be displayed first).
-        static Rectangle FirstCell(ListView lv, ListViewItem item, Rectangle row)
-        {
-            int x = row.X;
-            for (int i = 1; i < lv.Columns.Count; i++)
-                if (lv.Columns[i].DisplayIndex < lv.Columns[0].DisplayIndex) x += lv.Columns[i].Width;
-            return new Rectangle(x, row.Y, lv.Columns[0].Width, row.Height);
-        }
-
-        static Rectangle CheckBox(Rectangle cell)
-        {
-            int x = Lang.Ar ? cell.Right - 8 - 18 : cell.X + 8;
-            return new Rectangle(x, cell.Y + (cell.Height - 18) / 2, 18, 18);
-        }
-
         // First column of the server list: optional tick box + server name.
         void DrawRegionCheck(object sender, DrawListViewSubItemEventArgs e)
         {
             if (e.ColumnIndex != 0) return;
             var h = e.Item.Tag as GroupHeader;
             if (h != null) { DrawGroupHeader(e, h); return; }
-            var rc = FirstCell(serverList, e.Item, e.Bounds);
-            using (var b = new SolidBrush(RowBack(e.Item, e.ItemIndex))) e.Graphics.FillRectangle(b, rc);
+            var rc = ListStyle.FirstCell(serverList, e.Item, e.Bounds);
+            using (var b = new SolidBrush(ListStyle.RowBack(e.Item, e.ItemIndex))) e.Graphics.FillRectangle(b, rc);
             var g = CurrentGame;
             var textRc = Rectangle.Inflate(rc, -8, 0);
             if (g != null && g.CanLock && g.Hosts((Region)e.Item.Tag) && !((Region)e.Item.Tag).NoRelay)
             {
                 var r = (Region)e.Item.Tag;
-                var box = CheckBox(rc);
+                var box = ListStyle.CheckBox(rc);
                 e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
                 // the same round pink check as the game tiles
                 if (r.Picked)
@@ -855,7 +748,7 @@ namespace PingBoost
                                  : new Rectangle(textRc.X + fw + gap, textRc.Y, textRc.Width - fw - gap, textRc.Height);
             }
             TextRenderer.DrawText(e.Graphics, e.SubItem.Text, Font, textRc,
-                e.SubItem.ForeColor, TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | Align);
+                e.SubItem.ForeColor, TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | ListStyle.Align);
         }
 
         void ShowPage(int idx)
@@ -1201,7 +1094,7 @@ namespace PingBoost
             var font = Fonts.Semi(10.5f);
             var text = Rectangle.Inflate(row, -14, 0);
             TextRenderer.DrawText(e.Graphics, HeaderText(h), font, text, h.Key == "" || h.Key == DeadlockData.Russia ? Theme.Dim : Theme.Lavender,
-                TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | Align);
+                TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | ListStyle.Align);
             if (h.Top)
             {
                 // the busiest region gets a gold sparkle badge on the opposite side

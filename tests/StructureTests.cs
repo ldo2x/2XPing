@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
 
@@ -792,6 +793,31 @@ namespace PingBoost
             Check(pings == 3 && end - start >= TimeSpan.FromSeconds(30), "one ping per 15 s: " + pings + " in " + (end - start).TotalSeconds + " s");
         }
 
+        static void ListStyleFirstCellFollowsTheReadingOrder()
+        {
+            Lang.Ar = false;
+            using (var en = ListStyle.Make(new[] { "a", "b", "c" }, new[] { 100, 50, 30 }, () => SystemFonts.DefaultFont, e => false, -1))
+            {
+                var row = new Rectangle(0, 10, 180, 30);
+                var cell = ListStyle.FirstCell(en, new ListViewItem("x"), row);
+                Check(cell == new Rectangle(0, 10, 100, 30), "English: the first column on the left: " + cell);
+                Check(ListStyle.CheckBox(cell).X == 8, "English: the tick box on the left");
+                Check(ListStyle.Align == TextFormatFlags.Left, "English: left-aligned");
+            }
+            Lang.Ar = true;
+            using (var ar = ListStyle.Make(new[] { "a", "b", "c" }, new[] { 100, 50, 30 }, () => SystemFonts.DefaultFont, e => false, -1))
+            {
+                Check(ar.Columns[0].DisplayIndex == 2 && ar.Columns[2].DisplayIndex == 0, "Arabic: the columns reversed");
+                Check(ar.RightToLeft == RightToLeft.No, "the list itself stays left-to-right");
+                var cell = ListStyle.FirstCell(ar, new ListViewItem("x"), new Rectangle(0, 10, 180, 30));
+                Check(cell == new Rectangle(80, 10, 100, 30), "Arabic: the first column on the right: " + cell);
+                Check(ListStyle.CheckBox(cell).Right == cell.Right - 8, "Arabic: the tick box on the right");
+                Check(ListStyle.Align == (TextFormatFlags.Right | TextFormatFlags.RightToLeft), "Arabic: right-aligned RTL");
+            }
+            var sel = new ListViewItem("s");
+            Check(ListStyle.RowBack(sel, 0) == Theme.Panel1 && ListStyle.RowBack(sel, 1) == Theme.RowAlt, "striped rows");
+        }
+
         static void RunStructureTests()
         {
             Run("RoutingRelayMarginIsThreeMs", RoutingRelayMarginIsThreeMs);
@@ -826,6 +852,7 @@ namespace PingBoost
             Run("RelayStoreAddRemoveRoundTrip", RelayStoreAddRemoveRoundTrip);
             Run("LiveMonitorStopsAndRestarts", LiveMonitorStopsAndRestarts);
             Run("LiveMonitorSlowsDownWhileTheGameIsInFront", LiveMonitorSlowsDownWhileTheGameIsInFront);
+            Run("ListStyleFirstCellFollowsTheReadingOrder", ListStyleFirstCellFollowsTheReadingOrder);
         }
     }
 }
