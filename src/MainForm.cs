@@ -1227,9 +1227,9 @@ namespace PingBoost
                                 ok ? ToastKind.Good : ToastKind.Warn);
                 }
                 if (!ok)
-                    AdvancedMsg(keptGateway
+                    AdvancedMsg(keptGateway || pickedGwRow != null
                         ? T("You're on " + place + ", which isn't one of your picked servers. ", "إنت على " + place + "، وهو مو من السيرفرات اللي اخترتها. ") +
-                          CardLogic.GatewayOutsideText()
+                          (keptGateway ? CardLogic.GatewayOutsideText() : CardLogic.PickedGatewayText(Places.PlaceName(pickedGwRow), region))
                         : T("You're on " + place + ", which isn't one of your picked servers. Restart the game and queue again.",
                           "إنت على " + place + "، وهو مو من السيرفرات اللي اخترتها. اقفل اللعبة وافتحها من جديد، وبعدين دوّر مباراة."), ToastKind.Warn);
             }

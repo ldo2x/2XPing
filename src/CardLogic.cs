@@ -260,7 +260,7 @@ namespace PingBoost
         // how to close it (the firewall can't tell, Dubai is a picked server).
         public static string PickedGatewayText(string gateway, string region)
         {
-            return Lang.T(gateway + ", which you picked, also leads to " + region + ". To close it, untick " + gateway + " in the server list.",
+            return Lang.T(gateway + ", which you picked, also leads to " + region + ". To close it, untick " + gateway + " in the server list (\"Pick by hand\").",
                           gateway + " اللي اخترتها توصل كمان " + To(region) + ". عشان تقفلها، شيل علامة (✓) عن " + gateway + " من قائمة السيرفرات («اختيار يدوي»).");
         }
 

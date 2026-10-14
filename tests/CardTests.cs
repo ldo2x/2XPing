@@ -300,7 +300,7 @@ namespace PingBoost
             i = LockedInput();
             i.MatchRegion = "Europe"; i.MatchPlace = "Frankfurt"; i.MatchOnPicked = false; i.MatchPickedGateway = "Dubai";
             v = CardLogic.Decide(i);
-            Check(v.Kind == CardKind.Outside && v.Sub == "Dubai, which you picked, also leads to Europe. To close it, untick Dubai in the server list.", "English: " + v.Sub);
+            Check(v.Kind == CardKind.Outside && v.Sub == "Dubai, which you picked, also leads to Europe. To close it, untick Dubai in the server list (\"Pick by hand\").", "English: " + v.Sub);
             Lang.Ar = true;
             i.MatchRegion = "أوروبا"; i.MatchPickedGateway = "دبي";
             v = CardLogic.Decide(i);
