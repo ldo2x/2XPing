@@ -13,7 +13,6 @@ namespace PingBoost
 {
     class MainForm : Form
     {
-        const double RelayMarginMs = 3; // a relay must beat direct by this much to be chosen
         const int CheckArea = 34;       // width of the pick tick box in the region column
 
         // server list columns
@@ -1097,48 +1096,10 @@ namespace PingBoost
             if (!simple || Minimized) Msg(text, kind, true);
         }
 
-        // LRM marks keep "74 ms" in order inside right-to-left text.
-        static string Ms(double v) { return v < 0 ? T("no reply", "ما يرد") : "‎" + Math.Round(v) + " ms‎"; }
-
-        static string ShortName(Region r) { return ShortName(r.Name); }
-
-        static string ShortName(string name) { return name.Split(new[] { "  [", "  (" }, StringSplitOptions.None)[0]; }
-
-        static Color PingColor(double v)
-        {
-            if (v < 0) return Theme.Bad;
-            if (v < 60) return Theme.Good;
-            return v < 120 ? Theme.Warn : Theme.Bad;
-        }
-
         static void SetSub(ListViewItem item, int i, string text, Color color)
         {
             item.SubItems[i].Text = text;
             item.SubItems[i].ForeColor = color;
-        }
-
-        static KeyValuePair<string, double>? BestRelay(Region r)
-        {
-            if (r.ViaRelay.Count == 0) return null;
-            return r.ViaRelay.OrderBy(kv => kv.Value).First();
-        }
-
-        // Relay to use for this region, or null when direct is best / unknown.
-        Relay AutoRelay(Region r)
-        {
-            var best = BestRelay(r);
-            if (best == null) return null;
-            bool directOk = r.Direct != null && r.Direct.Ok;
-            if (directOk && best.Value.Value > r.Direct.Avg - RelayMarginMs) return null;
-            return relays.FirstOrDefault(x => x.Name == best.Value.Key);
-        }
-
-        static double BestLatency(Region r)
-        {
-            var direct = r.Direct; // read once: a test may replace it meanwhile
-            double d = direct != null && direct.Ok ? direct.Avg : double.MaxValue;
-            var b = BestRelay(r);
-            return b != null ? Math.Min(d, b.Value.Value) : d;
         }
 
         // ---------------------------------------------------------------- servers
@@ -1200,7 +1161,7 @@ namespace PingBoost
                     {
                         Storage.LoadLast(g);
                         if (g.Regions.Any(r => r.Direct != null))
-                            g.Regions = g.Regions.OrderBy(r => LockedOut(g, r) ? 1 : 0).ThenBy(BestLatency).ToList();
+                            g.Regions = Routing.SortForList(g.Regions, r => LockedOut(g, r));
                     }
                     FillServers(g);
                     UpdateLockBar();
@@ -1263,7 +1224,7 @@ namespace PingBoost
                     if (gr.Key == "" && !russia) russia = AddRussiaHeader();
                     AddHeader(new GroupHeader { Key = gr.Key, Matches = gr.Key == "" ? 0 : activity[gr.Key], Top = first && gr.Key != "" });
                     first = false;
-                    foreach (var r in gr.OrderBy(x => x.NoRelay ? 2 : LockedOut(g, x) ? 1 : 0).ThenBy(BestLatency)) AddRegionRow(r);
+                    foreach (var r in gr.OrderBy(x => x.NoRelay ? 2 : LockedOut(g, x) ? 1 : 0).ThenBy(Routing.BestLatency)) AddRegionRow(r);
                 }
                 if (!russia) AddRussiaHeader();
             }
@@ -1549,13 +1510,13 @@ namespace PingBoost
         static string RegionNameOf(Game g, Region dc)
         {
             var def = g.RegionMap != null ? g.RegionMap.FirstOrDefault(d => d.Ids.Contains(dc.Id)) : null;
-            return def != null ? Lang.T(def.En, def.Ar) : ShortName(dc);
+            return def != null ? Lang.T(def.En, def.Ar) : Fmt.ShortName(dc);
         }
 
         // A Valve relay's place in a word or two, for "via Dubai" / «عن طريق دبي».
         static string PlaceName(Region r)
         {
-            string n = ShortName(r);
+            string n = Fmt.ShortName(r);
             foreach (var cut in new[] { " (", " - " })
             {
                 int i = n.IndexOf(cut, StringComparison.Ordinal);
@@ -1635,7 +1596,7 @@ namespace PingBoost
                 };
                 Func<Region, double> latency = r =>
                 {
-                    var relay = BestRelay(r); // the player's own relay, as on the rest of the screen
+                    var relay = Routing.BestRelay(r); // the player's own relay, as on the rest of the screen
                     return relay != null ? Math.Min(route(r).Ms, relay.Value.Value) : route(r).Ms;
                 };
                 Func<Region, string> via = r =>
@@ -1647,12 +1608,12 @@ namespace PingBoost
                 return RegionGroups.Build(g, g.AppId == "1422450" ? activity : null, PlayersOf, latency, via);
             }
             if (g.RegionMap != null)
-                return RegionGroups.Build(g, g.AppId == "1422450" ? activity : null, PlayersOf, BestLatency);
+                return RegionGroups.Build(g, g.AppId == "1422450" ? activity : null, PlayersOf, Routing.BestLatency);
             return g.Regions.Where(r => g.Hosts(r) && !r.Detected).Select(r => new RegionChoice
             {
-                Def = RegionDef.Of(r.Id, ShortName(r.NameEn), ShortName(r.NameAr ?? r.NameEn), r.Id),
+                Def = RegionDef.Of(r.Id, Fmt.ShortName(r.NameEn), Fmt.ShortName(r.NameAr ?? r.NameEn), r.Id),
                 Members = new List<Region> { r },
-                Ping = BestLatency(r)
+                Ping = Routing.BestLatency(r)
             }).ToList();
         }
 
@@ -1680,7 +1641,7 @@ namespace PingBoost
         // Games that can't be locked: the lowest ping among the game's own servers (not the ones found in a match).
         static Region CardBest(Game g)
         {
-            return g.Regions.Where(r => !r.Detected && BestLatency(r) < double.MaxValue).OrderBy(BestLatency).FirstOrDefault();
+            return Routing.Best(g.Regions.Where(r => !r.Detected));
         }
 
         // Puts what the app knows right now on the card.
@@ -1739,8 +1700,8 @@ namespace PingBoost
                 var best = CardBest(g);
                 if (best != null)
                 {
-                    input.BestServer = ShortName(best);
-                    input.BestMs = (int)Math.Round(BestLatency(best));
+                    input.BestServer = Fmt.ShortName(best);
+                    input.BestMs = (int)Math.Round(Routing.BestLatency(best));
                 }
             }
             // "Pick by hand" and "Test ping" only in the simple layout: the advanced one always shows the list and the test button
@@ -1848,7 +1809,7 @@ namespace PingBoost
             var whole = BuildChoices(g).Where(c => c.Members.All(m => ids.Contains(m.Id))).ToList();
             var covered = new HashSet<string>(whole.SelectMany(c => c.Members).Select(m => m.Id));
             if (whole.Count > 0 && ids.All(covered.Contains)) return CardLogic.JoinNames(whole.Select(c => c.Name).ToList());
-            return string.Join(Lang.Ar ? "، " : ", ", picked.Select(ShortName).ToArray());
+            return string.Join(Lang.Ar ? "، " : ", ", picked.Select(Fmt.ShortName).ToArray());
         }
 
         // Lock the datacenters of the chosen regions (only ones that host matches).
@@ -1907,14 +1868,14 @@ namespace PingBoost
                 foreach (int i in new[] { ColPing, ColJitter, ColLoss, ColVia, ColRoute }) SetSub(item, i, "-", Theme.Dim);
                 return;
             }
-            SetSub(item, ColPing, Ms(r.Direct.Avg), PingColor(r.Direct.Avg));
+            SetSub(item, ColPing, Fmt.Ms(r.Direct.Avg), Fmt.PingColor(r.Direct.Avg));
             SetSub(item, ColJitter, r.Direct.Ok ? "‎" + Math.Round(r.Direct.Jitter, 1) + " ms‎" : "-", r.Direct.Jitter > 10 ? Theme.Warn : Theme.Dim);
             SetSub(item, ColLoss, "‎" + Math.Round(r.Direct.Loss) + "%‎", r.Direct.Loss > 0 ? Theme.Bad : Theme.Dim);
 
-            var best = BestRelay(r);
-            SetSub(item, ColVia, best == null ? "-" : Ms(best.Value.Value), best == null ? Theme.Dim : PingColor(best.Value.Value));
+            var best = Routing.BestRelay(r);
+            SetSub(item, ColVia, best == null ? "-" : Fmt.Ms(best.Value.Value), best == null ? Theme.Dim : Fmt.PingColor(best.Value.Value));
 
-            var relay = AutoRelay(r);
+            var relay = Routing.AutoRelay(r, relays);
             if (relay != null)
             {
                 string gain = r.Direct.Ok ? "  (-" + Math.Round(r.Direct.Avg - best.Value.Value) + " ms)" : "";
@@ -2012,7 +1973,7 @@ namespace PingBoost
                         // the card follows the game on screen: this game's new pings, or just "no test running" for another one
                         if (cur == g) RebuildChoices();
                         UpdateCard();
-                        var top = regions.Where(r => BestLatency(r) < double.MaxValue).OrderBy(BestLatency).FirstOrDefault();
+                        var top = Routing.Best(regions);
                         // every result, so ping can be compared by city, ISP and connection type
                         var results = new Dictionary<string, object>();
                         foreach (var r in regions.Where(r => r.Direct != null))
@@ -2028,16 +1989,16 @@ namespace PingBoost
                         if (CurrentGame == g)
                         {
                             // closest first; regions blocked by the lock go to the end
-                            g.Regions = g.Regions.OrderBy(r => LockedOut(g, r) ? 1 : 0).ThenBy(BestLatency).ToList();
+                            g.Regions = Routing.SortForList(g.Regions, r => LockedOut(g, r));
                             FillServers(g);
                         }
-                        SetStatus(T("Done. Your best region: ", "خلص الفحص. أحسن منطقة لك: ") + ShortName(top) + "  " + Ms(BestLatency(top)));
-                        Telemetry.Send("test", top.NameEn, (int)Math.Round(BestLatency(top)), regions.Count + " regions, " + ms + " ms", data);
+                        SetStatus(T("Done. Your best region: ", "خلص الفحص. أحسن منطقة لك: ") + Fmt.ShortName(top) + "  " + Fmt.Ms(Routing.BestLatency(top)));
+                        Telemetry.Send("test", top.NameEn, (int)Math.Round(Routing.BestLatency(top)), regions.Count + " regions, " + ms + " ms", data);
                         var down = regions.Where(r => r.Direct != null && !r.Direct.Ok && !r.Detected).Select(r => r.Id).ToList();
                         if (down.Count > 0)
                             Issues.Report("region_down", g.Name + ": " + string.Join(", ", down),
                                 new Dictionary<string, object> { { "game", g.Name }, { "regions", down.ToArray() } }, g.Icon + string.Join(",", down));
-                        Log(g.Name + ": " + T("best region ", "أحسن منطقة ") + top.Name + " " + Ms(BestLatency(top)));
+                        Log(g.Name + ": " + T("best region ", "أحسن منطقة ") + top.Name + " " + Fmt.Ms(Routing.BestLatency(top)));
                     });
                 }
                 catch (Exception ex)
@@ -2391,7 +2352,7 @@ namespace PingBoost
                 foreach (ListViewItem item in serverList.Items)
                     if (item.Tag == found[0]) { item.Selected = true; item.EnsureVisible(); }
             }
-            string names = string.Join("، ", found.Select(ShortName));
+            string names = string.Join("، ", found.Select(Fmt.ShortName));
             SetStatus(T("You are on: ", "إنت دحين على: ") + names);
             Telemetry.Server = string.Join(", ", found.Select(r => r.NameEn));
             Telemetry.Send("detect", Telemetry.Server, -1,
@@ -2438,14 +2399,14 @@ namespace PingBoost
                 var top = found[0];
                 if (CurrentGame == g)
                 {
-                    if (!g.CanLock) { currentServer = ShortName(top); currentMs = top.Direct.Ok ? (int)Math.Round(top.Direct.Avg) : -1; }
+                    if (!g.CanLock) { currentServer = Fmt.ShortName(top); currentMs = top.Direct.Ok ? (int)Math.Round(top.Direct.Avg) : -1; }
                     FillServers(g);
                 }
                 SetStatus(T("You are on: ", "إنت دحين على: ") + top.Name);
                 Telemetry.Server = top.NameEn;
                 Telemetry.Send("detect", top.NameEn, top.Direct.Ok ? (int)Math.Round(top.Direct.Avg) : -1, null);
                 AdvancedMsg(T("You're playing on: ", "إنت تلعب دحين على: ") + top.Name, ToastKind.Good);
-                AdvancedMsg((top.Direct.Ok ? T("Ping: ", "البنق: ") + Ms(top.Direct.Avg) + T(". ", "، ")
+                AdvancedMsg((top.Direct.Ok ? T("Ping: ", "البنق: ") + Fmt.Ms(top.Direct.Avg) + T(". ", "، ")
                                    : T("It doesn't answer ping (normal for some games). ", "ما يرد على البنق (عادي في بعض الألعاب)، ")) +
                     T("It's saved at the top of the list.", "وحفظناه فوق في القائمة."));
             });
@@ -2658,7 +2619,7 @@ namespace PingBoost
                 UpdateCard();
                 return;
             }
-            string name = dc != null ? ShortName(dc) : (where ?? top.Ip);
+            string name = dc != null ? Fmt.ShortName(dc) : (where ?? top.Ip);
             bool ok = dc == null ? lockSummary == null : (lockSummary == null || dc.Picked);
             SetDetect(T("On: ", "إنت على: ") + name, ok ? Theme.Good : Theme.Warn);
             // the card: a datacenter we know names the region; a game without them shows the city and its ping
@@ -2749,7 +2710,7 @@ namespace PingBoost
                       "اختار سيرفر واحد على الأقل (اضغط المربع اللي جنب اسمه)."), ToastKind.Warn);
                 return;
             }
-            string names = string.Join("، ", picked.Select(ShortName));
+            string names = string.Join("، ", picked.Select(Fmt.ShortName));
             // other games: only the game's own UDP (its match traffic) is blocked, so login, voice chat and the
             // rest of the PC are untouched; the exe must be known for that
             string exe = null;
@@ -2988,7 +2949,7 @@ namespace PingBoost
             Region region = serverList.SelectedItems.Count > 0 ? serverList.SelectedItems[0].Tag as Region : null;
             if (region == null || region.NoRelay || LockedOut(g, region))
             {
-                region = g.Regions.Where(r => !LockedOut(g, r) && BestLatency(r) < double.MaxValue).OrderBy(BestLatency).FirstOrDefault();
+                region = Routing.Best(g.Regions.Where(r => !LockedOut(g, r)));
                 if (region == null) { Msg(T("Press Test ping first, or pick a server from the list.", "اضغط «افحص البنق» أول، أو اختار سيرفر من القائمة."), ToastKind.Warn); return; }
             }
             var target = region.Target;
@@ -2996,7 +2957,7 @@ namespace PingBoost
 
             Relay relay = null;
             if (!simple && routeBox.SelectedIndex >= 2) relay = relays[routeBox.SelectedIndex - 2];
-            else if (simple || routeBox.SelectedIndex == 0) relay = AutoRelay(region);
+            else if (simple || routeBox.SelectedIndex == 0) relay = Routing.AutoRelay(region, relays);
 
             boosting = true;
             btnBoost.Enabled = false;
@@ -3007,7 +2968,7 @@ namespace PingBoost
                 Log(region.Name + ": " + T("direct route", "طريق مباشر") +
                     (simple || routeBox.SelectedIndex == 0 ? T(" (already the fastest)", " (هو الأسرع أصلاً)") : ""));
                 RaisePriority(g);
-                StartMonitor(target, T("Speed up · ", "تسريع · ") + ShortName(region));
+                StartMonitor(target, T("Speed up · ", "تسريع · ") + Fmt.ShortName(region));
                 Telemetry.Send("boost", region.NameEn, -1, "direct");
                 return;
             }
@@ -3067,7 +3028,7 @@ namespace PingBoost
                     {
                         if (gen != Volatile.Read(ref boostGen)) return;
                         RaisePriority(g);
-                        StartMonitor(target, T("Speed up · ", "تسريع · ") + ShortName(region) + T(" via ", " عن طريق ") + relay.Name);
+                        StartMonitor(target, T("Speed up · ", "تسريع · ") + Fmt.ShortName(region) + T(" via ", " عن طريق ") + relay.Name);
                     });
                 });
             });
@@ -3105,9 +3066,9 @@ namespace PingBoost
                     Ui(() =>
                     {
                         if (gen != Volatile.Read(ref monitorGen)) return;
-                        liveLabel.Text = T("Status: ", "الحالة: ") + label + "  ·  " + Ms(v);
-                        liveLabel.ForeColor = PingColor(v);
-                        SetLiveStatus(label + " · " + Ms(v));
+                        liveLabel.Text = T("Status: ", "الحالة: ") + label + "  ·  " + Fmt.Ms(v);
+                        liveLabel.ForeColor = Fmt.PingColor(v);
+                        SetLiveStatus(label + " · " + Fmt.Ms(v));
                         Telemetry.Ping = v < 0 ? -1 : (int)Math.Round(v);
                         graph.Add(v);
                         TrackLoss(label, v);
@@ -3149,8 +3110,8 @@ namespace PingBoost
         {
             var g = CurrentGame;
             if (lockSummary == null || boosting || g == null) return;
-            var r = g.Regions.Where(x => x.Picked && x.Target != null).OrderBy(BestLatency).FirstOrDefault();
-            if (r != null) StartMonitor(r.Target, T("locked on ", "مثبّت على ") + ShortName(r));
+            var r = g.Regions.Where(x => x.Picked && x.Target != null).OrderBy(Routing.BestLatency).FirstOrDefault();
+            if (r != null) StartMonitor(r.Target, T("locked on ", "مثبّت على ") + Fmt.ShortName(r));
         }
 
         void StopAll()
@@ -3199,7 +3160,7 @@ namespace PingBoost
             {
                 var item = new ListViewItem(r.Name) { UseItemStyleForSubItems = false, Tag = r, ForeColor = Theme.TextC };
                 item.SubItems.Add(r.EndpointHost ?? T("(config file missing)", "(ملف الإعداد مو موجود)")).ForeColor = Theme.TextC;
-                item.SubItems.Add(r.Ping < 0 ? "-" : Ms(r.Ping)).ForeColor = r.Ping < 0 ? Theme.Dim : PingColor(r.Ping);
+                item.SubItems.Add(r.Ping < 0 ? "-" : Fmt.Ms(r.Ping)).ForeColor = r.Ping < 0 ? Theme.Dim : Fmt.PingColor(r.Ping);
                 item.SubItems.Add(r.HasAgent ? r.AgentUrl : T("none (no ping estimate)", "ما في (بدون تقدير للبنق)")).ForeColor = Theme.Dim;
                 relayList.Items.Add(item);
             }
@@ -3270,7 +3231,7 @@ namespace PingBoost
                         r.Ping = r.MeasurePing();
                         string agent = !r.HasAgent ? T("no agent", "بدون أداة قياس")
                             : r.ProbeFromRelay(new Endpoint("1.1.1.1", 443)) >= 0 ? T("agent OK", "أداة القياس شغّالة") : T("agent not reachable", "أداة القياس ما ترد");
-                        Log(T("Relay ", "الوسيط ") + r.Name + ": " + Ms(r.Ping) + "، " + agent);
+                        Log(T("Relay ", "الوسيط ") + r.Name + ": " + Fmt.Ms(r.Ping) + "، " + agent);
                     }
                     Ui(() => { RefreshRelays(); SetStatus(T("Relay test done, details in Tools & Log.", "خلص فحص الوسطاء، التفاصيل في «أدوات وسجل».")); });
                 }

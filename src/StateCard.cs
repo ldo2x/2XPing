@@ -428,13 +428,6 @@ namespace PingBoost
             return null;
         }
 
-        static Color PingColor(double ms)
-        {
-            if (ms >= double.MaxValue) return Theme.Dim;
-            if (ms < 60) return Theme.Good;
-            return ms < 120 ? Theme.Warn : Theme.Bad;
-        }
-
         protected override void OnPaint(PaintEventArgs e)
         {
             var g = Begin(e);
@@ -477,11 +470,11 @@ namespace PingBoost
                 var area = new Size(textW, LineH);
                 int pad = (TextRenderer.MeasureText(g, ping, pingFont, area, TextFlags).Width - TextRenderer.MeasureText(g, ping, pingFont, area, nopad).Width) / 2;
                 int pw = TextRenderer.MeasureText(g, ping, pingFont, area, nopad).Width;
-                TextRenderer.DrawText(g, ping, pingFont, Row(textX + pad, y, textW - pad, LineH), PingColor(choice.Ping), nopad);
+                TextRenderer.DrawText(g, ping, pingFont, Row(textX + pad, y, textW - pad, LineH), Fmt.PingColor(choice.Ping), nopad);
                 if (pad + pw < textW)
                     TextRenderer.DrawText(g, " · " + Lang.T("via ", "عن طريق ") + choice.Via, lineFont, Row(textX + pad + pw, y, textW - pad - pw, LineH), Theme.Dim, nopad);
             }
-            else TextRenderer.DrawText(g, ping, known ? pingFont : lineFont, Row(textX, y, textW, LineH), PingColor(choice.Ping), TextFlags);
+            else TextRenderer.DrawText(g, ping, known ? pingFont : lineFont, Row(textX, y, textW, LineH), Fmt.PingColor(choice.Ping), TextFlags);
             y += LineH;
             if (HasQueue(choice))
             {
