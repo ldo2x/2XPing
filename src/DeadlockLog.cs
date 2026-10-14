@@ -115,7 +115,8 @@ namespace PingBoost
         }
 
         // The datacenter a console line names, when it is one that hosts Deadlock matches: its id, its row (null for a
-        // place the app has no row for), the region it plays and whether the lock allows it.
+        // place the app has no row for), the region it plays and whether the lock allows it. Dubai is SE Asia: on the
+        // picked servers of an SE Asia lock, outside a Europe lock that kept it open as the way in (LockScope.KeptGateway).
         public static bool Resolve(Game g, ConsoleLine line, out string id, out Region dc, out string region, out bool onPicked)
         {
             return Resolve(g, line, null, out id, out dc, out region, out onPicked);

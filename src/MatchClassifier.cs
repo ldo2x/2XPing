@@ -32,10 +32,12 @@ namespace PingBoost
         }
 
         // The hosting datacenters that carry the match (Valve: with at least half of the packets), busiest first.
+        // A gateway (Dubai) never counts: the traffic can't tell its match server from its relay, the way in for Gulf
+        // players to Europe; only the console log names it as the match server.
         public static List<Region> HostsOf(Game g, List<Detector.Hit> hits)
         {
             return hits.Where(h => g.Provider != Provider.Valve || Detector.CarriesMatch(h))
-                       .Select(h => g.DatacenterOf(h.Ip)).Where(r => r != null && g.Hosts(r)).Distinct().ToList();
+                       .Select(h => g.DatacenterOf(h.Ip)).Where(r => r != null && g.Hosts(r) && !g.Gateway(r)).Distinct().ToList();
         }
 
         // The datacenter the game is on, from the addresses it talks to: one that hosts matches, or null when the game
@@ -45,7 +47,7 @@ namespace PingBoost
         public static Region HostRegionOf(Game g, List<Detector.Hit> hits)
         {
             return hits.Where(h => g.Provider != Provider.Valve || Detector.CarriesMatch(h))
-                       .Select(h => g.DatacenterOf(h.Ip)).FirstOrDefault(r => r != null && g.Hosts(r));
+                       .Select(h => g.DatacenterOf(h.Ip)).FirstOrDefault(r => r != null && g.Hosts(r) && !g.Gateway(r));
         }
 
         // Where the game enters Valve's network when no address carries the match: Valve, the busiest of its addresses

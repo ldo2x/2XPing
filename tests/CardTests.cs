@@ -271,6 +271,33 @@ namespace PingBoost
             Check(v.Accent == Theme.Warn, "Outside accent is Warn");
         }
 
+        // A match on Dubai (SE Asia) while a Europe lock kept it open as the way in: the card points to the setting.
+        static void CardOutsideOnKeptDubai()
+        {
+            Lang.Ar = true;
+            var i = LockedInput();
+            i.MatchRegion = "جنوب شرق آسيا"; i.MatchPlace = "دبي"; i.MatchOnPicked = false; i.MatchKeptGateway = true;
+            var v = CardLogic.Decide(i);
+            Check(v.Kind == CardKind.Outside && v.Title == "اللعبة حطّتك على جنوب شرق آسيا (دبي)", "title: " + v.Title);
+            Check(v.Sub == "خلّينا دبي مفتوحة كطريق لك. إذا ما تبغى مباراة فيها أبداً، طفّي «دبي كطريق لأوروبا» من الإعدادات.", "sub: " + v.Sub);
+            Lang.Ar = false;
+            i.MatchRegion = "SE Asia"; i.MatchPlace = "Dubai";
+            v = CardLogic.Decide(i);
+            Check(v.Sub == "Dubai stays open as your way in. To never get a match there, turn off \"Dubai as a way to Europe\" in Settings.", "English sub: " + v.Sub);
+            // only for the locked game, from the match state
+            var g = new Game { Name = "Deadlock", Icon = "deadlock", Provider = Provider.Valve };
+            var f = new CardFacts { Loaded = true, LockGame = g, LockNames = "Europe", MatchRegion = "SE Asia", MatchKeptGateway = true };
+            Check(CardInputBuilder.Build(g, new List<RegionChoice>(), f).MatchKeptGateway, "the locked game's match");
+            f.LockGame = new Game { Name = "Other" };
+            Check(!CardInputBuilder.Build(g, new List<RegionChoice>(), f).MatchKeptGateway, "another game's lock: no");
+            var m = new MatchState();
+            m.Set("SE Asia", false, false, null, "Dubai");
+            m.KeptGateway = true;
+            m.Set("Europe", true, false, null, "Frankfurt");
+            Check(!m.KeptGateway, "a new match result drops it");
+            Lang.Ar = true;
+        }
+
         static void CardLockedEnglish()
         {
             Lang.Ar = false;
@@ -337,6 +364,7 @@ namespace PingBoost
             Run("CardInMatchOnPicked", CardInMatchOnPicked);
             Run("CardInMatchViaRelay", CardInMatchViaRelay);
             Run("CardInMatchOutside", CardInMatchOutside);
+            Run("CardOutsideOnKeptDubai", CardOutsideOnKeptDubai);
             Run("CardLockedEnglish", CardLockedEnglish);
             Run("CardBestOnly", CardBestOnly);
             Run("CardOnServer", CardOnServer);

@@ -76,10 +76,15 @@ namespace PingBoost
             Check(cfg.PopIds.Count == 37, "37 datacenters, not " + cfg.PopIds.Count);
             var unknown = DeadlockData.UnknownPops(cfg.PopIds);
             Check(unknown.Count == 0, "every datacenter is in the table: " + string.Join(",", unknown.ToArray()));
+            // a relay-only POP never hosts; a gateway hosts and is an entry too, but is never listed as relay-only
             Check(DeadlockData.Hosting.Keys.All(k => !DeadlockData.RelayOnly.Contains(k)), "no datacenter is both hosting and relay-only");
+            Check(DeadlockData.Gateways.All(id => DeadlockData.Hosting.ContainsKey(id) && !DeadlockData.RelayOnly.Contains(id)),
+                  "every gateway hosts matches and isn't relay-only");
             // the four fixes of the audit (B2)
             Check(DeadlockData.Hosting["jnb"] == "Europe", "Johannesburg hosts the Europe pool");
-            foreach (var id in new[] { "bom", "bom2", "maa", "maa2", "gum", "dxb", "dfjr" })
+            // two SE Asia-locked matches from Riyadh (2026-10-14) were hosted in Dubai
+            Check(DeadlockData.Hosting["dxb"] == "SEAsia" && DeadlockData.Gateways.SetEquals(new[] { "dxb" }), "Dubai hosts SE Asia and is the gateway");
+            foreach (var id in new[] { "bom", "bom2", "maa", "maa2", "gum", "dfjr" })
                 Check(!DeadlockData.Hosting.ContainsKey(id) && DeadlockData.RelayOnly.Contains(id), id + " is relay-only");
             foreach (var id in new[] { "hel", "fsn", "eat", "mwh", "dsto", "dlhr" })
                 Check(DeadlockData.Hosting.ContainsKey(id), id + " is a known host");
@@ -116,16 +121,17 @@ namespace PingBoost
             var eu = Def(g, "Europe");
             Check(eu != null && eu.Ids.Contains("jnb") && eu.Ids.Contains("fra"), "Europe has jnb and fra");
             var sea = Def(g, "SEAsia");
-            Check(sea != null && sea.Ids.OrderBy(x => x, StringComparer.Ordinal).SequenceEqual(new[] { "hkg", "seo", "sgp", "tyo" }),
-                  "SE Asia is sgp, hkg, tyo, seo: " + (sea == null ? "-" : string.Join(",", sea.Ids)));
+            Check(sea != null && sea.Ids.OrderBy(x => x, StringComparer.Ordinal).SequenceEqual(new[] { "dxb", "hkg", "seo", "sgp", "tyo" }),
+                  "SE Asia is sgp, hkg, tyo, seo and dxb: " + (sea == null ? "-" : string.Join(",", sea.Ids)));
             Check(Def(g, DeadlockData.Russia) == null, "Russia is never a tile");
             foreach (var d in g.RegionMap)
-                foreach (var id in new[] { "dxb", "dfjr", "bom2", "maa2", "gum", "hel", "fsn", "eat", "dsto", "dlhr" })
+                foreach (var id in new[] { "dfjr", "bom2", "maa2", "gum", "hel", "fsn", "eat", "dsto", "dlhr" })
                     Check(!d.Ids.Contains(id), d.Key + " must not contain " + id);
+            Check(Def(g, "Europe").Ids.All(id => id != "dxb"), "Dubai is SE Asia's, not Europe's");
             // a tile's members are what its lock picks: never a relay-only or a no-relay datacenter
             var all = RegionGroups.Build(g, null, null, r => 50);
             var picks = RegionGroups.PickIds(g, all);
-            Check(!picks.Contains("dxb") && !picks.Contains("bom2") && !picks.Contains("hel") && picks.Contains("jnb"), "picks: " + string.Join(",", picks.ToArray()));
+            Check(picks.Contains("dxb") && !picks.Contains("bom2") && !picks.Contains("hel") && picks.Contains("jnb"), "picks: " + string.Join(",", picks.ToArray()));
         }
 
         static void DeadlockCountsRegionsFromActiveMatches()
@@ -212,7 +218,7 @@ namespace PingBoost
             var picks = new HashSet<string> { "fra", "bom2", "dxb" };
             Check(GameDb.PickedAtLoad(g, g.Regions.First(r => r.Id == "fra"), picks), "fra stays picked");
             Check(!GameDb.PickedAtLoad(g, g.Regions.First(r => r.Id == "bom2"), picks), "bom2 is relay-only now: dropped");
-            Check(!GameDb.PickedAtLoad(g, g.Regions.First(r => r.Id == "dxb"), picks), "dxb never picked");
+            Check(GameDb.PickedAtLoad(g, g.Regions.First(r => r.Id == "dxb"), picks), "dxb hosts SE Asia now: its pick stays");
             Check(!GameDb.PickedAtLoad(g, g.Regions.First(r => r.Id == "ams"), picks), "not saved: not picked");
             var cs2 = new Game { Name = "CS2" }; // no hosting list: every datacenter can be picked
             Check(GameDb.PickedAtLoad(cs2, new Region { Id = "dxb" }, picks), "games without a hosting list keep every pick");

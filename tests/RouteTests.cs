@@ -58,7 +58,7 @@ namespace PingBoost
         static void StrictLockEuropeKeepsDubai()
         {
             var g = SavedDeadlock();
-            var plan = StrictLock.For(g, RegionIds(g, "Europe"), RiyadhPings());
+            var plan = StrictLock.For(g, RegionIds(g, "Europe"), RiyadhPings(), true);
             // only Guam, which the owner's list has no ping for (unmeasured, with a path to SE Asia: closed to be safe)
             Check(plan.Close.SequenceEqual(new[] { "gum" }) && !plan.MayLeak, "Europe from Riyadh closes only unmeasured gum: " + string.Join(",", plan.Close.ToArray()));
             Check(!plan.Close.Contains("dxb") && !plan.Close.Contains("dfjr") && !plan.Close.Contains("bom2"), "dxb, dfjr, bom2 open");
@@ -66,30 +66,93 @@ namespace PingBoost
             Check(RouteAdvisor.NoteOf(g, plan, "Europe") == null, "nothing to tell");
         }
 
-        static void StrictLockSeAsiaClosesDubai()
+        // Dubai hosts SE Asia (2026-10-14): an SE Asia lock picks it, so it stays open as a picked host and nothing costs.
+        // Fujairah is still relay-only and judged by R3 as before (161 + its path to Europe is far over 31 + 20).
+        static void StrictLockSeAsiaKeepsDubai()
         {
             var g = SavedDeadlock();
-            var plan = StrictLock.For(g, RegionIds(g, "SEAsia"), RiyadhPings());
-            Check(plan.Close.Contains("dxb") && plan.Close.Contains("dfjr"), "dxb and dfjr closed: " + string.Join(",", plan.Close.ToArray()));
-            Check(plan.Close.Contains("bom2") && !plan.Close.Contains("maa2"), "bom2 (213 to dvie) too, maa2 (365) not: " + string.Join(",", plan.Close.ToArray()));
-            Check(plan.Reason["dxb"].Ms == 58 && plan.Reason["dxb"].To == "dvie", "dxb reaches Europe in 58");
+            var sea = RegionIds(g, "SEAsia");
+            Check(sea.Contains("dxb"), "the SE Asia tile picks Dubai");
+            foreach (var keep in new[] { true, false })
+            {
+                var plan = StrictLock.For(g, sea, RiyadhPings(), keep);
+                Check(!plan.Close.Contains("dxb") && !plan.Blocked.Contains("dxb") && plan.Gateways.Count == 0, "Dubai is a picked host (setting " + keep + ")");
+                Check(plan.Close.SequenceEqual(new[] { "gum" }) && !plan.MayLeak, "only unmeasured gum closed: " + string.Join(",", plan.Close.ToArray()));
+                Check(plan.Locked.Ms == 31 && plan.Locked.Entry == "dxb" && plan.Locked.To == "dxb", "31 straight to Dubai: " + plan.Locked.Ms + " " + plan.Locked.To);
+                Check(RouteAdvisor.NoteOf(g, plan, "SE Asia") == null, "nothing to tell");
+            }
+        }
+
+        // SE Asia picked by hand without Dubai: Dubai is blocked like any host the lock leaves out, Fujairah and Mumbai
+        // reach Europe within 20 ms of the 197 straight to Singapore and are closed (R3), and the card names Dubai.
+        static void StrictLockSeAsiaWithoutDubai()
+        {
+            var g = SavedDeadlock();
+            var picked = RegionIds(g, "SEAsia").Where(id => id != "dxb").ToList();
+            var plan = StrictLock.For(g, picked, RiyadhPings(), true);
+            Check(plan.Blocked.Contains("dxb") && plan.Gateways.Count == 0, "Dubai left out by hand: blocked, not a way in");
+            Check(plan.Close.Contains("dfjr") && plan.Close.Contains("bom2") && !plan.Close.Contains("maa2"), "dfjr, bom2 closed, maa2 not: " + string.Join(",", plan.Close.ToArray()));
             Check(!plan.MayLeak, "sgp answers: strict");
             Check(Near(plan.Unlocked.Ms, 106) && plan.Unlocked.Entry == "dxb", "unlocked ~106 via dxb: " + plan.Unlocked.Ms);
             Check(Near(plan.Locked.Ms, 197) && plan.Locked.Entry == "sgp", "locked ~197 direct: " + plan.Locked.Ms + " via " + plan.Locked.Entry);
-            // the lock blocks the closed relays' addresses
-            var cidrs = g.Regions.Where(r => plan.Close.Contains(r.Id)).SelectMany(r => r.Cidrs).ToList();
-            Check(cidrs.Count > 0 && cidrs.Contains("185.25.183.163/32"), "dxb's relay is in the block list");
-
-            Lang.Ar = true;
-            var note = RouteAdvisor.NoteOf(g, plan, "جنوب شرق آسيا");
-            Check(note != null && note.Kind == RouteNoteKind.ClosedEntry, "a closed best entry is told");
-            string ar = CardLogic.RouteText(note);
-            Check(ar == "لازم نقفل دبي لأنها توصل لأوروبا. بنقك لجنوب شرق آسيا بيصير تقريباً 197 بدل 106.", "Arabic: " + ar);
+            var cidrs = g.Regions.Where(r => plan.Blocked.Contains(r.Id)).SelectMany(r => r.Cidrs).ToList();
+            Check(cidrs.Contains("185.25.183.163/32"), "dxb's relay is in the block list");
             Lang.Ar = false;
-            note = RouteAdvisor.NoteOf(g, plan, "SE Asia");
-            string en = CardLogic.RouteText(note);
-            Check(en == "We have to close Dubai because it reaches Europe. Your ping to SE Asia becomes about 197 instead of 106.", "English: " + en);
+            var note = RouteAdvisor.NoteOf(g, plan, "SE Asia");
+            Check(note != null && note.Kind == RouteNoteKind.BlockedHost && note.Entry == "Dubai", "names Dubai: " + (note == null ? "-" : note.Kind + " " + note.Entry));
+            Check(CardLogic.RouteText(note) == "Your shortest way to SE Asia goes through Dubai, and the lock closes it: your ping becomes about 197 instead of 106. Pick Dubai too to keep it.",
+                  "English: " + CardLogic.RouteText(note));
             Lang.Ar = true;
+            Check(CardLogic.RouteText(RouteAdvisor.NoteOf(g, plan, "جنوب شرق آسيا")) ==
+                  "أقصر طريق لك لجنوب شرق آسيا يمر من دبي، والتثبيت يقفله: بنقك بيصير تقريباً 197 بدل 106. اختار دبي بعد عشان يبقى مفتوح.",
+                  "Arabic: " + CardLogic.RouteText(RouteAdvisor.NoteOf(g, plan, "جنوب شرق آسيا")));
+        }
+
+        // The setting: on (the default), a Europe lock keeps Dubai open as the way in (R3 keeps it at 58); off, Dubai is
+        // blocked like any host that isn't picked, the lock goes straight to Datapacket Frankfurt (68) and the card says why.
+        static void StrictLockEuropeDubaiSetting()
+        {
+            var g = SavedDeadlock();
+            var eu = RegionIds(g, "Europe");
+            Check(DeadlockData.EntryGateways(eu, true).SequenceEqual(new[] { "dxb" }), "Europe, on: Dubai is a way in");
+            Check(DeadlockData.EntryGateways(eu, false).Count == 0, "off: none");
+            Check(DeadlockData.EntryGateways(RegionIds(g, "SEAsia"), true).Count == 0, "SE Asia picks it itself");
+            Check(DeadlockData.EntryGateways(new[] { "sgp" }, true).Count == 0, "SE Asia picked by hand without Dubai: left out on purpose");
+            Check(DeadlockData.EntryGateways(new[] { "fra", "sgp" }, true).Count == 0, "some of SE Asia picked: no way in");
+
+            var on = StrictLock.For(g, eu, RiyadhPings(), true);
+            Check(on.Gateways.SequenceEqual(new[] { "dxb" }) && !on.Blocked.Contains("dxb") && !on.Close.Contains("dxb"), "on: Dubai open");
+            Check(on.Locked.Ms == 58 && on.Locked.Entry == "dxb", "on: 58 via dxb");
+
+            var off = StrictLock.For(g, eu, RiyadhPings(), false);
+            Check(off.Gateways.Count == 0 && off.Blocked.Contains("dxb") && !off.Close.Contains("dxb"), "off: Dubai blocked as a host");
+            Check(off.Close.SequenceEqual(new[] { "gum" }) && !off.MayLeak, "off: only unmeasured gum closed: " + string.Join(",", off.Close.ToArray()));
+            Check(off.Locked.Ms == 68 && off.Locked.Entry == "dfra", "off: 68 straight to Datapacket Frankfurt, got " + off.Locked.Ms + " via " + off.Locked.Entry);
+            Check(off.Unlocked.Ms == 58 && off.Unlocked.Entry == "dxb", "unlocked: 58 via dxb");
+            Lang.Ar = false;
+            var note = RouteAdvisor.NoteOf(g, off, "Europe");
+            Check(note != null && note.Kind == RouteNoteKind.GatewayClosed && note.Entry == "Dubai", "gateway-closed note");
+            Check(CardLogic.RouteText(note) == "Dubai is closed because you turned off \"Dubai as a way to Europe\" in Settings: your ping to Europe becomes about 68 instead of 58.",
+                  "English: " + CardLogic.RouteText(note));
+            Lang.Ar = true;
+            note = RouteAdvisor.NoteOf(g, off, "أوروبا");
+            Check(CardLogic.RouteText(note) == "دبي مقفولة لأنك طفّيت «دبي كطريق لأوروبا» من الإعدادات: بنقك لأوروبا بيصير تقريباً 68 بدل 58.",
+                  "Arabic: " + CardLogic.RouteText(note));
+
+            // the firewall plan follows: Dubai's relay is blocked only with the setting off
+            Func<IEnumerable<string>, List<string>> resolve = names => new List<string>();
+            foreach (var r in g.Regions) r.Picked = eu.Contains(r.Id);
+            var picked = g.Regions.Where(r => r.Picked).ToList();
+            var infoOn = LockPlanner.Plan(g, picked, null, LockPlanner.ClosedCidrs(g, new HashSet<string>(on.Close)), on.Gateways, resolve);
+            var infoOff = LockPlanner.Plan(g, picked, null, LockPlanner.ClosedCidrs(g, new HashSet<string>(off.Close)), off.Gateways, resolve);
+            Check(!infoOn.Block.Contains("185.25.183.163/32") && infoOn.Gateways.SequenceEqual(new[] { "dxb" }), "on: Dubai's relay stays open");
+            Check(infoOff.Block.Contains("185.25.183.163/32") && infoOff.Gateways.Count == 0, "off: Dubai's relay is blocked");
+            Check(infoOn.Block.Contains(g.Regions.First(r => r.Id == "sgp").Cidrs.First()), "on: Singapore is still blocked");
+            foreach (var r in g.Regions) r.Picked = false;
+
+            // North America with the setting off: Dubai can't be the G5 way in any more; a way to the picked region stays
+            var na = StrictLock.For(g, RegionIds(g, "Row"), RiyadhPings(), false);
+            Check(na.Blocked.Contains("dxb") && na.Kept != "dxb" && na.Locked.Known, "NA, off: Dubai blocked, never kept, still a way in");
         }
 
         static void StrictLockNorthAmericaFromRiyadh()
@@ -97,7 +160,7 @@ namespace PingBoost
             var g = SavedDeadlock();
             var na = RegionIds(g, "Row");
             // the owner's list has no US datacenter: the only ways there go through relays that reach Europe first
-            var plan = StrictLock.For(g, na, RiyadhPings());
+            var plan = StrictLock.For(g, na, RiyadhPings(), true);
             Check(plan.MayLeak && plan.Kept == "dxb", "G5 keeps dxb open: kept " + plan.Kept + ", closed " + string.Join(",", plan.Close.ToArray()));
             // with dxb open the picked route is 154, and the rule ran again: dfjr (186), bom2 (207) and maa2 are over 174
             Check(plan.Close.SequenceEqual(new[] { "gum" }) && !plan.Close.Contains("bom2") && !plan.Close.Contains("dfjr"),
@@ -118,7 +181,7 @@ namespace PingBoost
             // with a measured US ping (190 to iad: an assumption, not in §1.5) the lock is strict
             var ping = RiyadhPings();
             ping["iad"] = 190;
-            plan = StrictLock.For(g, na, ping);
+            plan = StrictLock.For(g, na, ping, true);
             Check(!plan.MayLeak && plan.Close.Contains("dxb") && plan.Close.Contains("dfjr"), "strict: " + string.Join(",", plan.Close.ToArray()));
             Check(plan.Locked.Ms == 190 && plan.Locked.Entry == "iad", "iad direct 190: " + plan.Locked.Ms);
             Check(Near(plan.Unlocked.Ms, 153) && plan.Unlocked.Entry == "dfra", "unlocked: ~153 via Datapacket Frankfurt: " + plan.Unlocked.Ms + " " + plan.Unlocked.Entry);
@@ -172,13 +235,13 @@ namespace PingBoost
             var g = SavedDeadlock();
             foreach (var def in g.RegionMap)
             {
-                var p = StrictLock.For(g, def.Ids.ToList(), RiyadhPings());
+                var p = StrictLock.For(g, def.Ids.ToList(), RiyadhPings(), true);
                 Check(p.Locked.Known, def.Key + ": a way to the picked region stays open");
             }
             // games without a hosting table (CS2) have no entry relays to close
             var cs2 = SavedDeadlock();
             cs2.HostPops = null;
-            Check(StrictLock.For(cs2, new List<string> { "sgp" }, RiyadhPings()).Close.Count == 0, "no hosting table: nothing closed");
+            Check(StrictLock.For(cs2, new List<string> { "sgp" }, RiyadhPings(), true).Close.Count == 0, "no hosting table: nothing closed");
         }
 
         static void CardTellsTheRouteCost()
@@ -221,32 +284,39 @@ namespace PingBoost
             Func<Region, string> via = r =>
             {
                 var rt = StrictLock.Best(g.Routes, new[] { r.Id }, ping, null);
-                return rt.Entry != r.Id && !g.Hosts(g.Regions.First(x => x.Id == rt.Entry)) ? rt.Entry : null;
+                return rt.Entry != r.Id && g.EntryPlace(g.Regions.First(x => x.Id == rt.Entry)) ? rt.Entry : null;
             };
             var all = RegionGroups.Build(g, null, null, latency, via);
             var sea = all.First(c => c.Def.Key == "SEAsia");
-            Check(sea.Ping == 106 && sea.Via == "dxb", "SE Asia tile: 106 via dxb, got " + sea.Ping + " via " + sea.Via);
+            // Dubai is one of SE Asia's datacenters now: the tile takes its best member, 31 straight there
+            Check(sea.Ping == 31 && sea.Via == null, "SE Asia tile: 31 at Dubai, got " + sea.Ping + " via " + sea.Via);
             var eu = all.First(c => c.Def.Key == "Europe");
             Check(eu.Ping == 58 && eu.Via == "dxb", "Europe tile: 58 via dxb (vie), got " + eu.Ping + " via " + eu.Via);
-            // locked to SE Asia: the open set has no dxb/dfjr/bom2 and no other region
-            var plan = StrictLock.For(g, RegionIds(g, "SEAsia"), ping);
+            // locked to SE Asia by hand without Dubai: the open set has no dxb/dfjr/bom2 and no other region
+            var plan = StrictLock.For(g, RegionIds(g, "SEAsia").Where(id => id != "dxb").ToList(), ping, true);
             Func<string, bool> open = id => !plan.Close.Contains(id) && !plan.Blocked.Contains(id);
-            all = RegionGroups.Build(g, null, null, r => StrictLock.Best(g.Routes, new[] { r.Id }, ping, open).Ms, null);
+            all = RegionGroups.Build(g, null, null, r => r.Id == "dxb" ? double.MaxValue : StrictLock.Best(g.Routes, new[] { r.Id }, ping, open).Ms, null);
             sea = all.First(c => c.Def.Key == "SEAsia");
             Check(sea.Ping == 197 && sea.Via == null, "locked SE Asia tile: 197 direct, got " + sea.Ping);
+            // a Europe lock keeps Dubai as the way in: the Europe tile stays 58 via dxb
+            plan = StrictLock.For(g, RegionIds(g, "Europe"), ping, true);
+            open = id => !plan.Close.Contains(id) && !plan.Blocked.Contains(id);
+            var rt2 = StrictLock.Best(g.Routes, RegionIds(g, "Europe"), ping, open);
+            Check(rt2.Ms == 58 && rt2.Entry == "dxb" && g.EntryPlace(g.Regions.First(r => r.Id == "dxb")), "Europe locked: 58 via Dubai, named as a way in");
             // without a via function nothing is named
             Check(RegionGroups.Build(g, null, null, latency).All(c => c.Via == null), "no via: no name");
         }
 
-        // Review fix 1: one lost ping round to Dubai must not make an SE Asia lock from Riyadh leaky again.
+        // Review fix 1: one lost ping round to Dubai must not make a lock from Riyadh leaky again. Dubai kept as the way in
+        // for Europe is an entry like any relay: without a ping it is closed (it has a path to SE Asia).
         static void StrictLockLostPingStaysStrict()
         {
             var g = SavedDeadlock();
             var ping = RiyadhPings();
             ping.Remove("dxb");
-            var plan = StrictLock.For(g, RegionIds(g, "SEAsia"), ping);
-            Check(plan.Close.Contains("dxb") && plan.Close.Contains("dfjr") && !plan.MayLeak, "dxb closed without a ping: " + string.Join(",", plan.Close.ToArray()));
-            Check(plan.Locked.Ms == 197 && plan.Locked.Entry == "sgp", "still 197 direct");
+            var plan = StrictLock.For(g, RegionIds(g, "Europe"), ping, true);
+            Check(plan.Close.Contains("dxb") && !plan.MayLeak, "dxb closed without a ping: " + string.Join(",", plan.Close.ToArray()));
+            Check(plan.Locked.Ms == 68 && plan.Locked.Entry == "dfra", "68 straight to Datapacket Frankfurt: " + plan.Locked.Ms + " via " + plan.Locked.Entry);
             Check(plan.Reason["dxb"].To != null && !plan.Reason["dxb"].Known, "the reason has a path, no number");
 
             // the last good ping stands in for a failed test for 30 minutes
@@ -285,7 +355,9 @@ namespace PingBoost
             Run("ClosedEntryNoteNeedsTenMs", ClosedEntryNoteNeedsTenMs);
             Run("RoutesShortestPaths", RoutesShortestPaths);
             Run("StrictLockEuropeKeepsDubai", StrictLockEuropeKeepsDubai);
-            Run("StrictLockSeAsiaClosesDubai", StrictLockSeAsiaClosesDubai);
+            Run("StrictLockSeAsiaKeepsDubai", StrictLockSeAsiaKeepsDubai);
+            Run("StrictLockSeAsiaWithoutDubai", StrictLockSeAsiaWithoutDubai);
+            Run("StrictLockEuropeDubaiSetting", StrictLockEuropeDubaiSetting);
             Run("StrictLockNorthAmericaFromRiyadh", StrictLockNorthAmericaFromRiyadh);
             Run("StrictLockBoundaryAndGuard", StrictLockBoundaryAndGuard);
             Run("CardTellsTheRouteCost", CardTellsTheRouteCost);

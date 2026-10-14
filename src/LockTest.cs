@@ -365,6 +365,7 @@ namespace PingBoost
             public List<string> Picked = new List<string>();
             public List<string> Block;    // the addresses the rule blocks (null = no lock)
             public List<string> Allow = new List<string>();
+            public List<string> Gateways = new List<string>(); // hosting datacenters kept open as entries (Dubai under a Europe lock)
         }
 
         public class Line

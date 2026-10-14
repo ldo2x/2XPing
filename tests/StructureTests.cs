@@ -235,14 +235,21 @@ namespace PingBoost
             g.HostPops.Add("found");
             var closed = new HashSet<string> { "closed" };
             Func<IEnumerable<string>, List<string>> resolve = specs => specs.ToList();
-            var info = LockPlanner.Plan(g, new List<Region> { fra }, null, LockPlanner.ClosedCidrs(g, closed), resolve);
+            var info = LockPlanner.Plan(g, new List<Region> { fra }, null, LockPlanner.ClosedCidrs(g, closed), null, resolve);
             string block = string.Join(" ", info.Block.ToArray());
             Check(block == "10.0.2.0/24 10.0.3.0/24 10.0.5.0/24", "other hosts + the closed relay: " + block);
             Check(info.Mode == "valve-all" && info.Program == null && info.Protocol == null && info.Ports == null, "whole PC, any protocol");
             Check(info.Active && info.Picked.SequenceEqual(new[] { "fra" }), "picked");
             // a picked datacenter's range is never blocked, even when a closed relay shares it
-            var shared = LockPlanner.Plan(g, new List<Region> { fra }, null, new List<string> { "10.0.1.0/24" }, resolve);
+            var shared = LockPlanner.Plan(g, new List<Region> { fra }, null, new List<string> { "10.0.1.0/24" }, null, resolve);
             Check(!shared.Block.Contains("10.0.1.0/24"), "picked range stays open");
+            // a gateway the strict lock keeps open as an entry is not blocked for hosting; closed by R3, it is
+            var kept = LockPlanner.Plan(g, new List<Region> { fra }, null, new List<string>(), new[] { "dxb" }, resolve);
+            Check(string.Join(" ", kept.Block.ToArray()) == "10.0.2.0/24" && kept.Gateways.SequenceEqual(new[] { "dxb" }),
+                  "gateway kept open: " + string.Join(" ", kept.Block.ToArray()));
+            var keptClosed = LockPlanner.Plan(g, new List<Region> { fra }, null, LockPlanner.ClosedCidrs(g, new HashSet<string> { "dxb" }), new[] { "dxb" }, resolve);
+            Check(keptClosed.Block.Contains("10.0.3.0/24"), "gateway closed by R3: blocked");
+            Check(info.Gateways.Count == 0, "no gateway: none listed");
         }
 
         static void LockPlannerLockSpaceMinusPickedMinusAllow()
@@ -259,7 +266,7 @@ namespace PingBoost
                 if (l.Contains("allow")) return new List<string> { "10.3.0.0/16" };
                 return new List<string>();
             };
-            var info = LockPlanner.Plan(g, new List<Region> { pick }, @"C:\Games\Overwatch.exe", new List<string>(), resolve);
+            var info = LockPlanner.Plan(g, new List<Region> { pick }, @"C:\Games\Overwatch.exe", new List<string>(), null, resolve);
             Check(asked.Contains("space") && asked.Contains("allow"), "both lists resolved");
             Check(!LockTest.Blocks(info.Block, "10.1.2.3"), "picked datacenter open");
             Check(!LockTest.Blocks(info.Block, "10.3.2.3"), "service hosts (allow) never blocked");
@@ -268,7 +275,7 @@ namespace PingBoost
             Check(info.Mode == "game-udp" && info.Protocol == "UDP" && info.Program == @"C:\Games\Overwatch.exe" && info.Ports == "1-3723,3725-65535",
                   "the game's own UDP on its ports");
             // without the exe (never happens for LockSpace games: LockServers asks for it) no ports either
-            var noExe = LockPlanner.Plan(g, new List<Region> { pick }, null, new List<string>(), resolve);
+            var noExe = LockPlanner.Plan(g, new List<Region> { pick }, null, new List<string>(), null, resolve);
             Check(noExe.Protocol == null && noExe.Ports == null, "no exe: no protocol, no ports");
         }
 
@@ -868,7 +875,20 @@ namespace PingBoost
             Check(DeadlockLog.Resolve(g, new ConsoleLine { Code = "fra" }, out id, out dc, out region, out onPicked), "Frankfurt hosts");
             Check(id == "fra" && dc != null && dc.Id == "fra" && onPicked && region != null, "Frankfurt, picked: " + region);
             Check(DeadlockLog.Resolve(g, new ConsoleLine { Code = "vie" }, out id, out dc, out region, out onPicked) && !onPicked, "Vienna not picked");
-            Check(!DeadlockLog.Resolve(g, new ConsoleLine { Code = "dxb" }, out id, out dc, out region, out onPicked), "Dubai is a relay only: no answer");
+            Check(!DeadlockLog.Resolve(g, new ConsoleLine { Code = "dfjr" }, out id, out dc, out region, out onPicked), "Fujairah is a relay only: no answer");
+            // Dubai hosts SE Asia (two SE Asia-locked matches, 2026-10-14): outside a Europe lock, inside an SE Asia one
+            Lang.Ar = false;
+            var europe = new HashSet<string>(g.RegionMap.First(d => d.Key == "Europe").Ids);
+            var seAsia = new HashSet<string>(g.RegionMap.First(d => d.Key == "SEAsia").Ids);
+            Check(DeadlockLog.Resolve(g, new ConsoleLine { Code = "dxb" }, europe, out id, out dc, out region, out onPicked) &&
+                  id == "dxb" && dc != null && dc.Id == "dxb" && region == "SE Asia" && !onPicked, "Dubai under a Europe lock: SE Asia, outside (" + region + ")");
+            Check(DeadlockLog.Resolve(g, new ConsoleLine { Code = "dxb" }, seAsia, out id, out dc, out region, out onPicked) && onPicked,
+                  "Dubai under an SE Asia lock: on the picked servers");
+            // the lock kept it open as the way in: the card points to the setting
+            var info = new LockTest.LockInfo { Picked = europe.ToList(), Gateways = new List<string> { "dxb" } };
+            Check(LockScope.KeptGateway(info, "dxb") && !LockScope.KeptGateway(info, "fra") && !LockScope.KeptGateway(null, "dxb"), "kept gateway");
+            Check(!LockScope.KeptGateway(new LockTest.LockInfo { Picked = europe.ToList() }, "dxb"), "setting off: not kept");
+            Lang.Ar = true;
             Check(!DeadlockLog.Resolve(g, new ConsoleLine { Code = "zzz" }, out id, out dc, out region, out onPicked), "unknown place: no answer");
         }
 
@@ -905,15 +925,24 @@ namespace PingBoost
             fra.Picked = false; // unticked after the lock
             sgp.Picked = true;  // ticked after the lock
             Check(LockScope.Picked(picks, fra) && !LockScope.Picked(picks, sgp), "the lock's picks win over the ticks");
-            Check(!LockScope.LockedOut(picks, null, g, fra), "Frankfurt stays open");
-            Check(LockScope.LockedOut(picks, null, g, sgp), "Singapore stays blocked although ticked");
+            Check(!LockScope.LockedOut(picks, null, null, g, fra), "Frankfurt stays open");
+            Check(LockScope.LockedOut(picks, null, null, g, sgp), "Singapore stays blocked although ticked");
             Check(!LockScope.Picked(null, fra) && LockScope.Picked(null, sgp), "no lock: the ticks");
-            Check(!LockScope.LockedOut(null, null, g, sgp), "M4: not the locked game (no picks): nothing is locked out");
+            Check(!LockScope.LockedOut(null, null, null, g, sgp), "M4: not the locked game (no picks): nothing is locked out");
+            var dfjr = g.Regions.FirstOrDefault(r => r.Id == "dfjr");
+            if (dfjr != null)
+            {
+                Check(LockScope.LockedOut(picks, new HashSet<string> { "dfjr" }, null, g, dfjr), "a closed entry relay is locked out");
+                Check(!LockScope.LockedOut(picks, null, null, g, dfjr), "an open relay is not");
+            }
+            // Dubai hosts SE Asia: a Europe lock blocks it, unless it kept it open as the way in (and didn't close it)
             var dxb = g.Regions.FirstOrDefault(r => r.Id == "dxb");
             if (dxb != null)
             {
-                Check(LockScope.LockedOut(picks, new HashSet<string> { "dxb" }, g, dxb), "a closed entry relay is locked out");
-                Check(!LockScope.LockedOut(picks, null, g, dxb), "an open relay is not");
+                var gw = new List<string> { "dxb" };
+                Check(LockScope.LockedOut(picks, null, null, g, dxb), "setting off: Dubai is blocked like any host");
+                Check(!LockScope.LockedOut(picks, null, gw, g, dxb), "kept open as the way in: not blocked");
+                Check(LockScope.LockedOut(picks, new HashSet<string> { "dxb" }, gw, g, dxb), "kept as an entry but closed by R3: blocked");
             }
         }
 
@@ -924,13 +953,13 @@ namespace PingBoost
             Func<IEnumerable<string>, List<string>> resolve = names => new List<string>();
             foreach (var r in g.Regions) r.Picked = g.Hosts(r);
             var all = g.Regions.Where(r => r.Picked).ToList();
-            var plan = StrictLock.For(g, all.Select(r => r.Id).ToList(), StrictLock.Pings(g));
+            var plan = StrictLock.For(g, all.Select(r => r.Id).ToList(), StrictLock.Pings(g), true);
             var closed = LockPlanner.ClosedCidrs(g, new HashSet<string>(plan.Close));
-            var info = LockPlanner.Plan(g, all, null, closed, resolve);
+            var info = LockPlanner.Plan(g, all, null, closed, null, resolve);
             Check(LockPlanner.NothingToBlock(info), "every region picked: nothing to block (" + info.Block.Count + ")");
             foreach (var r in g.Regions) r.Picked = r.Id == "fra";
             var one = g.Regions.Where(r => r.Picked).ToList();
-            Check(!LockPlanner.NothingToBlock(LockPlanner.Plan(g, one, null, new List<string>(), resolve)), "one picked: the others are blocked");
+            Check(!LockPlanner.NothingToBlock(LockPlanner.Plan(g, one, null, new List<string>(), null, resolve)), "one picked: the others are blocked");
             Check(LockPlanner.NothingToBlock(null), "no plan");
         }
 

@@ -15,9 +15,12 @@ namespace PingBoost
 
         // The lock on the picked datacenters. resolve: IpLists.Resolve (named lists -> address ranges).
         // exe: games locked by "everything except the picked datacenters" block only their own UDP (null = whole PC).
+        // gateways: the hosting datacenters the strict lock keeps open as entries (LockPlan.Gateways; null = none):
+        // not blocked for hosting, only when closed (closedCidrs).
         public static LockTest.LockInfo Plan(Game g, List<Region> picked, string exe, List<string> closedCidrs,
-                                             Func<IEnumerable<string>, List<string>> resolve)
+                                             ICollection<string> gateways, Func<IEnumerable<string>, List<string>> resolve)
         {
+            var open = new HashSet<string>(gateways ?? new string[0]);
             List<string> block;
             var allow = resolve(g.LockAllow ?? new string[0]);
             if (g.LockSpace != null)
@@ -28,13 +31,13 @@ namespace PingBoost
                 var keep = new HashSet<string>(picked.SelectMany(r => r.Cidrs));
                 // the other regions' datacenters, and the entry relays the strict lock closes; the other relays
                 // stay open: the game enters Valve's network through them
-                block = g.Regions.Where(r => !r.Picked && !r.Detected && g.Hosts(r)).SelectMany(r => r.Cidrs).Concat(closedCidrs)
+                block = g.Regions.Where(r => !r.Picked && !r.Detected && g.Hosts(r) && !open.Contains(r.Id)).SelectMany(r => r.Cidrs).Concat(closedCidrs)
                                  .Where(c => !keep.Contains(c)).ToList();
             }
             var info = new LockTest.LockInfo
             {
                 Active = true, Picked = picked.Select(r => r.Id).ToList(), Block = block,
-                Allow = allow,
+                Allow = allow, Gateways = open.OrderBy(x => x, StringComparer.Ordinal).ToList(),
                 Mode = g.LockSpace != null ? "game-udp" : "valve-all",
                 Program = exe, Protocol = exe == null ? null : "UDP",
             };
@@ -87,12 +90,20 @@ namespace PingBoost
             return picks != null ? picks.Contains(r.Id) : r.Picked;
         }
 
-        // A row the lock that is on blocks: a hosting datacenter it didn't pick, or an entry relay it closed.
-        // Only for the locked game (another game has no rule).
-        public static bool LockedOut(HashSet<string> picks, ICollection<string> closed, Game g, Region r)
+        // A row the lock that is on blocks: a hosting datacenter it didn't pick (except a gateway it kept open as an
+        // entry), or an entry relay it closed. Only for the locked game (another game has no rule).
+        public static bool LockedOut(HashSet<string> picks, ICollection<string> closed, ICollection<string> gateways, Game g, Region r)
         {
             if (picks == null || g == null || !g.CanLock || r == null || r.NoRelay || picks.Contains(r.Id)) return false;
-            return g.Hosts(r) || (closed != null && closed.Contains(r.Id));
+            if (closed != null && closed.Contains(r.Id)) return true;
+            return g.Hosts(r) && !(gateways != null && gateways.Contains(r.Id));
+        }
+
+        // The lock that is on kept this gateway open as a way in, so a match on it is outside the lock because of the
+        // setting (Prefs.DubaiWayIn), not because the lock failed.
+        public static bool KeptGateway(LockTest.LockInfo info, string id)
+        {
+            return info != null && info.Gateways != null && id != null && info.Gateways.Contains(id);
         }
     }
 
@@ -132,6 +143,14 @@ namespace PingBoost
                 note.Kind = RouteNoteKind.ClosedEntry;
                 note.Entry = Places.PlaceName(pop(entry));
                 note.Reaches = Places.RegionOfPop(g, plan.Reason[entry].To);
+                return note;
+            }
+            // the best way in was a gateway (Dubai) the lock blocks: because the player turned its setting off (it would be
+            // an entry otherwise), or because the lock picks some of its region by hand and leaves it out ("pick Dubai too")
+            if (plan.Blocked.Contains(entry) && costs && g.Gateway(pop(entry)))
+            {
+                note.Kind = DeadlockData.EntryGateways(plan.Picked, true).Contains(entry) ? RouteNoteKind.GatewayClosed : RouteNoteKind.BlockedHost;
+                note.Entry = Places.PlaceName(pop(entry));
                 return note;
             }
             if (plan.Blocked.Contains(entry) && costs)

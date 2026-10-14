@@ -84,7 +84,8 @@ namespace PingBoost
             Check(g.RegionMap != null && g.RegionMap.Count > 0, "Deadlock has a RegionMap after load");
             foreach (var d in g.RegionMap)
             {
-                Check(!d.Ids.Contains("dxb") && !d.Ids.Contains("dfjr") && !d.Ids.Contains("bom2"), d.Key + " contains a relay-only datacenter");
+                Check(!d.Ids.Contains("dfjr") && !d.Ids.Contains("bom2"), d.Key + " contains a relay-only datacenter");
+                Check(!d.Ids.Contains("dxb") || d.Key == "SEAsia", d.Key + " contains Dubai (SE Asia's)");
                 foreach (var id in d.Ids)
                     Check(g.Regions.Any(r => r.Id == id && g.Hosts(r)), d.Key + " has " + id + " which is not a hosting datacenter");
             }
@@ -208,7 +209,7 @@ namespace PingBoost
             Check(ids.Count == ids.Distinct().Count(), "no duplicate ids");
             Check(ids.Contains("fra") && ids.Contains("syd"), "has fra and syd");
             Check(!ids.Contains("iad") && !ids.Contains("lax"), "no North America datacenter");
-            Check(!ids.Contains("dxb"), "no relay-only datacenter");
+            Check(!ids.Contains("dxb") && !ids.Contains("dfjr"), "no relay-only datacenter, no Dubai (SE Asia's)");
         }
 
         static void PickIdsSkipsNonHostingAndDuplicates()

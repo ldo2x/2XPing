@@ -133,7 +133,7 @@ namespace PingBoost
         static List<string> OverwatchBlock(Game g, params string[] picked)
         {
             var regions = g.Regions.Where(r => picked.Contains(r.Id)).ToList();
-            return LockPlanner.Plan(g, regions, "Overwatch.exe", new List<string>(), IpLists.Resolve).Block;
+            return LockPlanner.Plan(g, regions, "Overwatch.exe", new List<string>(), null, IpLists.Resolve).Block;
         }
 
         static void OverwatchServiceHostsStayOpen()

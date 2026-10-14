@@ -18,6 +18,7 @@ namespace PingBoost
         public RouteNote LockRoute;           // what the lock that is on costs
         public string MatchRegion, MatchEntry, MatchPlace, CurrentServer;
         public bool MatchOnPicked, MatchViaRelay;
+        public bool MatchKeptGateway;         // the match is on a gateway the lock kept open (MatchState.KeptGateway)
         public int CurrentMs = -1;
         public bool NoMatchLong;              // locked a while and no match found yet
         public bool GameLogOn;                // Deadlock's console log is there
@@ -60,6 +61,7 @@ namespace PingBoost
                 MatchViaRelay = f.MatchViaRelay,
                 MatchEntry = f.MatchEntry,
                 MatchPlace = f.MatchPlace,
+                MatchKeptGateway = locked && f.MatchKeptGateway,
                 // Deadlock without its console log: how to switch it on (a link in the simple layout, the steps in the advanced one)
                 Hint = !DeadlockData.Is(g) || f.GameLogOn ? ExactHint.None : f.Simple && !f.DevMode ? ExactHint.Link : ExactHint.Shown,
                 CurrentServer = f.CurrentServer,

@@ -146,7 +146,7 @@ namespace PingBoost
         }
 
         // Deadlock's regions are Valve's matchmaking regions; each takes the datacenters that serve it (DeadlockData.Hosting,
-        // Johannesburg in Europe). Relay-only locations (Dubai, Fujairah, India, Guam) are in no region, hosts without a
+        // Johannesburg in Europe, Dubai in SE Asia). Relay-only locations (Fujairah, India, Guam) are in no region, hosts without a
         // relay (Helsinki, Falkenstein, US West) can't be locked so they are never members, and Russia has no datacenter
         // of its own: none of them shows up as a choice.
         public static List<RegionDef> DeadlockMap(Game g)

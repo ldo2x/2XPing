@@ -68,7 +68,7 @@ namespace PingBoost
         // ticks, never ticks changed after the lock (M3, M4).
         bool LockedOut(Game g, Region r)
         {
-            return LockScope.LockedOut(LockPicks(g), lockClosed, g, r);
+            return LockScope.LockedOut(LockPicks(g), lockClosed, lockInfo != null ? lockInfo.Gateways : null, g, r);
         }
 
         // The datacenters the lock that is on picked, when it is g's lock; null otherwise.
@@ -851,14 +851,24 @@ namespace PingBoost
         {
             Telemetry.Send("use", null, -1, "settings");
             bool resetAsked;
-            if (SettingsDialog.Show(this, out resetAsked))
-            {
+            bool dubaiBefore = Prefs.DubaiWayIn;
+            bool rebuild = SettingsDialog.Show(this, out resetAsked);
+            bool dubaiChanged = Prefs.DubaiWayIn != dubaiBefore;
+            if (rebuild || dubaiChanged)
                 Telemetry.Send("settings", null, -1, (Prefs.Simple ? "simple" : "advanced") + ", " + (Lang.Ar ? "ar" : "en"),
                     new Dictionary<string, object> { { "mode", Prefs.Simple ? "simple" : "advanced" }, { "lang", Lang.Ar ? "ar" : "en" },
-                                                     { "hidden_games", string.Join(",", Prefs.HiddenGames) }, { "autotest", Prefs.AutoTest } });
+                                                     { "hidden_games", string.Join(",", Prefs.HiddenGames) }, { "autotest", Prefs.AutoTest },
+                                                     { "dubai_way_in", Prefs.DubaiWayIn } });
+            if (rebuild)
+            {
                 if (busy) pendingRebuild = true;
                 else RebuildUi();
             }
+            else if (dubaiChanged) UpdateCard(); // the card's note on what the lock costs changes with it
+            // the lock that is on keeps what it was applied with: the new choice counts from the next lock
+            if (dubaiChanged && lockSummary != null && DeadlockData.Is(lockGame))
+                Msg(T("The Dubai setting counts from your next lock. Unlock and lock again to use it now.",
+                      "إعداد دبي يمشي من التثبيت الجاي. فك التثبيت وثبّت من جديد عشان يمشي دحين."));
             if (resetAsked) ResetEverything();
         }
 
@@ -1177,11 +1187,14 @@ namespace PingBoost
             if (line == null || !DeadlockLog.Resolve(g, line, LockPicks(g), out id, out dc, out region, out onPicked)) return false;
             string place = dc != null ? Places.PlaceName(dc) : id.ToUpperInvariant();
             bool ok = !LockedFor(g) || onPicked;
+            // outside the lock on a gateway the lock kept open as the way in (Dubai): the setting, not a failed lock
+            bool keptGateway = !ok && LockScope.KeptGateway(lockInfo, id);
             dcSinceLock = true;
             matchSinceLock = true;
             if (CurrentGame == g)
             {
                 SetMatch(region, onPicked, false, null, place);
+                match.KeptGateway = keptGateway;
                 // the row of that datacenter is "here"; a place without a row (no relay) clears every row
                 var row = dc != null && g.Regions.Contains(dc) ? dc : null;
                 if (g.Regions.Any(r => r.Here != (r == row)))
@@ -1193,8 +1206,10 @@ namespace PingBoost
             }
             SetDetect(T("On: ", "إنت على: ") + place, ok ? Theme.Good : Theme.Warn);
             if (!ok)
-                Issues.Report("lock_outside", g.Name + " on " + id + " (console log) while locked on " + lockSummary,
-                    new Dictionary<string, object> { { "game", g.Name }, { "datacenter", id }, { "source", "console log" }, { "locked", lockSummary } },
+                Issues.Report("lock_outside", g.Name + " on " + id + " (console log) while locked on " + lockSummary +
+                                              (keptGateway ? " (kept open as a way in)" : ""),
+                    new Dictionary<string, object> { { "game", g.Name }, { "datacenter", id }, { "source", "console log" }, { "locked", lockSummary },
+                                                     { "gateway_open", keptGateway } },
                     g.Icon + id);
             if (manual || place != lastAutoServer)
             {
@@ -1208,7 +1223,10 @@ namespace PingBoost
                                 ok ? ToastKind.Good : ToastKind.Warn);
                 }
                 if (!ok)
-                    AdvancedMsg(T("You're on " + place + ", which isn't one of your picked servers. Restart the game and queue again.",
+                    AdvancedMsg(keptGateway
+                        ? T("You're on " + place + ", which isn't one of your picked servers. ", "إنت على " + place + "، وهو مو من السيرفرات اللي اخترتها. ") +
+                          CardLogic.GatewayOutsideText()
+                        : T("You're on " + place + ", which isn't one of your picked servers. Restart the game and queue again.",
                           "إنت على " + place + "، وهو مو من السيرفرات اللي اخترتها. اقفل اللعبة وافتحها من جديد، وبعدين دوّر مباراة."), ToastKind.Warn);
             }
             lastAutoServer = place;
@@ -1243,7 +1261,7 @@ namespace PingBoost
                 {
                     var rt = route(r);
                     Region e;
-                    return rt.Known && rt.Entry != r.Id && latency(r) >= rt.Ms && byId.TryGetValue(rt.Entry, out e) && !g.Hosts(e) ? Places.PlaceName(e) : null;
+                    return rt.Known && rt.Entry != r.Id && latency(r) >= rt.Ms && byId.TryGetValue(rt.Entry, out e) && g.EntryPlace(e) ? Places.PlaceName(e) : null;
                 };
                 return RegionGroups.Build(g, g.AppId == "1422450" ? stats.Current.Activity : null, stats.Current.PlayersOf, latency, via);
             }
@@ -1292,6 +1310,7 @@ namespace PingBoost
                 MatchViaRelay = match.ViaRelay,
                 MatchEntry = match.Entry,
                 MatchPlace = match.Place,
+                MatchKeptGateway = match.KeptGateway,
                 CurrentServer = match.Server,
                 CurrentMs = match.Ms,
                 NoMatchLong = noMatchLong,
@@ -1301,7 +1320,7 @@ namespace PingBoost
                 Activity = stats.Current.Activity,
                 PlayersOf = stats.Current.PlayersOf,
                 SeenZones = () => SeenZones(g),
-                RoutePreview = chosen => RouteAdvisor.NoteOf(g, StrictLock.For(g, RegionGroups.PickIds(g, chosen), StrictLock.Pings(g)),
+                RoutePreview = chosen => RouteAdvisor.NoteOf(g, StrictLock.For(g, RegionGroups.PickIds(g, chosen), StrictLock.Pings(g), Prefs.DubaiWayIn),
                                                 CardLogic.JoinNames(chosen.Select(c => c.Name).ToList()))
             });
             // "Pick by hand" and "Test ping" only in the simple layout: the advanced one always shows the list and the test button
@@ -1420,6 +1439,7 @@ namespace PingBoost
             var g = CurrentGame;
             item.SubItems[ColRegion].Text = (r.Here ? T("» ", "« ") : "") + r.Name + (r.Here ? T("  (you are here)", "  (إنت هنا)") : "") +
                                             (g != null && !g.Hosts(r) ? T("   ·  relay only", "   ·  وسيط بس") : "") +
+                                            (g != null && g.Gateway(r) ? T("   ·  also a way in to Europe", "   ·  وكمان طريق لأوروبا") : "") +
                                             (r.NoRelay ? T("   ·  can't be locked (Valve lists no relay here)", "   ·  ما ينثبّت (Valve ما تعطي وسيط له)") : "") +
                                             (devMode ? "   ·  ‎" + r.Cidrs.Count + " ranges‎" : "");
             item.SubItems[ColRegion].ForeColor = r.Here || r.Picked ? Theme.Accent : (r.Detected ? Theme.Warn : Theme.TextC);
@@ -2156,7 +2176,7 @@ namespace PingBoost
             RouteNote route = null;
             if (g.Provider == Provider.Valve && g.Routes != null)
             {
-                plan = StrictLock.For(g, picked.Select(r => r.Id).ToList(), StrictLock.Pings(g));
+                plan = StrictLock.For(g, picked.Select(r => r.Id).ToList(), StrictLock.Pings(g), Prefs.DubaiWayIn);
                 route = RouteAdvisor.NoteOf(g, plan, cardNames);
                 WarnLongerRoute(g, plan, route, fromCard);
             }
@@ -2215,7 +2235,7 @@ namespace PingBoost
             {
                 try
                 {
-                    var info = LockPlanner.Plan(g, picked, exe, closedCidrs, IpLists.Resolve);
+                    var info = LockPlanner.Plan(g, picked, exe, closedCidrs, plan != null ? plan.Gateways : null, IpLists.Resolve);
                     if (LockPlanner.NothingToBlock(info)) { nothingToBlock(); return; } // no rule, no rule check
                     var block = info.Block;
                     FirewallWorker.Run(() =>
@@ -2244,7 +2264,8 @@ namespace PingBoost
                             Telemetry.Send("lock", Telemetry.Server, -1, n + " ranges blocked, mode " + info.Mode +
                                            (skipped > 0 ? ", " + skipped + " bad entries skipped" : "") +
                                            (closed.Count > 0 ? ", relays closed " + string.Join(",", closed.ToArray()) : "") +
-                                           (plan != null && plan.MayLeak ? ", kept open " + plan.Kept : ""));
+                                           (plan != null && plan.MayLeak ? ", kept open " + plan.Kept : "") +
+                                           (plan != null && plan.Gateways.Count > 0 ? ", gateway open " + string.Join(",", plan.Gateways.ToArray()) : ""));
                             if (devMode) DevOut("lock mode " + info.Mode + ": " + info.Scope);
                             btnLock.Enabled = true;
                             UpdateLockBar();

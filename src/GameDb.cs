@@ -69,6 +69,12 @@ namespace PingBoost
         // The regions the player chooses between on the main screen (null = none, e.g. Arena Breakout). Deadlock fills it at load.
         public List<RegionDef> RegionMap;
         public bool Hosts(Region r) { return HostPops == null || HostPops.Contains(r.Id); }
+        // Valve: hosting datacenters that are also an entry for other regions (Deadlock: Dubai, DeadlockData.Gateways);
+        // null = none. A capture alone can't tell one carrying the match from one used as the way in.
+        public HashSet<string> GatewayPops;
+        public bool Gateway(Region r) { return GatewayPops != null && r != null && GatewayPops.Contains(r.Id); }
+        // A place the game can enter Valve's network at: a relay-only POP or a gateway ("via Dubai" on a tile).
+        public bool EntryPlace(Region r) { return r != null && (!Hosts(r) || Gateway(r)); }
         // Valve: the usual ping between two of its datacenters over its own network (GetSDRConfig "typical_pings")
         public Dictionary<string, int> Backbone = new Dictionary<string, int>();
         // ...and the shortest paths over them (built with Backbone at each config load; null = not loaded)
@@ -280,7 +286,7 @@ namespace PingBoost
             return new List<Game>
             {
                 new Game { Name = "Deadlock", Icon = "deadlock", Released = true, Provider = Provider.Valve, AppId = "1422450", Processes = new[] {"deadlock", "project8"},
-                    HostPops = new HashSet<string>(DeadlockData.Hosting.Keys),
+                    HostPops = new HashSet<string>(DeadlockData.Hosting.Keys), GatewayPops = new HashSet<string>(DeadlockData.Gateways),
                     NoteEn = "Tick the servers you want to play on, then press Lock my servers.",
                     NoteAr = "علّم (✓) على السيرفرات اللي تبغى تلعب عليها، وبعدين اضغط «ثبّت سيرفراتي»." },
                 new Game { Name = "Counter-Strike 2", Icon = "cs2", Provider = Provider.Valve, AppId = "730", SteamAppId = "730", Processes = new[] {"cs2"},

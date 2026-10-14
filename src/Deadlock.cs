@@ -14,8 +14,10 @@ namespace PingBoost
         public static bool Is(Game g) { return g != null && g.Icon == "deadlock"; }
 
         // Valve datacenter (SDR POP id) -> the matchmaking region (region_mode) whose matches it hosts.
-        // South Africa (jnb) is in the Europe pool. India (bom/bom2/maa/maa2), Guam (gum), Dubai (dxb) and
-        // Fujairah (dfjr) host no Deadlock region: they are only relays, see RelayOnly.
+        // South Africa (jnb) is in the Europe pool. Dubai (dxb) hosts SE Asia matches (two SE Asia-locked matches from
+        // Riyadh, 2026-10-14: the console log's session delays, Mumbai 27 and Singapore 76 ms, fit only Dubai) and is a
+        // gateway too, see Gateways. India (bom/bom2/maa/maa2), Guam (gum) and Fujairah (dfjr) host no Deadlock region:
+        // they are only relays, see RelayOnly.
         // Helsinki (hel), Falkenstein (fsn) and US West (eat, alias mwh) host matches but Valve lists no relay for
         // them, so the lock can never block them: they show as "can't be locked" rows (Game.NoRelayHosts), as do the
         // relay-less Datapacket sites dsto and dlhr below.
@@ -28,7 +30,7 @@ namespace PingBoost
             // unverified. Listed as hosts so they show as "can't be locked" rows like Helsinki (they can't be blocked anyway).
             {"dsto","Europe"}, {"dlhr","Europe"},
             {"iad","Row"}, {"atl","Row"}, {"ord","Row"}, {"dfw","Row"}, {"lax","Row"}, {"sea","Row"}, {"eat","Row"}, {"mwh","Row"},
-            {"sgp","SEAsia"}, {"hkg","SEAsia"}, {"tyo","SEAsia"}, {"seo","SEAsia"},
+            {"sgp","SEAsia"}, {"hkg","SEAsia"}, {"tyo","SEAsia"}, {"seo","SEAsia"}, {"dxb","SEAsia"},
             {"gru","SAmerica"}, {"eze","SAmerica"}, {"lim","SAmerica"}, {"scl","SAmerica"},
             {"syd","Oceania"},
         };
@@ -37,8 +39,38 @@ namespace PingBoost
         // rides it to the match server).
         public static readonly HashSet<string> RelayOnly = new HashSet<string>
         {
-            "dxb", "dfjr", "bom", "bom2", "maa", "maa2", "gum",
+            "dfjr", "bom", "bom2", "maa", "maa2", "gum",
         };
+
+        // Gateways: hosting datacenters that are also the usual way into Valve's network for the players near them
+        // (Dubai: Gulf players reach Europe through it, ~58 ms from Riyadh against ~68 straight). A lock that picks none
+        // of a gateway's region keeps it open as an entry relay (judged by R3 like any relay, never blocked just for
+        // hosting) unless the player turned that off in Settings (Prefs.DubaiWayIn): then it is blocked like any host
+        // the lock didn't pick. A match on it under such a lock is outside the lock, and the card says why (KeptGateway).
+        public static readonly HashSet<string> Gateways = new HashSet<string> { "dxb" };
+
+        // The gateways a lock on picked keeps open as entries: none when keepOpen is off; otherwise each gateway that
+        // isn't picked and whose region has no picked datacenter (a lock that picks some of that region by hand and
+        // leaves the gateway out means to keep it out). Sorted, each once.
+        public static List<string> EntryGateways(IEnumerable<string> picked, bool keepOpen)
+        {
+            var result = new List<string>();
+            if (!keepOpen) return result;
+            var ids = new HashSet<string>(picked ?? Enumerable.Empty<string>());
+            var regions = new HashSet<string>();
+            foreach (var id in ids)
+            {
+                string mm;
+                if (id != null && Hosting.TryGetValue(id, out mm)) regions.Add(mm);
+            }
+            foreach (var gw in Gateways.OrderBy(x => x, StringComparer.Ordinal))
+            {
+                string mm;
+                if (ids.Contains(gw) || (Hosting.TryGetValue(gw, out mm) && regions.Contains(mm))) continue;
+                result.Add(gw);
+            }
+            return result;
+        }
 
         // Russia is a player pool, not a place: its matches are played on the European datacenters, and no lock can
         // choose it (it never becomes a tile; the region choices explain it in a footnote).

@@ -197,7 +197,8 @@ namespace PingBoost
             Check(DeadlockData.OnPicked("dsto", null, europe, lockable) && DeadlockData.OnPicked("fsn", null, europe, lockable), "dsto, fsn with Europe");
             var na = lockable.Where(id => DeadlockData.Hosting[id] == "Row").ToList();
             Check(DeadlockData.OnPicked("eat", null, na, lockable) && !DeadlockData.OnPicked("eat", null, na.Skip(1), lockable), "US West needs all of North America");
-            Check(!DeadlockData.OnPicked("dxb", null, new[] { "fra" }, lockable), "a relay is never a match");
+            Check(!DeadlockData.OnPicked("dfjr", null, new[] { "fra" }, lockable), "a relay is never a match");
+            Check(!DeadlockData.OnPicked("dxb", false, new[] { "fra" }, lockable), "Dubai (SE Asia) under a Europe lock: outside");
             Check(!DeadlockData.OnPicked("eat", null, new string[0], lockable), "nothing picked");
             Check(!DeadlockData.OnPicked("eat", null, new string[0], new string[0]), "a region with nothing lockable is never picked");
         }

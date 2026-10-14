@@ -80,6 +80,8 @@ namespace PingBoost
         public List<string> Close = new List<string>();      // entry relays the rule closes, in the order it closed them
         public Dictionary<string, Route> Reason = new Dictionary<string, Route>(); // entry -> its route to a left-out datacenter
         public HashSet<string> Blocked = new HashSet<string>(); // the other regions' datacenters the lock blocks anyway
+        public List<string> Gateways = new List<string>();    // gateways (Dubai) kept open as entries, judged by R3 like a relay
+        public List<string> Picked = new List<string>();      // the datacenters the plan is for
         public string Kept;                                   // G5: the entry kept open so the picked ones stay reachable
         public bool MayLeak { get { return Kept != null; } }  // ...which also reaches a left-out datacenter
         public Route Unlocked = new Route();                  // best way to the picked datacenters with nothing blocked
@@ -131,6 +133,7 @@ namespace PingBoost
         {
             var plan = new LockPlan();
             if (net == null || ping == null || picked == null || picked.Count == 0) return plan;
+            plan.Picked = picked.ToList();
             plan.Blocked = new HashSet<string>(blockedHosts);
             plan.Unlocked = Best(net, picked, ping, null);
             var closed = Rule(net, ping, picked, blockedHosts, leftOut, entries, margin, null, plan);
@@ -206,10 +209,16 @@ namespace PingBoost
 
         // The plan for a game's lock on the picked datacenters (Region.Id), from its measured pings (POP -> ms).
         // Games without a hosting table have no entry relays: nothing extra is closed, the routes are still told.
-        public static LockPlan For(Game g, ICollection<string> picked, IDictionary<string, double> ping)
+        // keepGateways (Prefs.DubaiWayIn): a gateway whose region isn't picked (Dubai under a Europe lock) is an entry
+        // relay, judged by R3 like the others and not left out; off, it is blocked like any host that isn't picked.
+        public static LockPlan For(Game g, ICollection<string> picked, IDictionary<string, double> ping, bool keepGateways)
         {
-            var blocked = new HashSet<string>(g.Regions.Where(r => g.Hosts(r) && !r.Detected && !picked.Contains(r.Id)).Select(r => r.Id));
-            var entries = g.HostPops == null ? new List<string>() : g.Regions.Where(r => !g.Hosts(r)).Select(r => r.Id).ToList();
+            var gateways = g.HostPops == null || g.GatewayPops == null ? new List<string>()
+                : DeadlockData.EntryGateways(picked, keepGateways).Where(id => g.GatewayPops.Contains(id) && g.Regions.Any(r => r.Id == id)).ToList();
+            var blocked = new HashSet<string>(g.Regions.Where(r => g.Hosts(r) && !r.Detected && !picked.Contains(r.Id) && !gateways.Contains(r.Id))
+                                                       .Select(r => r.Id));
+            var entries = g.HostPops == null ? new List<string>()
+                : g.Regions.Where(r => !g.Hosts(r) || gateways.Contains(r.Id)).Select(r => r.Id).ToList();
             var leftOut = new HashSet<string>(blocked);
             // hosts without a relay can't be blocked, but an open relay still reaches them: one of a region the player
             // didn't pick is left out too (one of a picked region is where the player wants to play)
@@ -224,7 +233,9 @@ namespace PingBoost
                 string mm;
                 if (!(DeadlockData.Hosting.TryGetValue(r.Id, out mm) && pickedRegions.Contains(mm))) leftOut.Add(r.Id);
             }
-            return Plan(g.Routes, ping, picked, blocked, leftOut, entries, MarginMs);
+            var plan = Plan(g.Routes, ping, picked, blocked, leftOut, entries, MarginMs);
+            plan.Gateways = gateways;
+            return plan;
         }
 
         // How long a good ping stands in for a test that failed.

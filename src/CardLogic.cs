@@ -24,6 +24,8 @@ namespace PingBoost
         public string MatchEntry;
         // the match server's own datacenter, known only from the game's console log ("Frankfurt"); null = not known
         public string MatchPlace;
+        // the match is on a gateway the lock kept open as a way in (Dubai under a Europe lock): the card points to the setting
+        public bool MatchKeptGateway;
         // Deadlock without its console log: how to switch it on so we can name the exact server (see ExactHint)
         public ExactHint Hint;
         public string BestServer, CurrentServer;
@@ -46,7 +48,7 @@ namespace PingBoost
     // themselves, on every locked state).
     enum ExactHint { None, Link, Shown }
 
-    enum RouteNoteKind { ClosedEntry, BlockedHost, MayLeak }
+    enum RouteNoteKind { ClosedEntry, BlockedHost, MayLeak, GatewayClosed }
 
     // The strict lock's trade-off in the card's words. Names are already in the app's language.
     class RouteNote
@@ -87,7 +89,8 @@ namespace PingBoost
                 {
                     var v = Make(CardKind.Outside,
                         Lang.T("The game put you on " + i.MatchRegion + place, "اللعبة حطّتك على " + i.MatchRegion + place),
-                        Lang.T("Close the game and open it again, then find a match.", "اقفل اللعبة وافتحها من جديد، وبعدين دوّر مباراة."), unlock);
+                        i.MatchKeptGateway ? GatewayOutsideText()
+                            : Lang.T("Close the game and open it again, then find a match.", "اقفل اللعبة وافتحها من جديد، وبعدين دوّر مباراة."), unlock);
                     v.Accent = Theme.Warn;
                     return WithHint(v, i.Hint);
                 }
@@ -229,10 +232,24 @@ namespace PingBoost
                           "تثبيت السيرفرات لهادي اللعبة لسا قيد التطوير. جرّب مباراة عادية أول.");
         }
 
+        // The Settings switch that keeps Dubai open as a way in (Prefs.DubaiWayIn), as the card names it.
+        public static string GatewaySettingName()
+        {
+            return Lang.T("Dubai as a way to Europe", "دبي كطريق لأوروبا");
+        }
+
+        // A match on Dubai while a lock that didn't pick SE Asia kept it open as the way in (DeadlockData.Gateways).
+        public static string GatewayOutsideText()
+        {
+            return Lang.T("Dubai stays open as your way in. To never get a match there, turn off \"" + GatewaySettingName() + "\" in Settings.",
+                          "خلّينا دبي مفتوحة كطريق لك. إذا ما تبغى مباراة فيها أبداً، طفّي «" + GatewaySettingName() + "» من الإعدادات.");
+        }
+
         // The trade-off of a strict lock, with the numbers:
         //   ClosedEntry: "We have to close Dubai because it reaches Europe. Your ping to SE Asia becomes about 197 instead of 106."
         //   BlockedHost: the shortest way goes through a datacenter of a region not picked (I3)
         //   MayLeak:     no measured way to the picked regions but through an entry that reaches a left-out region (G5)
+        //   GatewayClosed: the best way in was Dubai, closed because the player turned its setting off
         public static string RouteText(RouteNote n)
         {
             if (n == null) return null;
@@ -244,6 +261,14 @@ namespace PingBoost
                      (n.Reaches != null ? n.Entry + " also reaches " + n.Reaches + ", so the lock may not hold." : "The lock may not hold.");
                 ar = "ما قدرنا نقيس طريق مباشر " + To(n.Target) + "، فبنخلي " + n.Entry + " مفتوحة. " +
                      (n.Reaches != null ? "بس " + n.Entry + " توصل " + To(n.Reaches) + " بعد، فالتثبيت ممكن ما يمسك." : "فالتثبيت ممكن ما يمسك.");
+                return Lang.T(en, ar);
+            }
+            if (n.Kind == RouteNoteKind.GatewayClosed)
+            {
+                en = n.Entry + " is closed because you turned off \"" + GatewaySettingName() + "\" in Settings";
+                ar = n.Entry + " مقفولة لأنك طفّيت «" + GatewaySettingName() + "» من الإعدادات";
+                en += nums ? ": your ping to " + n.Target + " becomes about " + n.AfterMs + " instead of " + n.BeforeMs + "." : ".";
+                ar += nums ? ": بنقك " + To(n.Target) + " بيصير تقريباً " + n.AfterMs + " بدل " + n.BeforeMs + "." : ".";
                 return Lang.T(en, ar);
             }
             if (n.Kind == RouteNoteKind.ClosedEntry)
