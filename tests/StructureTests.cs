@@ -497,6 +497,41 @@ namespace PingBoost
             Check(u.Pending == null && changed == 8, "back to up to date clears Pending");
         }
 
+        static void NoticeCenterHoldsWarningsWhileMinimized()
+        {
+            bool min = false, simpleLayout = false;
+            var shown = new List<string>();
+            int flashes = 0;
+            var n = new NoticeCenter(new InlineDispatcher(), () => min, () => simpleLayout, (t, k) => shown.Add(t + ":" + k), () => flashes++);
+            n.Say("hello", ToastKind.Info, false);
+            Check(shown.Count == 1 && shown[0] == "hello:Info", "restored: shown");
+            min = true;
+            n.Say("info", ToastKind.Info, false);
+            n.Say("good", ToastKind.Good, false);
+            Check(shown.Count == 1 && n.HeldCount == 0 && flashes == 0, "minimized + Info/Good is dropped");
+            n.Say("warn", ToastKind.Warn, false);
+            n.Say("bad", ToastKind.Bad, true);
+            n.SayAdvanced("match warn", ToastKind.Warn);
+            Check(shown.Count == 1 && n.HeldCount == 3 && flashes == 3, "minimized + Warn/Bad is held and flashes");
+            n.MatchChanged();
+            Check(n.HeldCount == 2, "the match changed: its warning goes, the error stays");
+            n.FlushHeld();
+            Check(shown.Count == 1, "still minimized: nothing shown");
+            min = false;
+            n.FlushHeld();
+            Check(shown.Count == 3 && shown[1] == "warn:Warn" && shown[2] == "bad:Bad" && n.HeldCount == 0, "back: the held ones, oldest first");
+            // the simple layout leaves advanced notices out, unless minimized
+            simpleLayout = true;
+            n.SayAdvanced("advanced", ToastKind.Info);
+            Check(shown.Count == 3, "simple + SayAdvanced: dropped");
+            simpleLayout = false;
+            n.SayAdvanced("advanced", ToastKind.Info);
+            Check(shown.Count == 4, "advanced layout: shown");
+            simpleLayout = true; min = true;
+            n.SayAdvanced("while away", ToastKind.Warn);
+            Check(n.HeldCount == 1, "simple + minimized + warning: held");
+        }
+
         static void RunStructureTests()
         {
             Run("RoutingRelayMarginIsThreeMs", RoutingRelayMarginIsThreeMs);
@@ -521,6 +556,7 @@ namespace PingBoost
             Run("StatsServiceRaisesOnceForTheGameOnScreen", StatsServiceRaisesOnceForTheGameOnScreen);
             Run("PlayerStatsPlayersAndSummary", PlayerStatsPlayersAndSummary);
             Run("UpdateServicePromptsOnceAndNeverMidMatch", UpdateServicePromptsOnceAndNeverMidMatch);
+            Run("NoticeCenterHoldsWarningsWhileMinimized", NoticeCenterHoldsWarningsWhileMinimized);
         }
     }
 }

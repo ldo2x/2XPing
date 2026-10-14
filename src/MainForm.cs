@@ -75,6 +75,7 @@ namespace PingBoost
             ui = new ControlDispatcher(this);
             stats = new StatsService(ui, PlayerStats.Fetch, () => CurrentGame);
             stats.Updated += ShowStats;
+            notices = new NoticeCenter(ui, () => Minimized, () => simple, ShowChat, FlashTaskbar);
             updates = new UpdateService(ui, () => { var running = Detector.Processes(); return games.Any(g => Detector.IsRunning(running, g.Processes)); });
             updates.Changed += r => ShowUpdateBar();
             updates.Available += r => Log(T("New version available: ", "في نسخة جديدة: ") + r.Ver.ToString(3));
@@ -208,7 +209,6 @@ namespace PingBoost
         bool wasMinimized;
         FormWindowState restoreState = FormWindowState.Normal; // what a restore goes back to (Normal or Maximized)
         string liveStatus;                                          // e.g. "locked on Europe · 78 ms"; null = nothing yet
-        readonly HeldNotices heldNotices = new HeldNotices();
 
         void BuildWindowEvents()
         {
@@ -316,24 +316,10 @@ namespace PingBoost
             try { FlashWindowEx(ref fi); } catch { }
         }
 
-        // An important notice while minimized: kept (the latest few) for when the window is back.
-        void HoldNotice(string text, ToastKind kind, bool aboutMatch)
-        {
-            heldNotices.Hold(text, kind, aboutMatch);
-            FlashTaskbar();
-        }
-
         // A new match or a lock change: the held warnings about the old match or lock check are stale. Errors stay.
-        void DropHeldWarnings()
-        {
-            heldNotices.DropMatchWarnings();
-        }
+        void DropHeldWarnings() { notices.MatchChanged(); }
 
-        void ShowHeldNotices()
-        {
-            if (Minimized || heldNotices.Count == 0) return;
-            foreach (var n in heldNotices.TakeAll()) Msg(n.Key, n.Value);
-        }
+        void ShowHeldNotices() { notices.FlushHeld(); }
 
         void ApplyDirection()
         {
@@ -1044,33 +1030,18 @@ namespace PingBoost
         ChatToasts chat;
         Panel centerPanel;
 
-        // Notices appear as chat lines at the bottom of the window and fade out (no popups, no OK button).
-        // While the window is minimized, warnings and errors flash its taskbar button and show when it's back; the rest
-        // (information, good news the card already shows) is dropped.
-        void Msg(string text, ToastKind kind = ToastKind.Info) { Msg(text, kind, false); }
+        readonly NoticeCenter notices; // every chat line goes through it (held while minimized)
 
-        // aboutMatch: a notice about the match or the lock check (from AdvancedMsg), dropped when the match or lock changes
-        void Msg(string text, ToastKind kind, bool aboutMatch)
+        void ShowChat(string text, ToastKind kind)
         {
-            Ui(() =>
-            {
-                if (Minimized)
-                {
-                    if (kind == ToastKind.Warn || kind == ToastKind.Bad) HoldNotice(text, kind, aboutMatch);
-                    return;
-                }
-                if (chat == null) chat = new ChatToasts(this, () => centerPanel.RectangleToScreen(centerPanel.ClientRectangle));
-                chat.Show(text, kind);
-            });
+            if (chat == null) chat = new ChatToasts(this, () => centerPanel.RectangleToScreen(centerPanel.ClientRectangle));
+            chat.Show(text, kind);
         }
 
-        // A notice the simple layout leaves out because the state card already says it; the advanced layout keeps it.
-        // While the window is minimized the card can't be seen, so a warning still goes through (flashing the taskbar
-        // button, shown when the window is back).
-        void AdvancedMsg(string text, ToastKind kind = ToastKind.Info)
-        {
-            if (!simple || Minimized) Msg(text, kind, true);
-        }
+        void Msg(string text, ToastKind kind = ToastKind.Info) { notices.Say(text, kind, false); }
+
+        // shown only in the advanced layout (the simple one's card already says it), or while minimized
+        void AdvancedMsg(string text, ToastKind kind = ToastKind.Info) { notices.SayAdvanced(text, kind); }
 
         static void SetSub(ListViewItem item, int i, string text, Color color)
         {

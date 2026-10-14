@@ -58,4 +58,63 @@ namespace PingBoost
             return lost * 100 / window.Count >= ReportPercent;
         }
     }
+
+    // Every notice goes through here: chat lines at the bottom of the window that fade out (no popups, no OK button).
+    // While the window is minimized, warnings and errors flash its taskbar button and show when it's back; the rest
+    // (information, good news the card already shows) is dropped.
+    sealed class NoticeCenter
+    {
+        readonly IUiDispatcher ui;
+        readonly Func<bool> minimized, simple;
+        readonly Action<string, ToastKind> show;
+        readonly Action flash;
+        readonly HeldNotices held = new HeldNotices();
+
+        public NoticeCenter(IUiDispatcher ui, Func<bool> minimized, Func<bool> simple, Action<string, ToastKind> show, Action flash)
+        {
+            this.ui = ui;
+            this.minimized = minimized;
+            this.simple = simple;
+            this.show = show;
+            this.flash = flash;
+        }
+
+        public int HeldCount { get { return held.Count; } }
+
+        // aboutMatch: a notice about the match or the lock check (from SayAdvanced), dropped when the match or lock changes
+        public void Say(string text, ToastKind kind, bool aboutMatch)
+        {
+            ui.Post(() =>
+            {
+                if (minimized())
+                {
+                    if (kind == ToastKind.Warn || kind == ToastKind.Bad)
+                    {
+                        held.Hold(text, kind, aboutMatch);
+                        flash();
+                    }
+                    return;
+                }
+                show(text, kind);
+            });
+        }
+
+        // A notice the simple layout leaves out because the state card already says it; the advanced layout keeps it.
+        // While the window is minimized the card can't be seen, so a warning still goes through (flashing the taskbar
+        // button, shown when the window is back).
+        public void SayAdvanced(string text, ToastKind kind)
+        {
+            if (!simple() || minimized()) Say(text, kind, true);
+        }
+
+        // A new match or a lock change: the held warnings about the old match or lock check are stale. Errors stay.
+        public void MatchChanged() { held.DropMatchWarnings(); }
+
+        // The window is back: show what was held.
+        public void FlushHeld()
+        {
+            if (minimized() || held.Count == 0) return;
+            foreach (var n in held.TakeAll()) Say(n.Key, n.Value, false);
+        }
+    }
 }
