@@ -72,8 +72,7 @@ namespace PingBoost
 
         public MainForm()
         {
-            uiThread = Thread.CurrentThread.ManagedThreadId;
-            HandleCreated += delegate { FlushEarlyUi(); };
+            ui = new ControlDispatcher(this);
             Lang.Ar = Storage.LoadArabic();
             simple = Prefs.Simple;
             devMode = DevModeSaved;
@@ -1024,33 +1023,9 @@ namespace PingBoost
 
         // ---------------------------------------------------------------- helpers
 
-        int uiThread;
-        readonly List<Action> earlyUi = new List<Action>(); // posted from other threads before the window had a handle
-        bool handleReady;
+        readonly IUiDispatcher ui; // every result from another thread comes back through it
 
-        void Ui(Action a)
-        {
-            if (IsDisposed || Disposing) return;
-            if (Thread.CurrentThread.ManagedThreadId == uiThread) { a(); return; }
-            // without a handle, InvokeRequired says false even on another thread: never run it here, keep it for later
-            lock (earlyUi)
-                if (!handleReady) { earlyUi.Add(a); return; }
-            try { BeginInvoke(a); }
-            catch (InvalidOperationException) { } // also ObjectDisposedException: the window is closing
-        }
-
-        void FlushEarlyUi()
-        {
-            List<Action> waiting;
-            lock (earlyUi)
-            {
-                handleReady = true;
-                waiting = earlyUi.ToList();
-                earlyUi.Clear();
-            }
-            foreach (var a in waiting)
-                try { BeginInvoke(a); } catch (InvalidOperationException) { }
-        }
+        void Ui(Action a) { ui.Post(a); }
 
         void Log(string msg)
         {

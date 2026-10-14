@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Windows.Forms;
 
 namespace PingBoost
 {
@@ -377,6 +378,44 @@ namespace PingBoost
                   "DropMatchWarnings keeps errors and the rest");
         }
 
+        static void InlineDispatcherRunsAtOnce()
+        {
+            var d = new InlineDispatcher();
+            int n = 0;
+            d.Post(() => n++);
+            Check(n == 1 && d.OnUiThread, "inline: ran at once");
+        }
+
+        // Posted from another thread before the window has a handle: kept, and run once the handle exists.
+        static void ControlDispatcherWaitsForTheHandle()
+        {
+            using (var c = new Control())
+            {
+                var d = new ControlDispatcher(c);
+                int here = 0, there = 0;
+                d.Post(() => here++);
+                Check(here == 1, "on the UI thread: runs now");
+                var t = new System.Threading.Thread(() => d.Post(() => there++));
+                t.Start(); t.Join();
+                Check(there == 0, "no handle yet: waits");
+                Check(!c.IsHandleCreated, "still no handle");
+                c.CreateControl();
+                var h = c.Handle; // makes sure the handle exists
+                for (int i = 0; i < 50 && there == 0; i++) { Application.DoEvents(); System.Threading.Thread.Sleep(10); }
+                Check(there == 1, "ran once the handle exists: " + there);
+                t = new System.Threading.Thread(() => d.Post(() => there++));
+                t.Start(); t.Join();
+                for (int i = 0; i < 50 && there == 1; i++) { Application.DoEvents(); System.Threading.Thread.Sleep(10); }
+                Check(there == 2, "with a handle: BeginInvoke");
+            }
+            var gone = new Control();
+            var dd = new ControlDispatcher(gone);
+            gone.Dispose();
+            int ran = 0;
+            dd.Post(() => ran++);
+            Check(ran == 0, "disposed: dropped");
+        }
+
         static void RunStructureTests()
         {
             Run("RoutingRelayMarginIsThreeMs", RoutingRelayMarginIsThreeMs);
@@ -396,6 +435,8 @@ namespace PingBoost
             Run("MatchClassifierOtherGames", MatchClassifierOtherGames);
             Run("LossTrackerReportsFifteenPercent", LossTrackerReportsFifteenPercent);
             Run("HeldNoticesKeepFourWithoutRepeats", HeldNoticesKeepFourWithoutRepeats);
+            Run("InlineDispatcherRunsAtOnce", InlineDispatcherRunsAtOnce);
+            Run("ControlDispatcherWaitsForTheHandle", ControlDispatcherWaitsForTheHandle);
         }
     }
 }
