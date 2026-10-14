@@ -44,7 +44,8 @@
       {"region": "Europe", "dc": "dxb", "n": 25, "known": true},
       {"region": "SEAsia", "dc": "xyz", "n": 3, "known": false}
     ],
-    "unknown_dc": 3
+    "unknown_dc": 3,
+    "dup_suspect": 5
   },
   "issues": [{"code": "lock_outside", "n": 7, "players": 4}, {"code": "crash", "n": 2, "players": 2}]
 }

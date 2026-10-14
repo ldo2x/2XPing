@@ -62,6 +62,7 @@ namespace PingBoost
         public List<DashDay> Series = new List<DashDay>();
         public Dictionary<string, DashBreakdown> Breakdowns = new Dictionary<string, DashBreakdown>();
         public long MatchTotal, UnknownDc;
+        public long DupSuspect; // match reports that may repeat the one before, left out of every match number
         public List<DashSlice> Verdicts = new List<DashSlice>(), Sources = new List<DashSlice>();
         public List<DashRegion> Regions = new List<DashRegion>();
         public long PingN;
@@ -129,6 +130,7 @@ namespace PingBoost
             {
                 s.MatchTotal = Long(Get(m, "total"));
                 s.UnknownDc = Long(Get(m, "unknown_dc"));
+                s.DupSuspect = Long(Get(m, "dup_suspect"));
                 s.Verdicts = Slices(Get(m, "verdict"), s.MatchTotal);
                 s.Sources = Slices(Get(m, "source"), s.MatchTotal);
                 foreach (var o in Arr(Get(m, "by_region")))
@@ -242,18 +244,6 @@ namespace PingBoost
             }
             return b;
         }
-
-        // The sum of a series' last `days` days and of the `days` before them (the change shown under a chart).
-        public static void LastAndBefore(IList<long> values, int days, out long last, out long before)
-        {
-            last = 0; before = 0;
-            for (int i = 0; i < values.Count; i++)
-            {
-                int back = values.Count - 1 - i;
-                if (back < days) last += values[i];
-                else if (back < 2 * days) before += values[i];
-            }
-        }
     }
 
     // How the dashboard writes its numbers (Western digits in both languages, like the rest of the app).
@@ -295,6 +285,14 @@ namespace PingBoost
             if (double.IsNaN(v)) return "-";
             long r = (long)Math.Round(v);
             return "‎" + (signed && r > 0 ? "+" : "") + r.ToString(Inv) + " ms‎";
+        }
+
+        // The Arabic noun after a number: the plural for 2 and 3..10 (and 103..110...), the singular otherwise
+        // ("7 مرات، 4 لاعبين" but "1 مرة", "15 لاعب").
+        public static string ArNoun(long n, string one, string few)
+        {
+            long m = Math.Abs(n) % 100;
+            return Math.Abs(n) == 2 || (m >= 3 && m <= 10) ? few : one;
         }
 
         // 95 -> "1:35", 30 -> "0:30", NaN -> "-"

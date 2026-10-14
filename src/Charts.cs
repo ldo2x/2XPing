@@ -64,6 +64,17 @@ namespace PingBoost
         }
     }
 
+    // The dashboard's fonts, made once and shared by every chart and tile (a page rebuild never makes new ones).
+    static class ChartFonts
+    {
+        static Font small, title, big, section, center;
+        public static Font Small { get { return small ?? (small = Fonts.Ui(8.5f)); } }
+        public static Font Title { get { return title ?? (title = Fonts.Semi(10f)); } }
+        public static Font Big { get { return big ?? (big = Fonts.Semi(18f)); } }
+        public static Font Section { get { return section ?? (section = Fonts.Semi(12f)); } }
+        public static Font Center { get { return center ?? (center = Fonts.Semi(13f)); } }
+    }
+
     // The common part: the card, the title, the "nothing yet" line and the reading side.
     abstract class ChartBase : Control
     {
@@ -79,10 +90,13 @@ namespace PingBoost
             SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer |
                      ControlStyles.ResizeRedraw, true);
             ForeColor = Theme.TextC;
-            Font = Fonts.Ui(8.5f);
+            Font = ChartFonts.Small;
         }
 
         protected bool Rtl { get { return RightToLeft == RightToLeft.Yes; } }
+
+        // the height left for the chart itself in a card this tall (under the title, above the bottom padding)
+        protected static int PlotHeight(int height) { return height - TitleH - 4 - Pad / 2 - 4; }
         protected abstract bool IsEmpty { get; }
         protected abstract void Draw(Graphics g, Rectangle plot);
 
@@ -127,13 +141,13 @@ namespace PingBoost
             using (var path = Shapes.Round(new RectangleF(0, 0, Width - 1, Height - 1), 12))
             using (var b = new SolidBrush(Theme.Panel1)) g.FillPath(b, path);
             int noteW = string.IsNullOrEmpty(Note) ? 0 : TextRenderer.MeasureText(g, Note, Font).Width + 12;
-            using (var f = Fonts.Semi(10f))
-                DrawLead(g, Title, f, Rtl ? new Rectangle(Pad + noteW, 6, Width - 2 * Pad - noteW, TitleH - 6)
+            var f = ChartFonts.Title;
+            DrawLead(g, Title, f, Rtl ? new Rectangle(Pad + noteW, 6, Width - 2 * Pad - noteW, TitleH - 6)
                                           : new Rectangle(Pad, 6, Width - 2 * Pad - noteW, TitleH - 6), Theme.TextC);
             if (noteW > 0)
                 TextRenderer.DrawText(g, Note, Font, new Rectangle(Pad, 6, Width - 2 * Pad, TitleH - 6), Theme.Warn,
                     TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix | TextFormatFlags.VerticalCenter | (Rtl ? TextFormatFlags.Left : TextFormatFlags.Right));
-            var plot = new Rectangle(Pad, TitleH + 4, Width - 2 * Pad, Height - TitleH - 4 - Pad / 2 - 4);
+            var plot = new Rectangle(Pad, TitleH + 4, Width - 2 * Pad, PlotHeight(Height));
             if (plot.Width < 20 || plot.Height < 20) return;
             if (IsEmpty)
             {
@@ -297,22 +311,37 @@ namespace PingBoost
 
         public List<Bar> Bars = new List<Bar>();
         public double Max = double.NaN;   // NaN = the largest bar fills the row (100 for percentages)
-        public int RowH = 22;
+        public int RowH = DefaultRowH;
         public int LabelW = 130;
         public int ValueW = 64;
 
         protected override bool IsEmpty { get { return Bars.Count == 0; } }
 
-        // the height that shows every row
-        public int PreferredHeightFor(int rows) { return TitleH + 10 + Math.Max(1, rows) * RowH + Pad; }
+        // the height that shows `rows` rows, and the rows a height shows (the inverse: RowsThatFit(PreferredHeightFor(n)) == n)
+        public const int DefaultRowH = 22;
+        public static int PreferredHeightFor(int rows) { return TitleH + 10 + Math.Max(1, rows) * DefaultRowH + Pad; }
+        public static int RowsThatFit(int height) { return Math.Max(1, PlotHeight(height) / DefaultRowH); }
+
+        // How many bars to draw in `rows` rows: all of them, or rows - 1 and a "+N more" line (more = N).
+        public static int BarsShown(int rows, int count, out int more)
+        {
+            rows = Math.Max(1, rows);
+            if (count <= rows) { more = 0; return count; }
+            more = count - (rows - 1);
+            return rows - 1;
+        }
 
         protected override void Draw(Graphics g, Rectangle plot)
         {
             double max = double.IsNaN(Max) ? Bars.Max(b => b.Value) : Max;
             if (max <= 0) max = 1;
             int labelW = Math.Min(LabelW, plot.Width / 2), valueW = ValueW;
-            int rows = Math.Max(1, plot.Height / RowH);
-            for (int i = 0; i < Bars.Count && i < rows; i++)
+            int more;
+            int shown = BarsShown(Math.Max(1, plot.Height / RowH), Bars.Count, out more);
+            if (more > 0)
+                DrawLead(g, Lang.T("+" + more + " more", "+" + more + " غيرها"), Font,
+                         new Rectangle(plot.Left, plot.Top + 2 + shown * RowH, plot.Width, RowH), Theme.Dim);
+            for (int i = 0; i < shown; i++)
             {
                 var b = Bars[i];
                 int top = plot.Top + 2 + i * RowH;
@@ -369,8 +398,7 @@ namespace PingBoost
                 using (var pen = new Pen(s.Color, thick)) g.DrawArc(pen, rr, start, Math.Max(0.5f, sweep - (Slices.Count(x => x.Value > 0) > 1 ? 1.2f : 0)));
                 start += sweep;
             }
-            using (var f = Fonts.Semi(13f))
-                TextRenderer.DrawText(g, CenterText, f, new Rectangle(ring.X, ring.Y + ring.Height / 2 - 20, ring.Width, 24), Theme.TextC, Center);
+            TextRenderer.DrawText(g, CenterText, ChartFonts.Center, new Rectangle(ring.X, ring.Y + ring.Height / 2 - 20, ring.Width, 24), Theme.TextC, Center);
             TextRenderer.DrawText(g, CenterSub, Font, new Rectangle(ring.X, ring.Y + ring.Height / 2 + 4, ring.Width, 18), Theme.Dim,
                                   Center | (Rtl ? TextFormatFlags.RightToLeft : 0));
 
@@ -408,8 +436,9 @@ namespace PingBoost
         protected override void Draw(Graphics g, Rectangle plot)
         {
             const int axisW = 40, xLabelH = 34;
-            var a = Rtl ? new Rectangle(plot.Left + 4, plot.Top + 4, plot.Width - axisW - 8, plot.Height - xLabelH - 4)
-                        : new Rectangle(plot.Left + axisW, plot.Top + 4, plot.Width - axisW - 8, plot.Height - xLabelH - 4);
+            const int nameH = 18; // the y-axis name sits above the plot, never over the points
+            var a = Rtl ? new Rectangle(plot.Left + 4, plot.Top + nameH, plot.Width - axisW - 8, plot.Height - xLabelH - nameH)
+                        : new Rectangle(plot.Left + axisW, plot.Top + nameH, plot.Width - axisW - 8, plot.Height - xLabelH - nameH);
             double max = Math.Max(Points.Max(p => p.X), Points.Max(p => p.Y));
             var ticks = ChartScale.NiceTicks(0, max, Math.Max(2, Math.Min(6, a.Height / 28)), true);
             double top = ticks[ticks.Length - 1];
@@ -419,7 +448,7 @@ namespace PingBoost
             foreach (var t in ticks)
                 TextRenderer.DrawText(g, ChartScale.TickText(t), Font, new Rectangle((int)x(t) - 24, a.Bottom + 2, 48, 16), Theme.Dim, Center);
             TextRenderer.DrawText(g, XName, Font, new Rectangle(a.Left, a.Bottom + 17, a.Width, 16), Theme.Dim, Center | (Rtl ? TextFormatFlags.RightToLeft : 0));
-            DrawLead(g, YName, Font, new Rectangle(a.Left + 6, a.Top, a.Width - 12, 16), Theme.Dim);
+            DrawLead(g, YName, Font, new Rectangle(plot.Left, plot.Top, plot.Width, nameH - 2), Theme.Dim);
             using (var pen = new Pen(Color.FromArgb(150, Theme.Good), 1.5f) { DashStyle = DashStyle.Dash })
                 g.DrawLine(pen, x(0), y(0), x(top), y(top));
             using (var b = new SolidBrush(Color.FromArgb(170, Dot)))

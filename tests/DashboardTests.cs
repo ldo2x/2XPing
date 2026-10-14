@@ -31,9 +31,6 @@ namespace PingBoost
             Check(s.Series.Count == 7, "7 days: " + s.Series.Count);
             Check(s.Series[0].Day == new DateTime(2026, 10, 8) && s.Series[6].Day == new DateTime(2026, 10, 14), "sorted by day");
             Check(s.Series[6].Active == 58 && s.Series[6].Matches == 93 && s.Series[6].Issues == 4, "today's values");
-            long last, before;
-            DashMath.LastAndBefore(s.Series.Select(d => d.New).ToList(), 3, out last, out before);
-            Check(last == 6 + 4 + 6 && before == 9 + 4 + 7, "last 3 days vs 3 before: " + last + " / " + before);
         }
 
         static void DashParsesBreakdownsWithShares()
@@ -52,7 +49,7 @@ namespace PingBoost
         static void DashParsesMatchQuality()
         {
             var s = SampleStats();
-            Check(s.MatchTotal == 640 && s.UnknownDc == 3, "match total and unknown dc");
+            Check(s.MatchTotal == 640 && s.UnknownDc == 3 && s.DupSuspect == 5, "match total, unknown dc, possible repeats");
             Check(s.Verdicts.Count == 5 && s.Verdicts[0].Key == "inside" && Math.Abs(s.Verdicts[0].Pct - 78.125) < 1e-9, "verdicts with shares");
             Check(s.Verdicts.Any(x => x.Key == "outside_gateway" && x.Count == 30), "a kept gateway is its own verdict");
             var eu = s.Regions.First(r => r.Region == "Europe");
@@ -87,6 +84,9 @@ namespace PingBoost
             Check(DashFmt.Pct(99.7) == ">99%" && DashFmt.Pct(double.NaN) == "-", "never rounds up to 100%");
             Check(DashFmt.Delta(3) == "‎+3" && DashFmt.Delta(-2) == "‎-2" && DashFmt.Delta(0) == "‎±0", "deltas");
             Check(DashFmt.Ms(5.8, true) == "‎+6 ms‎" && DashFmt.Ms(-4, true) == "‎-4 ms‎" && DashFmt.Ms(double.NaN, false) == "-", "ms");
+            Check(DashFmt.ArNoun(1, "مرة", "مرات") == "مرة" && DashFmt.ArNoun(2, "مرة", "مرات") == "مرات" &&
+                  DashFmt.ArNoun(7, "مرة", "مرات") == "مرات" && DashFmt.ArNoun(15, "مرة", "مرات") == "مرة" &&
+                  DashFmt.ArNoun(105, "مرة", "مرات") == "مرات", "Arabic plural after a number");
             Check(DashFmt.Duration(95) == "1:35" && DashFmt.Duration(30) == "0:30" && DashFmt.Duration(double.NaN) == "-", "durations");
         }
 
@@ -125,8 +125,73 @@ namespace PingBoost
             Check(ChartScale.TickText(20) == "20" && ChartScale.TickText(0.5) == "0.5" && ChartScale.TickText(25000) == "25k", "tick text");
         }
 
+        static List<DashLayout.Item> Items(params object[] howHeight)
+        {
+            var l = new List<DashLayout.Item>();
+            for (int i = 0; i < howHeight.Length; i += 2) l.Add(new DashLayout.Item { How = (string)howHeight[i], Height = (int)howHeight[i + 1] });
+            return l;
+        }
+
+        // C1: the content's height is the bottom of the last piece plus the margin, nothing gets wider than the panel
+        // minus a scrollbar, tiles wrap into rows, and two halves share a row only when there is room.
+        static void DashLayoutSizesTheScrollArea()
+        {
+            var items = Items("section", 34, "tile", 88, "tile", 88, "tile", 88, "tile", 88, "tile", 88, "tile", 88,
+                              "full", 240, "half", 150, "half2", 150, "half", 130, "section", 34, "full", 220);
+            foreach (var width in new[] { 900, 560, 1240 })
+                foreach (var rtl in new[] { false, true })
+                {
+                    int total;
+                    var r = DashLayout.Compute(items, width, 17, rtl, out total);
+                    int bottom = r.Max(x => x.Bottom);
+                    string at = " at " + width + (rtl ? " rtl" : "");
+                    Check(total == bottom + DashLayout.Gap + DashLayout.Margin || total == bottom + DashLayout.Margin, "total = last bottom + margin" + at + ": " + total + " vs " + bottom);
+                    Check(total > bottom, "content height covers every piece" + at);
+                    Check(r.All(x => x.Left >= DashLayout.Margin && x.Right <= width - 17 - DashLayout.Margin), "no piece wider than the panel minus a scrollbar" + at);
+                    for (int i = 0; i < r.Length; i++)
+                        for (int j = i + 1; j < r.Length; j++)
+                            Check(!r[i].IntersectsWith(r[j]), "pieces " + i + " and " + j + " don't overlap" + at);
+                }
+            int t900;
+            var wide = DashLayout.Compute(items, 900, 17, false, out t900);
+            Check(wide[8].Y == wide[9].Y && wide[9].Left > wide[8].Right, "two halves side by side at 900");
+            Check(wide[1].Y == wide[5].Y && wide[6].Y > wide[1].Y, "5 tiles a row at 900, the 6th wraps");
+            int t560;
+            var narrow = DashLayout.Compute(items, 560, 17, false, out t560);
+            Check(narrow[9].Y > narrow[8].Y && narrow[8].Width == narrow[7].Width, "one per row at 560, full width");
+            Check(t560 > t900, "narrow is taller");
+            var rtlR = DashLayout.Compute(items, 900, 17, true, out t900);
+            Check(rtlR[1].Right > rtlR[2].Right && rtlR[8].Left > rtlR[9].Left, "Arabic: the first tile and the first half on the right");
+            int t0;
+            Check(DashLayout.Compute(new List<DashLayout.Item>(), 900, 17, false, out t0).Length == 0, "nothing to place");
+        }
+
+        // I2: a card is tall enough for every bar it was sized for (the «غيرها» row included); a longer list says "+N more".
+        static void DashBarCardsShowEveryRow()
+        {
+            for (int n = 1; n <= 30; n++)
+                Check(BarList.RowsThatFit(BarList.PreferredHeightFor(n)) == n, "rows that fit the height made for " + n);
+            int more;
+            Check(BarList.BarsShown(11, 11, out more) == 11 && more == 0, "11 bars in 11 rows");
+            Check(BarList.BarsShown(10, 15, out more) == 9 && more == 6, "15 bars in 10 rows: 9 and '+6 more'");
+            Check(BarList.BarsShown(1, 3, out more) == 0 && more == 3, "one row: just '+3 more'");
+
+            var s = new DashStats();
+            var b = new DashBreakdown { Name = "country", Total = 300 };
+            for (int i = 0; i < 15; i++) b.Items.Add(new DashSlice { Key = "C" + i, Count = 20, Pct = DashMath.Percent(20, 300) });
+            s.Breakdowns["country"] = b;
+            var chart = DevDashboard.Breakdown(s, "country", "Country", null);
+            Check(chart.Bars.Count == 11 && chart.Bars[10].Label == Lang.T("Other", "غيرها"), "top 10 and Other: " + chart.Bars.Count);
+            Check(chart.Bars[10].Value > 33 && chart.Bars[10].Value < 34, "Other = the 5 past the top 10 (100 of 300)");
+            int h = DevDashboard.PairHeight(chart, null);
+            Check(BarList.RowsThatFit(h) >= chart.Bars.Count, "the card fits the Other row: " + BarList.RowsThatFit(h));
+            Check(DevDashboard.PairHeight(null, null) >= 120, "an empty pair keeps a minimum height");
+        }
+
         static void RunDashboardTests()
         {
+            Run("DashLayoutSizesTheScrollArea", DashLayoutSizesTheScrollArea);
+            Run("DashBarCardsShowEveryRow", DashBarCardsShowEveryRow);
             Run("DashParsesCountersAndDeltas", DashParsesCountersAndDeltas);
             Run("DashParsesSeriesInDayOrder", DashParsesSeriesInDayOrder);
             Run("DashParsesBreakdownsWithShares", DashParsesBreakdownsWithShares);
