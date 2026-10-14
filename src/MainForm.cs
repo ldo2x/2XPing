@@ -1259,9 +1259,10 @@ namespace PingBoost
                 DateTime started = matchReport.StartedAt;
                 // the live ping follows the locked server: used only for a match on the lock's servers (ActualMs)
                 int live = lk.Locked ? Telemetry.Ping : -1;
-                var data = MatchReport.Data(matchGame.Name, lk, m, started, matchReport.QueueFrom, now, live);
-                Telemetry.SendExact("match", matchGame.Name, MatchReport.RowServer(m), MatchReport.ActualMs(lk, m, started, live),
-                                    MatchReport.Detail(lk, m, started), data);
+                var data = MatchReport.Data(matchGame.Name, lk, m, started, matchReport.QueueFrom, now, live, matchReport.SameServerAsPrev);
+                // the row's game, server and ping stay the live ones (checkin copies them to the install's current state,
+                // which the heartbeat owns); the match's own facts are in data
+                Telemetry.Send("match", null, -1, MatchReport.Detail(lk, m, started), data);
                 Storage.SetSettings(new Dictionary<string, string>
                 {
                     { "match_last", matchReport.Key },

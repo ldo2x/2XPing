@@ -213,17 +213,6 @@ namespace PingBoost
             });
         }
 
-        // The same, with no fallbacks: this game, this server (non-null) and this ping (-1 = none), not the live ones
-        // (a match report is about its own match, not what the app shows now).
-        public static void SendExact(string kind, string game, string server, int ping, string detail, Dictionary<string, object> data)
-        {
-            if (!Configured || !HasConsent) return;
-            ThreadPool.QueueUserWorkItem(delegate
-            {
-                try { Post(kind, server ?? "?", ping, detail, data, null, 8000, game); } catch { }
-            });
-        }
-
         static void Post(string kind, string server, int ping, string detail, Dictionary<string, object> data, Dictionary<string, object> info,
                          int timeout = 8000, string game = null, bool lookup = true)
         {
