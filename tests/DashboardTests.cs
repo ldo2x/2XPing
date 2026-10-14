@@ -89,6 +89,8 @@ namespace PingBoost
                   DashFmt.ArNoun(105, "مرة", "مرات") == "مرات", "Arabic plural after a number");
             Check(DashFmt.ArNoun(2, "مرة", "مرات", "مرتين") == "مرتين" && DashFmt.ArNoun(2, "لاعب", "لاعبين", "لاعبَين") == "لاعبَين" &&
                   DashFmt.ArNoun(3, "مرة", "مرات", "مرتين") == "مرات" && DashFmt.ArNoun(1, "مرة", "مرات", "مرتين") == "مرة", "Arabic dual for 2");
+            Check(DashFmt.ArCounted(2, "مرة", "مرات", "مرتين") == "مرتين" && DashFmt.ArCounted(7, "مرة", "مرات", "مرتين") == "7 مرات",
+                  "the dual stands alone for 2");
             Check(DashFmt.Duration(95) == "1:35" && DashFmt.Duration(30) == "0:30" && DashFmt.Duration(double.NaN) == "-", "durations");
         }
 

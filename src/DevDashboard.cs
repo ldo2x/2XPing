@@ -422,7 +422,7 @@ namespace PingBoost
         static string IssueText(DashIssue i)
         {
             return T(DashFmt.Count(i.Count) + "x, " + i.Players + (i.Players == 1 ? " player" : " players"),
-                     DashFmt.Count(i.Count) + " " + DashFmt.ArNoun(i.Count, "مرة", "مرات", "مرتين") + "، " + i.Players + " " + DashFmt.ArNoun(i.Players, "لاعب", "لاعبين", "لاعبَين"));
+                     DashFmt.ArCounted(i.Count, "مرة", "مرات", "مرتين") + "، " + DashFmt.ArCounted(i.Players, "لاعب", "لاعبين", "لاعبَين"));
         }
 
         static BarList.Bar Bar(string label, double value, string text, Color color)

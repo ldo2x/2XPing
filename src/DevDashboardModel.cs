@@ -298,6 +298,12 @@ namespace PingBoost
             return m >= 3 && m <= 10 ? few : one;
         }
 
+        // The number and its noun, Arabic style: the dual alone stands for 2 ("مرتين", not "2 مرتين").
+        public static string ArCounted(long n, string one, string few, string two)
+        {
+            return Math.Abs(n) == 2 ? two : Count(n) + " " + ArNoun(n, one, few, two);
+        }
+
         // 95 -> "1:35", 30 -> "0:30", NaN -> "-"
         public static string Duration(double seconds)
         {
