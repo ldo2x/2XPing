@@ -55,7 +55,7 @@ To have your data removed, contact the developer (Discord `2x.x`) with the name 
 | The game servers themselves (Valve, Tencent Cloud) | A ping (ICMP or a TCP connect) | Ping per region |
 | ipwho.is (HTTPS) | A once-a-day lookup of your own city, country and provider (at most every 30 minutes when it fails) | Usage statistics |
 | ip-api.com (plain HTTP) | The **game server** IP you detected (each address at most once an hour); your own location only if ipwho.is doesn't answer | Show locations |
-| Supabase (developer's database) | The usage statistics listed above (a heartbeat every 2 minutes while the app is open, plus events); it also downloads the shared Deadlock player numbers, at most every 5 minutes while the window is in front | Beta statistics, player numbers |
+| Supabase (developer's database) | The usage statistics listed above (a heartbeat every 2 minutes while the app is open, plus events); it also downloads the shared Deadlock player numbers when a game's list loads, when you come back to the window, and every 5 minutes while the window is in front | Beta statistics, player numbers |
 | api.github.com, github.com | Nothing (download only); checked every 3 hours | Check for a newer version and download it |
 | Your own relay agent | Game server address + your token | Measure relay -> server ping |
 
