@@ -293,8 +293,20 @@ namespace PingBoost
             var m = new MatchState();
             m.Set("SE Asia", false, false, null, "Dubai");
             m.KeptGateway = true;
+            m.PickedGateway = "Dubai";
             m.Set("Europe", true, false, null, "Frankfurt");
-            Check(!m.KeptGateway, "a new match result drops it");
+            Check(!m.KeptGateway && m.PickedGateway == null, "a new match result drops them");
+            // a Europe match under an SE Asia lock that picked Dubai: Dubai leads to Europe too
+            i = LockedInput();
+            i.MatchRegion = "Europe"; i.MatchPlace = "Frankfurt"; i.MatchOnPicked = false; i.MatchPickedGateway = "Dubai";
+            v = CardLogic.Decide(i);
+            Check(v.Kind == CardKind.Outside && v.Sub == "Dubai, which you picked, also leads to Europe. To close it, untick Dubai in the server list.", "English: " + v.Sub);
+            Lang.Ar = true;
+            i.MatchRegion = "أوروبا"; i.MatchPickedGateway = "دبي";
+            v = CardLogic.Decide(i);
+            Check(v.Sub == "دبي اللي اخترتها توصل كمان لأوروبا. عشان تقفلها، شيل علامة (✓) عن دبي من قائمة السيرفرات («اختيار يدوي»).", "Arabic: " + v.Sub);
+            f.LockGame = g; f.MatchKeptGateway = false; f.MatchPickedGateway = "Dubai";
+            Check(CardInputBuilder.Build(g, new List<RegionChoice>(), f).MatchPickedGateway == "Dubai", "the locked game's match");
             Lang.Ar = true;
         }
 

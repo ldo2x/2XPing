@@ -20,7 +20,13 @@ namespace PingBoost
         public static LockTest.LockInfo Plan(Game g, List<Region> picked, string exe, List<string> closedCidrs,
                                              ICollection<string> gateways, Func<IEnumerable<string>, List<string>> resolve)
         {
-            var open = new HashSet<string>(gateways ?? new string[0]);
+            // a gateway whose ranges the closed relays block anyway is not kept open
+            var closedSet = new HashSet<string>(closedCidrs ?? new List<string>());
+            var open = new HashSet<string>((gateways ?? new string[0]).Where(id =>
+            {
+                var r = g.Regions.FirstOrDefault(x => x.Id == id);
+                return r != null && !(r.Cidrs.Count > 0 && r.Cidrs.All(closedSet.Contains));
+            }));
             List<string> block;
             var allow = resolve(g.LockAllow ?? new string[0]);
             if (g.LockSpace != null)
@@ -104,6 +110,24 @@ namespace PingBoost
         public static bool KeptGateway(LockTest.LockInfo info, string id)
         {
             return info != null && info.Gateways != null && id != null && info.Gateways.Contains(id);
+        }
+
+        // Whether switching the Dubai setting (to nowOn) would change the lock that is on: off closes a gateway it kept
+        // open; on opens one it blocked only because of the setting (none of its region picked). An SE Asia lock, or one
+        // whose R3 closed Dubai anyway, doesn't change.
+        public static bool SettingChangesLock(LockTest.LockInfo info, bool nowOn)
+        {
+            if (info == null || info.Picked == null) return false;
+            bool kept = info.Gateways != null && info.Gateways.Count > 0;
+            return nowOn ? !kept && DeadlockData.EntryGateways(info.Picked, true).Count > 0 : kept;
+        }
+
+        // The gateway the lock that is on picked (Dubai with SE Asia) when the match is somewhere else: that gateway is a
+        // way in to other regions too, so the match may have come through it. Null otherwise.
+        public static string PickedGateway(Game g, LockTest.LockInfo info, string matchId)
+        {
+            if (g == null || g.GatewayPops == null || info == null || info.Picked == null) return null;
+            return info.Picked.FirstOrDefault(id => g.GatewayPops.Contains(id) && id != matchId);
         }
     }
 

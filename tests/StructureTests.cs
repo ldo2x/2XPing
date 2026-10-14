@@ -248,7 +248,7 @@ namespace PingBoost
             Check(string.Join(" ", kept.Block.ToArray()) == "10.0.2.0/24" && kept.Gateways.SequenceEqual(new[] { "dxb" }),
                   "gateway kept open: " + string.Join(" ", kept.Block.ToArray()));
             var keptClosed = LockPlanner.Plan(g, new List<Region> { fra }, null, LockPlanner.ClosedCidrs(g, new HashSet<string> { "dxb" }), new[] { "dxb" }, resolve);
-            Check(keptClosed.Block.Contains("10.0.3.0/24"), "gateway closed by R3: blocked");
+            Check(keptClosed.Block.Contains("10.0.3.0/24") && keptClosed.Gateways.Count == 0, "gateway closed by R3: blocked, not listed as kept");
             Check(info.Gateways.Count == 0, "no gateway: none listed");
         }
 
@@ -888,6 +888,20 @@ namespace PingBoost
             var info = new LockTest.LockInfo { Picked = europe.ToList(), Gateways = new List<string> { "dxb" } };
             Check(LockScope.KeptGateway(info, "dxb") && !LockScope.KeptGateway(info, "fra") && !LockScope.KeptGateway(null, "dxb"), "kept gateway");
             Check(!LockScope.KeptGateway(new LockTest.LockInfo { Picked = europe.ToList() }, "dxb"), "setting off: not kept");
+            // the setting changes the lock that is on only when it kept Dubai open, or blocked it for the setting alone
+            Check(LockScope.SettingChangesLock(info, false), "kept open, turned off: changes");
+            Check(!LockScope.SettingChangesLock(info, true), "kept open, on again: nothing");
+            var euOff = new LockTest.LockInfo { Picked = europe.ToList() };
+            Check(LockScope.SettingChangesLock(euOff, true), "Europe locked with it off, turned on: changes");
+            Check(!LockScope.SettingChangesLock(euOff, false), "off and off: nothing");
+            var seaLock = new LockTest.LockInfo { Picked = seAsia.ToList() };
+            Check(!LockScope.SettingChangesLock(seaLock, true) && !LockScope.SettingChangesLock(seaLock, false), "SE Asia lock: never");
+            Check(!LockScope.SettingChangesLock(null, true), "no lock");
+            // a match elsewhere while the lock picked Dubai: Dubai leads there too
+            Check(LockScope.PickedGateway(g, seaLock, "fra") == "dxb", "SE Asia lock, Frankfurt match: Dubai");
+            Check(LockScope.PickedGateway(g, seaLock, "dxb") == null, "the match on Dubai itself: no");
+            Check(LockScope.PickedGateway(g, info, "sgp") == null, "Europe lock: no picked gateway");
+            Check(LockScope.PickedGateway(new Game { Name = "CS2" }, seaLock, "fra") == null, "games without gateways");
             Lang.Ar = true;
             Check(!DeadlockLog.Resolve(g, new ConsoleLine { Code = "zzz" }, out id, out dc, out region, out onPicked), "unknown place: no answer");
         }

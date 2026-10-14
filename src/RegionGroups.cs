@@ -63,8 +63,12 @@ namespace PingBoost
                 }
                 if (c.Members.Count == 0) continue;
                 Region bestMember = null;
+                // a gateway (Dubai) doesn't set its region's ping: from the Gulf it would make SE Asia look like 31 ms
+                // although most of its matches are far away; it counts only as the region's sole member
+                bool others = c.Members.Any(m => !g.Gateway(m));
                 foreach (var m in c.Members)
                 {
+                    if (others && g.Gateway(m)) continue;
                     double ms = latency(m);
                     if (bestMember == null || ms < c.Ping) { c.Ping = ms; bestMember = m; }
                 }

@@ -866,7 +866,7 @@ namespace PingBoost
             }
             else if (dubaiChanged) UpdateCard(); // the card's note on what the lock costs changes with it
             // the lock that is on keeps what it was applied with: the new choice counts from the next lock
-            if (dubaiChanged && lockSummary != null && DeadlockData.Is(lockGame))
+            if (dubaiChanged && lockSummary != null && DeadlockData.Is(lockGame) && LockScope.SettingChangesLock(lockInfo, Prefs.DubaiWayIn))
                 Msg(T("The Dubai setting counts from your next lock. Unlock and lock again to use it now.",
                       "إعداد دبي يمشي من التثبيت الجاي. فك التثبيت وثبّت من جديد عشان يمشي دحين."));
             if (resetAsked) ResetEverything();
@@ -1189,12 +1189,16 @@ namespace PingBoost
             bool ok = !LockedFor(g) || onPicked;
             // outside the lock on a gateway the lock kept open as the way in (Dubai): the setting, not a failed lock
             bool keptGateway = !ok && LockScope.KeptGateway(lockInfo, id);
+            // ...or the lock picked a gateway (Dubai with SE Asia) that is a way in to other regions too
+            string pickedGw = !ok && !keptGateway ? LockScope.PickedGateway(g, lockInfo, id) : null;
+            Region pickedGwRow = pickedGw != null ? g.Regions.FirstOrDefault(r => r.Id == pickedGw) : null;
             dcSinceLock = true;
             matchSinceLock = true;
             if (CurrentGame == g)
             {
                 SetMatch(region, onPicked, false, null, place);
                 match.KeptGateway = keptGateway;
+                match.PickedGateway = pickedGwRow != null ? Places.PlaceName(pickedGwRow) : null;
                 // the row of that datacenter is "here"; a place without a row (no relay) clears every row
                 var row = dc != null && g.Regions.Contains(dc) ? dc : null;
                 if (g.Regions.Any(r => r.Here != (r == row)))
@@ -1209,7 +1213,7 @@ namespace PingBoost
                 Issues.Report("lock_outside", g.Name + " on " + id + " (console log) while locked on " + lockSummary +
                                               (keptGateway ? " (kept open as a way in)" : ""),
                     new Dictionary<string, object> { { "game", g.Name }, { "datacenter", id }, { "source", "console log" }, { "locked", lockSummary },
-                                                     { "gateway_open", keptGateway } },
+                                                     { "gateway_open", keptGateway }, { "picked_gateway", pickedGw } },
                     g.Icon + id);
             if (manual || place != lastAutoServer)
             {
@@ -1311,6 +1315,7 @@ namespace PingBoost
                 MatchEntry = match.Entry,
                 MatchPlace = match.Place,
                 MatchKeptGateway = match.KeptGateway,
+                MatchPickedGateway = match.PickedGateway,
                 CurrentServer = match.Server,
                 CurrentMs = match.Ms,
                 NoMatchLong = noMatchLong,
@@ -2265,7 +2270,9 @@ namespace PingBoost
                                            (skipped > 0 ? ", " + skipped + " bad entries skipped" : "") +
                                            (closed.Count > 0 ? ", relays closed " + string.Join(",", closed.ToArray()) : "") +
                                            (plan != null && plan.MayLeak ? ", kept open " + plan.Kept : "") +
-                                           (plan != null && plan.Gateways.Count > 0 ? ", gateway open " + string.Join(",", plan.Gateways.ToArray()) : ""));
+                                           (plan != null && plan.Gateways.Count > 0 ? ", gateway open " + string.Join(",", plan.Gateways.ToArray()) : "") +
+                                           (g.GatewayPops != null && picked.Any(r => g.Gateway(r))
+                                                ? ", picked gateway " + string.Join(",", picked.Where(r => g.Gateway(r)).Select(r => r.Id).ToArray()) : ""));
                             if (devMode) DevOut("lock mode " + info.Mode + ": " + info.Scope);
                             btnLock.Enabled = true;
                             UpdateLockBar();

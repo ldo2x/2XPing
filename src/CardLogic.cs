@@ -26,6 +26,8 @@ namespace PingBoost
         public string MatchPlace;
         // the match is on a gateway the lock kept open as a way in (Dubai under a Europe lock): the card points to the setting
         public bool MatchKeptGateway;
+        // the match is outside while the lock picked a gateway that leads there too ("Dubai" with SE Asia); null = no
+        public string MatchPickedGateway;
         // Deadlock without its console log: how to switch it on so we can name the exact server (see ExactHint)
         public ExactHint Hint;
         public string BestServer, CurrentServer;
@@ -90,6 +92,7 @@ namespace PingBoost
                     var v = Make(CardKind.Outside,
                         Lang.T("The game put you on " + i.MatchRegion + place, "اللعبة حطّتك على " + i.MatchRegion + place),
                         i.MatchKeptGateway ? GatewayOutsideText()
+                            : i.MatchPickedGateway != null ? PickedGatewayText(i.MatchPickedGateway, i.MatchRegion)
                             : Lang.T("Close the game and open it again, then find a match.", "اقفل اللعبة وافتحها من جديد، وبعدين دوّر مباراة."), unlock);
                     v.Accent = Theme.Warn;
                     return WithHint(v, i.Hint);
@@ -243,6 +246,14 @@ namespace PingBoost
         {
             return Lang.T("Dubai stays open as your way in. To never get a match there, turn off \"" + GatewaySettingName() + "\" in Settings.",
                           "خلّينا دبي مفتوحة كطريق لك. إذا ما تبغى مباراة فيها أبداً، طفّي «" + GatewaySettingName() + "» من الإعدادات.");
+        }
+
+        // A match outside the lock while the lock picked a gateway (Dubai with SE Asia) that leads there too: one line on
+        // how to close it (the firewall can't tell, Dubai is a picked server).
+        public static string PickedGatewayText(string gateway, string region)
+        {
+            return Lang.T(gateway + ", which you picked, also leads to " + region + ". To close it, untick " + gateway + " in the server list.",
+                          gateway + " اللي اخترتها توصل كمان " + To(region) + ". عشان تقفلها، شيل علامة (✓) عن " + gateway + " من قائمة السيرفرات («اختيار يدوي»).");
         }
 
         // The trade-off of a strict lock, with the numbers:

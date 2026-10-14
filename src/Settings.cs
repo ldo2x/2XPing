@@ -97,29 +97,7 @@ namespace PingBoost
                 var auto = new Toggle { Bounds = new Rectangle(16, 46, W - 32, 32), Text = Lang.T("Test the ping when I pick a game", "افحص البنق لما أختار لعبة") };
                 auto.SetInstant(Prefs.AutoTest);
                 optCard.Controls.Add(auto);
-                y += 92 + Gap;
-
-                // ---- Deadlock: Dubai as a way to Europe (DeadlockData.Gateways), with what each side means
-                string dubaiText = Lang.T(
-                    "Valve's Dubai servers host SE Asia matches, and they're also the shortest way to Europe's servers for players in the Gulf.\n" +
-                    "On: when you lock to Europe, Dubai stays open so your ping is lower. Rarely, you may get a match in Dubai (the app tells you if it happens).\n" +
-                    "Off: Dubai is closed and you'll never get a match there, but your ping to Europe may go up.",
-                    "سيرفرات Valve في دبي تستضيف مباريات جنوب شرق آسيا، وهي كمان أقصر طريق للاعبين في الخليج لسيرفرات أوروبا.\n" +
-                    "إذا شغّال: لما تثبّت على أوروبا نخلّي دبي مفتوحة عشان بنقك يكون أقل، ونادراً ممكن تطلع لك مباراة في دبي (البرنامج ينبهك لو صارت).\n" +
-                    "إذا طفّيته: نقفل دبي وما تطلع لك مباراة فيها أبداً، بس بنقك لأوروبا ممكن يزيد.");
-                var dubaiFont = Fonts.Ui(8.5f);
-                int dubaiH = TextRenderer.MeasureText(dubaiText, dubaiFont, new Size(W - 32, 0),
-                                                      TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl).Height + 6;
-                int dubaiCardH = 46 + 32 + 8 + dubaiH + 12;
-                var dubaiCard = section(colA, y, dubaiCardH, "Deadlock");
-                var dubai = new Toggle { Bounds = new Rectangle(16, 46, W - 32, 32), Text = CardLogic.GatewaySettingName() };
-                dubai.SetInstant(Prefs.DubaiWayIn);
-                dubaiCard.Controls.Add(dubai);
-                dubaiCard.Controls.Add(new Label
-                {
-                    Text = dubaiText, ForeColor = Theme.Dim, Font = dubaiFont, Bounds = new Rectangle(16, 46 + 32 + 8, W - 32, dubaiH)
-                });
-                int bottomA = y + dubaiCardH;
+                int bottomA = y + 92;
 
                 // ---- games: tiles, two per row, the first on the reading side
                 var list = GameDb.Available(GameDb.All());
@@ -171,7 +149,36 @@ namespace PingBoost
                                   "«رجّع كل شي طبيعي» يفك تثبيت السيرفرات، ونفس الشي يصير لما تقفل البرنامج."),
                     ForeColor = Theme.Dim, Font = Fonts.Ui(8.5f), Bounds = new Rectangle(16, 94, W - 32, 40)
                 });
-                int bottomB = y + 144;
+                y += 144;
+
+                // ---- Deadlock: Dubai as a way to Europe (DeadlockData.Gateways), with what each side means. In the
+                // shorter column so the dialog fits a 768-px screen; only while Deadlock is in the game list.
+                Toggle dubai = null;
+                if (list.Any(g => DeadlockData.Is(g)) && !hiddenBefore.Contains("deadlock"))
+                {
+                    y += Gap;
+                    string dubaiText = Lang.T(
+                        "Valve's Dubai servers host SE Asia matches, and they're also the Gulf's shortest way to Europe's servers.\n" +
+                        "On: when you lock to a region other than SE Asia (Europe, North America...), Dubai stays open so your ping is lower. Sometimes you may get a match in Dubai (the app tells you).\n" +
+                        "Off: Dubai is closed unless you pick SE Asia, so you never get a match there, but your ping may go up.",
+                        "سيرفرات Valve في دبي تستضيف مباريات جنوب شرق آسيا، وهي كمان أقصر طريق للخليج لسيرفرات أوروبا.\n" +
+                        "إذا شغّلته: لما تثبّت على منطقة غير جنوب شرق آسيا (أوروبا، أمريكا الشمالية...) نخلّي دبي مفتوحة عشان بنقك يكون أقل، وأحياناً ممكن تطلع لك مباراة في دبي (البرنامج ينبهك).\n" +
+                        "إذا طفّيته: نقفل دبي إلا لو اخترت جنوب شرق آسيا، فما تطلع لك مباراة فيها أبداً، بس بنقك ممكن يزيد.");
+                    var dubaiFont = Fonts.Ui(8.5f);
+                    int dubaiH = TextRenderer.MeasureText(dubaiText, dubaiFont, new Size(W - 32, 0),
+                                                          TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl).Height + 6;
+                    int dubaiCardH = 46 + 32 + 6 + dubaiH + 10;
+                    var dubaiCard = section(colB, y, dubaiCardH, "Deadlock");
+                    dubai = new Toggle { Bounds = new Rectangle(16, 46, W - 32, 32), Text = CardLogic.GatewaySettingName() };
+                    dubai.SetInstant(Prefs.DubaiWayIn);
+                    dubaiCard.Controls.Add(dubai);
+                    dubaiCard.Controls.Add(new Label
+                    {
+                        Text = dubaiText, ForeColor = Theme.Dim, Font = dubaiFont, Bounds = new Rectangle(16, 46 + 32 + 6, W - 32, dubaiH)
+                    });
+                    y += dubaiCardH;
+                }
+                int bottomB = y;
 
                 // ---- save / cancel, on the reading side's far end
                 y = Math.Max(bottomA, bottomB) + 16;
@@ -197,7 +204,7 @@ namespace PingBoost
                 Storage.SaveArabic(ar);
                 Storage.SetSetting("mode", layout.SelectedIndex == 0 ? "simple" : "advanced");
                 Storage.SetSetting("autotest", auto.Checked ? "1" : "0");
-                Storage.SetSetting("dubai_way_in", dubai.Checked ? "1" : "0");
+                if (dubai != null) Storage.SetSetting("dubai_way_in", dubai.Checked ? "1" : "0");
                 Lang.Ar = ar;
 
                 // nothing ticked = show every game, so the list is never empty (games hidden in the public

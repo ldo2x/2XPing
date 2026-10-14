@@ -234,7 +234,8 @@ namespace PingBoost
                 if (!(DeadlockData.Hosting.TryGetValue(r.Id, out mm) && pickedRegions.Contains(mm))) leftOut.Add(r.Id);
             }
             var plan = Plan(g.Routes, ping, picked, blocked, leftOut, entries, MarginMs);
-            plan.Gateways = gateways;
+            // only the gateways the plan really leaves open: one R3 closed (or G5 didn't keep) is blocked, not "kept"
+            plan.Gateways = gateways.Where(id => !plan.Close.Contains(id)).ToList();
             return plan;
         }
 

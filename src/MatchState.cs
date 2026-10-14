@@ -11,6 +11,7 @@ namespace PingBoost
         public string Entry;      // ViaRelay: where the game enters Valve's network ("Dubai")
         public string Place;      // the match server's datacenter, known only from Deadlock's console log
         public bool KeptGateway;  // ...a gateway the lock kept open as the way in (Dubai under a Europe lock); set after Set
+        public string PickedGateway; // ...elsewhere while the lock picked a gateway that leads there too ("Dubai"); set after Set
         public string Server;     // games that can't be locked: the server (city) the game is on
         public int Ms = -1;       // ...and its ping; -1 = unknown
 
@@ -26,6 +27,7 @@ namespace PingBoost
             Entry = entry;
             Place = place;
             KeptGateway = false;
+            PickedGateway = null;
             return different;
         }
 
@@ -37,7 +39,7 @@ namespace PingBoost
 
         public void Clear()
         {
-            Region = Entry = Place = null;
+            Region = Entry = Place = PickedGateway = null;
             OnPicked = ViaRelay = KeptGateway = false;
             Server = null;
             Ms = -1;

@@ -19,6 +19,7 @@ namespace PingBoost
         public string MatchRegion, MatchEntry, MatchPlace, CurrentServer;
         public bool MatchOnPicked, MatchViaRelay;
         public bool MatchKeptGateway;         // the match is on a gateway the lock kept open (MatchState.KeptGateway)
+        public string MatchPickedGateway;     // the lock picked a gateway that also leads where the match is (MatchState.PickedGateway)
         public int CurrentMs = -1;
         public bool NoMatchLong;              // locked a while and no match found yet
         public bool GameLogOn;                // Deadlock's console log is there
@@ -62,6 +63,7 @@ namespace PingBoost
                 MatchEntry = f.MatchEntry,
                 MatchPlace = f.MatchPlace,
                 MatchKeptGateway = locked && f.MatchKeptGateway,
+                MatchPickedGateway = locked ? f.MatchPickedGateway : null,
                 // Deadlock without its console log: how to switch it on (a link in the simple layout, the steps in the advanced one)
                 Hint = !DeadlockData.Is(g) || f.GameLogOn ? ExactHint.None : f.Simple && !f.DevMode ? ExactHint.Link : ExactHint.Shown,
                 CurrentServer = f.CurrentServer,

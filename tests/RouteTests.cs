@@ -183,6 +183,7 @@ namespace PingBoost
             ping["iad"] = 190;
             plan = StrictLock.For(g, na, ping, true);
             Check(!plan.MayLeak && plan.Close.Contains("dxb") && plan.Close.Contains("dfjr"), "strict: " + string.Join(",", plan.Close.ToArray()));
+            Check(plan.Gateways.Count == 0, "Dubai closed by R3 is never listed as kept open");
             Check(plan.Locked.Ms == 190 && plan.Locked.Entry == "iad", "iad direct 190: " + plan.Locked.Ms);
             Check(Near(plan.Unlocked.Ms, 153) && plan.Unlocked.Entry == "dfra", "unlocked: ~153 via Datapacket Frankfurt: " + plan.Unlocked.Ms + " " + plan.Unlocked.Entry);
             // the best way in is a European datacenter the lock blocks anyway (I3): pick Europe too to keep it
@@ -288,8 +289,9 @@ namespace PingBoost
             };
             var all = RegionGroups.Build(g, null, null, latency, via);
             var sea = all.First(c => c.Def.Key == "SEAsia");
-            // Dubai is one of SE Asia's datacenters now: the tile takes its best member, 31 straight there
-            Check(sea.Ping == 31 && sea.Via == null, "SE Asia tile: 31 at Dubai, got " + sea.Ping + " via " + sea.Via);
+            // Dubai is one of SE Asia's datacenters, but it never sets the tile's ping: the others do (106 via Dubai)
+            Check(sea.Members.Any(m => m.Id == "dxb"), "the SE Asia tile still locks Dubai");
+            Check(sea.Ping == 106 && sea.Via == "dxb", "SE Asia tile: 106 via dxb, got " + sea.Ping + " via " + sea.Via);
             var eu = all.First(c => c.Def.Key == "Europe");
             Check(eu.Ping == 58 && eu.Via == "dxb", "Europe tile: 58 via dxb (vie), got " + eu.Ping + " via " + eu.Via);
             // locked to SE Asia by hand without Dubai: the open set has no dxb/dfjr/bom2 and no other region
@@ -316,6 +318,7 @@ namespace PingBoost
             ping.Remove("dxb");
             var plan = StrictLock.For(g, RegionIds(g, "Europe"), ping, true);
             Check(plan.Close.Contains("dxb") && !plan.MayLeak, "dxb closed without a ping: " + string.Join(",", plan.Close.ToArray()));
+            Check(plan.Gateways.Count == 0, "closed by R3: not kept open (no setting hint, no gateway_open)");
             Check(plan.Locked.Ms == 68 && plan.Locked.Entry == "dfra", "68 straight to Datapacket Frankfurt: " + plan.Locked.Ms + " via " + plan.Locked.Entry);
             Check(plan.Reason["dxb"].To != null && !plan.Reason["dxb"].Known, "the reason has a path, no number");
 
@@ -332,6 +335,43 @@ namespace PingBoost
             Check(!StrictLock.Pings(g, now.AddMinutes(31)).ContainsKey("dxb"), "after 30 minutes it is gone");
             dxb.Direct = new PingResult { Avg = 40 };
             Check(StrictLock.Pings(g, now)["dxb"] == 40, "a new good result wins");
+        }
+
+        // Review I2 (owner: option A): from the Gulf, Dubai's 31 ms never makes SE Asia the best-ping default; Europe
+        // (58 via Dubai) stays the pre-selected tile, and a gateway that is a tile's only member still sets its ping.
+        static void GulfDefaultStaysEurope()
+        {
+            var g = SavedDeadlock();
+            var ping = RiyadhPings();
+            var all = RegionGroups.Build(g, null, null, r => StrictLock.Best(g.Routes, new[] { r.Id }, ping, null).Ms);
+            var featured = RegionGroups.Featured(all);
+            Check(featured[0].Def.Key == "Europe" && featured[0].Selected && featured[0].Tag == "ping", "Europe first and selected: " + featured[0].Def.Key);
+            Check(!all.First(c => c.Def.Key == "SEAsia").Selected, "SE Asia not pre-selected");
+            // with queue numbers too: SE Asia's ping is its non-Dubai one
+            var act = new Dictionary<string, int> { { "Europe", 70 }, { "SEAsia", 18 } };
+            all = RegionGroups.Build(g, act, m => m * 10, r => StrictLock.Best(g.Routes, new[] { r.Id }, ping, null).Ms);
+            featured = RegionGroups.Featured(all);
+            Check(featured[0].Def.Key == "Europe" && featured[0].Tag == "best", "Europe: best ping and busiest");
+            Check(all.First(c => c.Def.Key == "SEAsia").Ping == 106, "SE Asia 106");
+            // a tile made of a gateway alone still has a ping
+            var solo = new Game { Name = "x", Provider = Provider.Valve, HostPops = new HashSet<string> { "dxb" }, GatewayPops = new HashSet<string> { "dxb" } };
+            solo.Regions.Add(new Region { Id = "dxb" });
+            solo.RegionMap = new List<RegionDef> { RegionDef.Of("SEAsia", "SE Asia", "جنوب شرق آسيا", "dxb") };
+            Check(RegionGroups.Build(solo, null, null, r => 31).First().Ping == 31, "a lone gateway sets the ping");
+        }
+
+        // Europe and Singapore picked by hand: SE Asia is partly picked, so Dubai is left out on purpose (blocked, no
+        // setting involved): the card says "pick Dubai too", never that the setting closed it.
+        static void EuropePlusSingaporeNamesDubai()
+        {
+            var g = SavedDeadlock();
+            var picked = RegionIds(g, "Europe").Concat(new[] { "sgp" }).ToList();
+            var plan = StrictLock.For(g, picked, RiyadhPings(), true);
+            Check(plan.Blocked.Contains("dxb") && plan.Gateways.Count == 0, "Dubai blocked");
+            Lang.Ar = false;
+            var note = RouteAdvisor.NoteOf(g, plan, "Europe and Singapore");
+            Check(note != null && note.Kind == RouteNoteKind.BlockedHost && note.Entry == "Dubai", "BlockedHost naming Dubai: " + (note == null ? "-" : note.Kind.ToString()));
+            Lang.Ar = true;
         }
 
         // Review fix 4: a closed best entry is only told when it costs 10 ms or more.
@@ -358,6 +398,8 @@ namespace PingBoost
             Run("StrictLockSeAsiaKeepsDubai", StrictLockSeAsiaKeepsDubai);
             Run("StrictLockSeAsiaWithoutDubai", StrictLockSeAsiaWithoutDubai);
             Run("StrictLockEuropeDubaiSetting", StrictLockEuropeDubaiSetting);
+            Run("GulfDefaultStaysEurope", GulfDefaultStaysEurope);
+            Run("EuropePlusSingaporeNamesDubai", EuropePlusSingaporeNamesDubai);
             Run("StrictLockNorthAmericaFromRiyadh", StrictLockNorthAmericaFromRiyadh);
             Run("StrictLockBoundaryAndGuard", StrictLockBoundaryAndGuard);
             Run("CardTellsTheRouteCost", CardTellsTheRouteCost);
