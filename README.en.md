@@ -39,9 +39,10 @@ Requires **Windows 10 or 11**. Nothing to install, and after that updates are on
 | ✦ Where do you want to play? | One card shows your regions with ping, wait time and players; **Play in ...** locks you to them |
 | 📶 Ping test | Every region in 2-3 seconds; the Advanced layout adds jitter and packet loss per server |
 | 🔒 Region lock | **Deadlock** (and **Overwatch 2** and **Dead by Daylight**, in development: they work, still being tested): pick your regions and lock out the rest |
-| 🧭 Smart Deadlock lock | Knows your shortest way into Valve's network (for example through Dubai), and tells you before you lock if the lock would raise your ping, and by how much |
+| 🧭 Smart Deadlock lock | Knows your shortest way into Valve's network (for example through Dubai), and tells you before you lock if the lock would raise your ping, and by how much; once locked, the card shows the ping to expect (e.g. "about 58 ms via Dubai") |
 | ✅ Where am I playing? | While you're in a match, the card says which region you're on and whether it's one you picked |
 | 👥 Player numbers | Estimated players per region and expected time to find a match (Deadlock) |
+| 📝 Match reports by themselves | About a minute into each match a short report (expected vs real ping, where the match was) checks the lock keeps its promise. Nothing for you to do |
 | 🛠️ Finds problems by itself | Errors (like landing on a server outside your lock) reach us automatically, without interrupting you |
 | 🎛️ Your way | Pick your games on first launch; Simple layout for everyday players, Advanced with every tool |
 | 🕒 In the taskbar | Minimize it while you play: the lock keeps working, hovering its taskbar button shows your live ping, and important notices flash it |
