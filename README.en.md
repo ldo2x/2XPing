@@ -74,7 +74,7 @@ Other games (CS2, Dota 2, Valorant, Fortnite, PUBG, Apex, Rocket League) are bei
 ## Notes
 - Player numbers and match times are **estimates** based on public data.
 - **Updates are required during the beta:** when a new version is out a bar appears, and you have 3 days to update with one click. After that the old version stops until you update.
-- **Beta statistics:** while open, the app sends the name you enter on first launch, your computer's name, your city, country and internet provider, your PC's hardware and setup, the game, server and ping you use, ping-test results, which features you use, and error logs, to improve the beta. You are told on first launch and accepting is required to use the beta. Details in [SECURITY.md](SECURITY.md).
+- **Beta statistics:** while open, the app sends the name you enter on first launch, your computer's name, your city, country and internet provider, your PC's hardware and setup, the game, server and ping you use, ping-test results, a short report of each match (which datacenter it was on, the game's own ping, and whether it was inside your lock), which features you use, and error logs, to improve the beta. You are told on first launch and accepting is required to use the beta. Details in [SECURITY.md](SECURITY.md).
 - 2X Ping **never changes game files or touches game memory** (the only game file it reads is Deadlock's console log, if you turned on `-condebug`). Everything it changes (firewall rules, tunnel) is undone when you stop it or close the app. See [SECURITY.md](SECURITY.md).
 - Some games have their own anti-cheat policies; use the app at your own risk.
 

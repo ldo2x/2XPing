@@ -82,10 +82,10 @@ namespace PingBoost
                     Bounds = new Rectangle(14, 10, W - 28, NoticeH - 44), ForeColor = Theme.Dim, Font = Fonts.Ui(9.5f),
                     Text = Lang.T(
                         "This is a beta. While it's open, 2X Ping sends your name and PC name, PC info, location (city and internet provider), " +
-                        "the game and ping, and error logs, so we can improve it.\n" +
+                        "the game, each match's server and ping, and error logs, so we can improve it.\n" +
                         "Updates are required: you get " + Updater.Days(Updater.GraceDays) + ".\nYou need to agree to use the beta.",
                         "هادي نسخة تجريبية، والبرنامج وهو مفتوح يرسل لنا اسمك واسم جهازك ومعلومات جهازك ومدينتك وشركة النت " +
-                        "واللعبة والبنق وسجل الأخطاء عشان نطوّره.\n" +
+                        "واللعبة وسيرفر كل مباراة والبنق وسجل الأخطاء عشان نطوّره.\n" +
                         "التحديثات إجبارية، وعندك " + Updater.Days(Updater.GraceDays) + ".\nلازم توافق عشان تستخدمه.")
                 };
                 noticeCard.Controls.Add(notice);

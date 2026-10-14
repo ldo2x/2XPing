@@ -20,7 +20,23 @@ namespace PingBoost
     {
         public string Conn;   // the connection id ("#1671292347"): a new id is a new server
         public DateTime At;   // when its newest line was written (as ConsoleLine.At)
+        public DateTime Since; // when its first line was written (as ConsoleLine.At)
+        public string Server;  // the match server's id in the log ("steamid:9029…"), null = none; only compared, never sent
+        // The disconnect the log wrote between the connection before and this one (GameConsole.Boundary): its reason
+        // ("NETWORK_DISCONNECT_EXITING"; an ending reason wins over a timeout one), null = none, and when the first was written.
+        public string Boundary;
+        public DateTime BoundaryAt = DateTime.MinValue;
         public readonly List<KeyValuePair<string, int>> Backs = new List<KeyValuePair<string, int>>(); // POP id -> back ms
+        public readonly List<KeyValuePair<string, int>> Pings = new List<KeyValuePair<string, int>>(); // POP id -> front+back ms
+
+        // A copy that later lines of the log don't change (the log is read on another thread).
+        public SessionSet Copy()
+        {
+            var c = new SessionSet { Conn = Conn, At = At, Since = Since, Server = Server, Boundary = Boundary, BoundaryAt = BoundaryAt };
+            c.Backs.AddRange(Backs);
+            c.Pings.AddRange(Pings);
+            return c;
+        }
     }
 
     // Deadlock's own console log (game\citadel\console.log, written while the game runs with the launch option
@@ -125,6 +141,9 @@ namespace PingBoost
             decoder = null;
             LastDc = LastRelay = null; // no log, nothing current
             LastSessions = null;
+            localServer = false;
+            pendingReason = null;
+            pendingAt = DateTime.MinValue;
         }
 
         static int ReadFully(Stream s, byte[] buf)
@@ -170,6 +189,7 @@ namespace PingBoost
             {
                 string kind;
                 string text1 = raw.TrimEnd('\r');
+                Boundary(text1, now, old);
                 Session(text1, now, old);
                 var line = Parse(text1, now, out kind);
                 if (line == null) continue;
@@ -179,20 +199,84 @@ namespace PingBoost
         }
 
         static readonly Regex SessionConn = new Regex(@"\[(#\d+)\s", RegexOptions.CultureInvariant);
+        static readonly Regex SessionServer = new Regex(@"SDR server steamid:(\d+)", RegexOptions.CultureInvariant);
 
-        // A session line adds its relay and back delay to its connection's set (a new connection starts a new set).
+        // The game's client leaving a server, as the real log writes it (2026-10-14):
+        //   10/14 15:25:23 [Client] Disconnecting from server: NETWORK_DISCONNECT_EXITING
+        //   … [SteamNetSockets] [#2321638803 SDR server steamid:… vport 0] closed by app, … (1059) NETWORK_DISCONNECT_EXITING
+        // A local server (practice, sandbox: "Connected to 'loopback:1'" or '127.0.0.1:27015') is never a match: its
+        // disconnect lines are ignored.
+        static readonly Regex ConnectedTo = new Regex(@"\bConnected to '([^']*)'", RegexOptions.CultureInvariant);
+        static readonly Regex Disconnecting = new Regex(@"\[Client\] Disconnecting from server:\s*(NETWORK_DISCONNECT_[A-Z0-9_]+)", RegexOptions.CultureInvariant);
+        static readonly Regex ClosedSdr = new Regex(@"SDR server[^\]]*\]\s*closed by (?:app|peer).*?(NETWORK_DISCONNECT_[A-Z0-9_]+)", RegexOptions.CultureInvariant);
+        bool localServer;      // the client's current server is local (Connected to loopback / 127.x)
+        string pendingReason;  // a disconnect since the newest connection began (null = none)
+        DateTime pendingAt = DateTime.MinValue;
+
+        public static bool IsLocal(string target)
+        {
+            if (string.IsNullOrEmpty(target)) return false;
+            string t = target.ToLowerInvariant();
+            return t.StartsWith("loopback", StringComparison.Ordinal) || t.StartsWith("127.", StringComparison.Ordinal) ||
+                   t.StartsWith("localhost", StringComparison.Ordinal) || t.StartsWith("[::1]", StringComparison.Ordinal);
+        }
+
+        // A disconnect whose reason may be followed by a reconnect to the same match (a timeout or connection problem).
+        public static bool IsReconnectReason(string reason)
+        {
+            if (reason == null) return false;
+            foreach (var w in new[] { "TIMEDOUT", "TIMEOUT", "CONNECTION_FAILURE", "CONNECTION_PROBLEM", "RECONNECT", "BADCHALLENGE" })
+                if (reason.IndexOf(w, StringComparison.Ordinal) >= 0) return true;
+            return false;
+        }
+
+        // Disconnect lines from a remote server collect until the next connection's first session line.
+        void Boundary(string line, DateTime now, bool old)
+        {
+            var c = ConnectedTo.Match(line);
+            if (c.Success) { localServer = IsLocal(c.Groups[1].Value); return; }
+            var m = Disconnecting.Match(line);
+            if (m.Success && localServer) return;
+            if (!m.Success)
+            {
+                m = ClosedSdr.Match(line); // an SDR connection is never local
+                if (!m.Success) return;
+            }
+            var at = TimeOf(line, now);
+            if (at == DateTime.MaxValue) at = old ? DateTime.MinValue : now;
+            string reason = m.Groups[1].Value;
+            if (pendingReason == null) pendingAt = at;
+            if (pendingReason == null || (IsReconnectReason(pendingReason) && !IsReconnectReason(reason))) pendingReason = reason;
+        }
+
+        // A session line adds its relay and back delay to its connection's set (a new connection starts a new set, with
+        // the disconnect written since the one before as its Boundary). Local servers are never matches.
         void Session(string line, DateTime now, bool old)
         {
+            if (line.IndexOf("127.0.0.1", StringComparison.Ordinal) >= 0 || line.IndexOf("loopback", StringComparison.Ordinal) >= 0) return;
             var m = SessionLine.Match(line);
-            int back;
-            if (!m.Success || !int.TryParse(m.Groups[2].Value, NumberStyles.None, CultureInfo.InvariantCulture, out back)) return;
+            int back, total;
+            if (!m.Success || !int.TryParse(m.Groups[3].Value, NumberStyles.None, CultureInfo.InvariantCulture, out back) ||
+                !int.TryParse(m.Groups[2].Value, NumberStyles.None, CultureInfo.InvariantCulture, out total)) return;
             var c = SessionConn.Match(line);
             string conn = c.Success ? c.Groups[1].Value : "";
             var at = TimeOf(line, now);
             if (at == DateTime.MaxValue) at = old ? DateTime.MinValue : now;
-            if (LastSessions == null || LastSessions.Conn != conn) LastSessions = new SessionSet { Conn = conn };
+            if (LastSessions == null || LastSessions.Conn != conn)
+            {
+                var sv = SessionServer.Match(line);
+                LastSessions = new SessionSet { Conn = conn, Since = at, Server = sv.Success ? sv.Groups[1].Value : null,
+                                                Boundary = pendingReason, BoundaryAt = pendingReason != null ? pendingAt : DateTime.MinValue };
+                pendingReason = null;
+                pendingAt = DateTime.MinValue;
+                localServer = false; // an SDR session: the client is on a remote server now
+            }
             string pop = m.Groups[1].Value.ToLowerInvariant();
-            if (!LastSessions.Backs.Any(kv => kv.Key == pop)) LastSessions.Backs.Add(new KeyValuePair<string, int>(pop, back));
+            if (!LastSessions.Backs.Any(kv => kv.Key == pop))
+            {
+                LastSessions.Backs.Add(new KeyValuePair<string, int>(pop, back));
+                LastSessions.Pings.Add(new KeyValuePair<string, int>(pop, total));
+            }
             LastSessions.At = at;
         }
 
@@ -249,7 +333,7 @@ namespace PingBoost
         //   [#1671292347 SDR server …] Requesting session from dfra#51 (89.222.108.162:27019).  Ping = 78 = 78+0 (front+back).
         // A relay that reaches the server in ColocatedMs or less sits in the server's datacenter (fra 1 ms, dfra 0 ms):
         // that is the match's place. Behind a far entry relay (Dubai to Frankfurt, back 40) the line says nothing.
-        static readonly Regex SessionLine = new Regex(@"Requesting session from ([A-Za-z][A-Za-z0-9]*)#\d+\s*\([^)]*\)\.?\s+Ping\s*=\s*\d+\s*=\s*\d+\+(\d+)\s*\(front\+back\)",
+        static readonly Regex SessionLine = new Regex(@"Requesting session from ([A-Za-z][A-Za-z0-9]*)#\d+\s*\([^)]*\)\.?\s+Ping\s*=\s*(\d+)\s*=\s*\d+\+(\d+)\s*\(front\+back\)",
                                                       RegexOptions.CultureInvariant);
         //   … Selecting fra#328 (155.133.226.87:27020) as primary.  (…): the relay the game enters by
         static readonly Regex PrimaryLine = new Regex(@"Selecting ([A-Za-z][A-Za-z0-9]*)#\d+\s*\([^)]*\)\s+as primary", RegexOptions.CultureInvariant);
@@ -269,7 +353,7 @@ namespace PingBoost
             {
                 m = SessionLine.Match(line);
                 int back;
-                if (!m.Success || !int.TryParse(m.Groups[2].Value, NumberStyles.None, CultureInfo.InvariantCulture, out back) ||
+                if (!m.Success || !int.TryParse(m.Groups[3].Value, NumberStyles.None, CultureInfo.InvariantCulture, out back) ||
                     back > ColocatedMs)
                     return null;
                 kind = "dc";

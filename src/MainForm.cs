@@ -1159,6 +1159,7 @@ namespace PingBoost
             gameLogTimer = new System.Windows.Forms.Timer { Interval = 20000 };
             gameLogTimer.Tick += delegate
             {
+                ReportMatchIfDue(); // a match seen a minute ago is reported from here, even with the game in front
                 var g = games.FirstOrDefault(DeadlockData.Is);
                 if (g == null || gameLog.Following) return;
                 gameLog.Following = true;
@@ -1169,12 +1170,106 @@ namespace PingBoost
                         if (!Detector.IsRunning(g.Processes)) return;
                         DateTime start, readAt;
                         gameLog.Read(g, out start, out readAt);
+                        ConsoleLine primary;
+                        var set = gameLog.Sessions(out primary);
+                        if (set != null) Ui(() => FollowMatch(g, set, primary, start, readAt));
                     }
                     catch (Exception ex) { ReportCrash("console log", ex); }
                     finally { gameLog.Following = false; }
                 });
             };
             gameLogTimer.Start();
+        }
+
+        // ---------------------------------------------------------------- match reports (kind "match", see SECURITY.md)
+
+        // One report per match, a minute after it was first seen: what the lock promised and where the match really was.
+        // Fed by the 20 s log follower (Deadlock with -condebug: no capture, no ping, the game may stay in front) and by
+        // the normal server checks; sent from the follower's timer.
+        readonly MatchReporter matchReport = new MatchReporter(Storage.GetSetting("match_last"), SavedTime("match_last_at"));
+        Game matchGame;
+        DateTime logGameStart = DateTime.MinValue; // when the running Deadlock started, as the log follower last saw it
+        bool lockDubai; // Prefs.DubaiWayIn when the lock that is on was applied
+
+        static DateTime SavedTime(string name)
+        {
+            long ticks;
+            return long.TryParse(Storage.GetSetting(name), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out ticks) &&
+                   ticks > 0 && ticks < DateTime.MaxValue.Ticks ? new DateTime(ticks) : DateTime.MinValue;
+        }
+
+        // The lock that is on for g, as the report tells it.
+        MatchLock MatchLockNow(Game g)
+        {
+            var lk = new MatchLock { DubaiWayIn = Prefs.DubaiWayIn };
+            if (!LockedFor(g) || lockInfo == null) return lk;
+            lk.Locked = true;
+            lk.DubaiWayIn = lockDubai;
+            lk.Picked = (lockInfo.Picked ?? new List<string>()).ToList();
+            lk.PickedRegions = MatchReport.RegionKeys(g, lk.Picked);
+            lk.Closed = (lockClosed ?? new HashSet<string>()).OrderBy(x => x, StringComparer.Ordinal).ToList();
+            lk.Gateways = (lockInfo.Gateways ?? new List<string>()).ToList();
+            lk.LockedAt = lockChangedAt;
+            string via, viaId;
+            lk.ExpectedMs = LockScope.Expected(g, LockPicks(g), lockClosed, lockInfo.Gateways, StrictLock.Pings(g), Routing.BestLatency, out via, out viaId);
+            lk.ExpectedVia = viaId;
+            return lk;
+        }
+
+        // UI: the log follower read Deadlock's log; its newest connection is the match (MatchReporter.SeeLog).
+        void FollowMatch(Game g, SessionSet set, ConsoleLine primary, DateTime gameStart, DateTime readAt)
+        {
+            try
+            {
+                logGameStart = gameStart;
+                bool isNew = set.Conn != matchReport.Key;
+                if (!matchReport.SeeLog(set, gameStart, readAt, DateTime.Now, () => MatchLockNow(g))) return;
+                if (isNew) matchGame = g;
+                // reported already: nothing more to work out for this connection
+                if (!matchReport.Sent && matchGame == g) matchReport.SetLog(MatchReport.FromLog(g, set, primary, matchReport.Lock.Picks));
+                ReportMatchIfDue();
+            }
+            catch (Exception ex) { ReportCrash("match report", ex); }
+        }
+
+        // UI: a server check saw g's match on a datacenter, only its entry relay, or a server of a game without a
+        // datacenter list (key, never sent). Deadlock whose log gave a connection in this run: the log tells the match,
+        // the check only fills in.
+        void CaptureMatch(Game g, string key, DateTime gameStart, MatchSeen seen)
+        {
+            try
+            {
+                if (gameStart == DateTime.MinValue) gameStart = logGameStart;
+                bool logOn = DeadlockData.Is(g) && gameLog.On && matchReport.LogOn(gameStart);
+                if (!logOn && matchReport.SeeCapture(key, gameStart, DateTime.Now, () => MatchLockNow(g))) matchGame = g;
+                if (matchGame == g) matchReport.SetCapture(seen);
+            }
+            catch (Exception ex) { ReportCrash("match report", ex); }
+        }
+
+        void ReportMatchIfDue()
+        {
+            try
+            {
+                var now = DateTime.Now;
+                if (matchGame == null || !matchReport.Due(now)) return;
+                matchReport.MarkSent();
+                var lk = matchReport.Lock;
+                var m = MatchReport.Merge(matchReport.Log, matchReport.Capture) ?? new MatchSeen();
+                DateTime started = matchReport.StartedAt;
+                // the live ping follows the locked server: used only for a match on the lock's servers (ActualMs)
+                int live = lk.Locked ? Telemetry.Ping : -1;
+                var data = MatchReport.Data(matchGame.Name, lk, m, started, matchReport.QueueFrom, now, live, matchReport.SameServerAsPrev);
+                // the row's game, server and ping stay the live ones (checkin copies them to the install's current state,
+                // which the heartbeat owns); the match's own facts are in data
+                Telemetry.Send("match", null, -1, MatchReport.Detail(lk, m, started), data);
+                Storage.SetSettings(new Dictionary<string, string>
+                {
+                    { "match_last", matchReport.Key },
+                    { "match_last_at", started.Ticks.ToString(System.Globalization.CultureInfo.InvariantCulture) },
+                });
+            }
+            catch (Exception ex) { ReportCrash("match report", ex); }
         }
 
         // The console log named the match datacenter: that is the answer (it wins over the capture). Puts it on the
@@ -1984,6 +2079,7 @@ namespace PingBoost
                     if (!running)
                     {
                         lastObservedCheck = DateTime.MinValue; // time with the game closed is never "no match yet"
+                        matchReport.NoMatch(DateTime.Now);
                         if (session.ClearSkippedAutoTest(g)) UpdateCard(); // the card no longer says the game is open
                         if (lastAutoServer != null) ResetDetectButton();
                         if (match.Any) { ClearMatch(); UpdateCard(); }
@@ -2020,7 +2116,11 @@ namespace PingBoost
 
         void ShowAutoDetect(Game g, List<Detector.Hit> hits, string where, int whereMs, DateTime capturedAt, DateTime readAt, ConsoleLine logDc, DateTime gameStart)
         {
-            if (hits.Count == 0) gameLog.NoMatchSeen(capturedAt, readAt); // a console line read up to now is about an earlier match
+            if (hits.Count == 0)
+            {
+                gameLog.NoMatchSeen(capturedAt, readAt); // a console line read up to now is about an earlier match
+                matchReport.NoMatch(DateTime.Now);
+            }
             // Deadlock's console log names the match datacenter: that wins over the capture
             var fresh = hits.Count > 0 ? gameLog.Fresh(logDc, gameStart, lockChangedAt) : null;
             if (fresh != null && ShowLogResult(g, fresh, false)) return;
@@ -2067,6 +2167,7 @@ namespace PingBoost
                 string at = Places.PlaceName(relay);
                 SetDetect(T("Entering at: ", "داخل من: ") + at, Theme.Lavender);
                 if (lastAutoServer != relay.Id) Telemetry.Send("detect", relay.NameEn, -1, "auto, through relay");
+                CaptureMatch(g, "relay:" + relay.Id, gameStart, new MatchSeen { Source = MatchReport.SourceRelay, Entry = relay.Id });
                 lastAutoServer = relay.Id;
                 SetMatch(null, false, true, at, null);
                 UpdateCard();
@@ -2078,6 +2179,12 @@ namespace PingBoost
             bool dcPicked = dc != null && LockScope.Picked(lockPicks, dc);
             bool ok = dc == null ? !LockedFor(g) : (!LockedFor(g) || dcPicked);
             SetDetect(T("On: ", "إنت على: ") + name, ok ? Theme.Good : Theme.Warn);
+            // the match report: the datacenter (or, without one, the server's city; no address is kept or sent)
+            CaptureMatch(g, dc != null ? "dc:" + dc.Id : "srv:" + (where ?? "?"), gameStart, new MatchSeen
+            {
+                Dc = dc != null ? dc.Id : null, Region = dc != null ? MatchReport.RegionKey(g, dc.Id) : null, OnPicked = dcPicked,
+                Source = MatchReport.SourceCapture, ActualMs = whereMs,
+            });
             // the card: a datacenter we know names the region; a game without them shows the city and its ping
             if (dc != null) SetMatch(Places.RegionNameOf(g, dc), dcPicked, false);
             else if (!g.CanLock && where != null) match.SetServer(where, whereMs);
@@ -2270,6 +2377,7 @@ namespace PingBoost
                             lockInfo = info;
                             lockClosed = closed;
                             lockRoute = route;
+                            lockDubai = Prefs.DubaiWayIn;
                             LockChanged(g);
                             Telemetry.Server = string.Join(", ", picked.Select(r => r.NameEn));
                             Telemetry.Send("lock", Telemetry.Server, -1, n + " ranges blocked, mode " + info.Mode +
