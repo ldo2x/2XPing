@@ -20,7 +20,18 @@ namespace PingBoost
     {
         public string Conn;   // the connection id ("#1671292347"): a new id is a new server
         public DateTime At;   // when its newest line was written (as ConsoleLine.At)
+        public DateTime Since; // when its first line was written (as ConsoleLine.At)
         public readonly List<KeyValuePair<string, int>> Backs = new List<KeyValuePair<string, int>>(); // POP id -> back ms
+        public readonly List<KeyValuePair<string, int>> Pings = new List<KeyValuePair<string, int>>(); // POP id -> front+back ms
+
+        // A copy that later lines of the log don't change (the log is read on another thread).
+        public SessionSet Copy()
+        {
+            var c = new SessionSet { Conn = Conn, At = At, Since = Since };
+            c.Backs.AddRange(Backs);
+            c.Pings.AddRange(Pings);
+            return c;
+        }
     }
 
     // Deadlock's own console log (game\citadel\console.log, written while the game runs with the launch option
@@ -184,15 +195,20 @@ namespace PingBoost
         void Session(string line, DateTime now, bool old)
         {
             var m = SessionLine.Match(line);
-            int back;
-            if (!m.Success || !int.TryParse(m.Groups[2].Value, NumberStyles.None, CultureInfo.InvariantCulture, out back)) return;
+            int back, total;
+            if (!m.Success || !int.TryParse(m.Groups[3].Value, NumberStyles.None, CultureInfo.InvariantCulture, out back) ||
+                !int.TryParse(m.Groups[2].Value, NumberStyles.None, CultureInfo.InvariantCulture, out total)) return;
             var c = SessionConn.Match(line);
             string conn = c.Success ? c.Groups[1].Value : "";
             var at = TimeOf(line, now);
             if (at == DateTime.MaxValue) at = old ? DateTime.MinValue : now;
-            if (LastSessions == null || LastSessions.Conn != conn) LastSessions = new SessionSet { Conn = conn };
+            if (LastSessions == null || LastSessions.Conn != conn) LastSessions = new SessionSet { Conn = conn, Since = at };
             string pop = m.Groups[1].Value.ToLowerInvariant();
-            if (!LastSessions.Backs.Any(kv => kv.Key == pop)) LastSessions.Backs.Add(new KeyValuePair<string, int>(pop, back));
+            if (!LastSessions.Backs.Any(kv => kv.Key == pop))
+            {
+                LastSessions.Backs.Add(new KeyValuePair<string, int>(pop, back));
+                LastSessions.Pings.Add(new KeyValuePair<string, int>(pop, total));
+            }
             LastSessions.At = at;
         }
 
@@ -249,7 +265,7 @@ namespace PingBoost
         //   [#1671292347 SDR server …] Requesting session from dfra#51 (89.222.108.162:27019).  Ping = 78 = 78+0 (front+back).
         // A relay that reaches the server in ColocatedMs or less sits in the server's datacenter (fra 1 ms, dfra 0 ms):
         // that is the match's place. Behind a far entry relay (Dubai to Frankfurt, back 40) the line says nothing.
-        static readonly Regex SessionLine = new Regex(@"Requesting session from ([A-Za-z][A-Za-z0-9]*)#\d+\s*\([^)]*\)\.?\s+Ping\s*=\s*\d+\s*=\s*\d+\+(\d+)\s*\(front\+back\)",
+        static readonly Regex SessionLine = new Regex(@"Requesting session from ([A-Za-z][A-Za-z0-9]*)#\d+\s*\([^)]*\)\.?\s+Ping\s*=\s*(\d+)\s*=\s*\d+\+(\d+)\s*\(front\+back\)",
                                                       RegexOptions.CultureInvariant);
         //   … Selecting fra#328 (155.133.226.87:27020) as primary.  (…): the relay the game enters by
         static readonly Regex PrimaryLine = new Regex(@"Selecting ([A-Za-z][A-Za-z0-9]*)#\d+\s*\([^)]*\)\s+as primary", RegexOptions.CultureInvariant);
@@ -269,7 +285,7 @@ namespace PingBoost
             {
                 m = SessionLine.Match(line);
                 int back;
-                if (!m.Success || !int.TryParse(m.Groups[2].Value, NumberStyles.None, CultureInfo.InvariantCulture, out back) ||
+                if (!m.Success || !int.TryParse(m.Groups[3].Value, NumberStyles.None, CultureInfo.InvariantCulture, out back) ||
                     back > ColocatedMs)
                     return null;
                 kind = "dc";

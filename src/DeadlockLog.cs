@@ -102,6 +102,17 @@ namespace PingBoost
             return at != null ? new ConsoleLine { Code = at, At = sessions.At } : dc;
         }
 
+        // The session relays of the newest connection (a copy, null = none) and the newest primary relay line (null =
+        // none), as the last read left them: for the match report (MatchReport.FromLog). Any thread.
+        public SessionSet Sessions(out ConsoleLine primary)
+        {
+            lock (gate)
+            {
+                primary = log != null ? log.LastRelay : null;
+                return log != null && log.LastSessions != null ? log.LastSessions.Copy() : null;
+            }
+        }
+
         // UI: a check saw no match, so a console line read up to now (in this check or before) is about an earlier match.
         public void NoMatchSeen(DateTime capturedAt, DateTime readAt)
         {

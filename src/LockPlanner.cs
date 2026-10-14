@@ -119,7 +119,15 @@ namespace PingBoost
         public static int Expected(Game g, HashSet<string> picks, ICollection<string> closed, ICollection<string> gateways,
                                    IDictionary<string, double> pings, Func<Region, double> latency, out string via)
         {
-            via = null;
+            string viaId;
+            return Expected(g, picks, closed, gateways, pings, latency, out via, out viaId);
+        }
+
+        // ...and viaId: that place's POP id (null = straight to the datacenter), for the match report.
+        public static int Expected(Game g, HashSet<string> picks, ICollection<string> closed, ICollection<string> gateways,
+                                   IDictionary<string, double> pings, Func<Region, double> latency, out string via, out string viaId)
+        {
+            via = viaId = null;
             if (g == null || picks == null || picks.Count == 0) return -1;
             if (g.Provider == Provider.Valve && g.Routes != null && pings != null)
             {
@@ -129,7 +137,7 @@ namespace PingBoost
                 var rt = StrictLock.Best(g.Routes, picks, pings, open);
                 if (!rt.Known) return -1;
                 Region e;
-                if (rt.Entry != rt.To && byId.TryGetValue(rt.Entry, out e)) via = Places.PlaceName(e);
+                if (rt.Entry != rt.To && byId.TryGetValue(rt.Entry, out e)) { via = Places.PlaceName(e); viaId = e.Id; }
                 return (int)Math.Round(rt.Ms);
             }
             double best = double.MaxValue;
