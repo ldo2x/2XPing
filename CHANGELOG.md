@@ -2,6 +2,7 @@
 
 ## Next (in testing)
 
+- Developer panel: a «لوحة الأرقام» / Dashboard tab with counters (online now, active, new, matches, locks, problems, each against the period before) and charts (users and matches per day, versions, countries, games, picked regions, whether the lock held, expected vs actual ping, datacenters per region, top problems), from one call to the new `dev_stats()` database function (`tools/supabase-dev-stats.sql`). It refreshes by itself at most every 5 minutes, only while it is on screen
 - **A simpler main screen.** One card at the top says in plain words what is happening: locked or not, in a match, on your region or not. Under it, 2-3 region choices with ping, wait time and players, and you can pick several. Overwatch and Dead by Daylight are chosen by region; «اختيار يدوي» opens the full server list
 - The advanced layout keeps the same card on top with every tool under it
 - The locked card says the ping to expect, under the title and in its colour: «بنقك المتوقع تقريباً 58 عن طريق دبي» / "Expected ping: about 58 ms via Dubai" (the best way through what the lock leaves open). Once the match's real server is known, the card says where you're playing instead
