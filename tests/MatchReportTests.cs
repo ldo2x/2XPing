@@ -99,30 +99,42 @@ namespace PingBoost
             Check(!q.SeeCapture("dc:fra", DateTime.MinValue, T0.AddMinutes(10), null), "10 minutes later (match 10 min old): the same match");
             Check(!q.SeeCapture("dc:fra", DateTime.MinValue, T0.AddMinutes(14), null), "4 minutes of silence: the same match");
             Check(q.SeeCapture("dc:fra", DateTime.MinValue, T0.AddMinutes(40), null), "26 minutes of silence on a 40-minute-old match: a new one");
+            Check(!q.SeeCapture("dc:ams", DateTime.MinValue, T0.AddMinutes(44), null), "another server 4 minutes later: the same match");
+            Check(q.SeeCapture("dc:fra", DateTime.MinValue, T0.AddMinutes(50), null), "another server after 6 unseen minutes: a new match, however young");
         }
 
-        // I3: the queue starts at the lock, or at the newest check that saw no match after the match before
+        // The queue: the first match after the lock from the lock; a later one from the end of the one before (its
+        // disconnect line, else the first check that saw no match after it began); otherwise unknown.
         static void MatchReporterQueueTime()
         {
             var game = T0.AddHours(-1);
             Func<MatchLock> lk = EuropeLock; // locked at T0 - 7 min
             var r = new MatchReporter(null, DateTime.MinValue);
+            r.NoMatch(T0.AddMinutes(-2)); // a check in the menu before the first match doesn't move the lock's start
             r.SeeLog(Conn("#1", T0, "1"), game, T0, T0, lk);
             Check(r.QueueFrom == T0.AddMinutes(-7), "first match after the lock: from the lock");
             // second match under the same lock, nothing saw the end of the first: unknown, not 40 minutes
             r.SeeLog(Conn("#2", T0.AddMinutes(40), "2"), game, T0.AddMinutes(40), T0.AddMinutes(40), lk);
             Check(r.QueueFrom == DateTime.MinValue, "a later match with no end seen: unknown");
-            var d = MatchReport.Data("Deadlock", r.Lock, null, r.StartedAt, r.QueueFrom, T0.AddMinutes(41), -1);
+            var d = MatchReport.Data("Deadlock", r.Lock, null, r.StartedAt, r.QueueFrom, T0.AddMinutes(41), -1, false);
             Check(d["queue_s"] == null, "queue_s null");
-            // a check saw the menu between: from that check
+            // checks saw the menu between: from the first of them
             r.NoMatch(T0.AddMinutes(75));
+            r.NoMatch(T0.AddMinutes(77));
             r.SeeLog(Conn("#3", T0.AddMinutes(80), "3"), game, T0.AddMinutes(80), T0.AddMinutes(80), lk);
-            Check(r.QueueFrom == T0.AddMinutes(75), "after a no-match check: from it");
-            d = MatchReport.Data("Deadlock", r.Lock, null, r.StartedAt, r.QueueFrom, T0.AddMinutes(81), -1);
+            Check(r.QueueFrom == T0.AddMinutes(75), "after no-match checks: from the first");
+            d = MatchReport.Data("Deadlock", r.Lock, null, r.StartedAt, r.QueueFrom, T0.AddMinutes(81), -1, false);
             Check((int)d["queue_s"] == 300, "5 minutes: " + d["queue_s"]);
+            // the log's disconnect line wins over the checks
+            r.NoMatch(T0.AddMinutes(120));
+            var s4 = Conn("#4", T0.AddMinutes(125), "4");
+            s4.Boundary = "NETWORK_DISCONNECT_EXITING";
+            s4.BoundaryAt = T0.AddMinutes(118);
+            r.SeeLog(s4, game, T0.AddMinutes(125), T0.AddMinutes(125), lk);
+            Check(r.QueueFrom == T0.AddMinutes(118), "from the previous match's disconnect line");
             // unlocked: from the game's start for the first match of the run
             var u = new MatchReporter(null, DateTime.MinValue);
-            u.SeeLog(Conn("#4", T0, "4"), game, T0, T0, () => new MatchLock());
+            u.SeeLog(Conn("#5", T0, "5"), game, T0, T0, () => new MatchLock());
             Check(u.QueueFrom == game, "unlocked, first match: from the game's start");
             // matches only the checks saw: their start is late, so no queue time
             var c = new MatchReporter(null, DateTime.MinValue);
@@ -130,22 +142,73 @@ namespace PingBoost
             Check(c.QueueFrom == DateTime.MinValue, "capture: unknown");
         }
 
-        // M7: a reconnect to the same match server is the same match; another server is a new one
-        static void MatchReporterReconnectIsTheSameMatch()
+        // Real lines (Deadlock's console.log, 2026-10-14; steamids and addresses changed)
+        const string LoopbackPractice =
+            "10/14 15:09:38 [Client] CL:  Connected to 'loopback:1'\n" +
+            "10/14 15:09:39 [Client] Disconnecting from server: NETWORK_DISCONNECT_LOOPDEACTIVATE\n" +
+            "10/14 15:09:39 [SteamNetSockets] [#2308210403 pipe 'server'] closed by app, linger requested but not needed (2055) NETWORK_DISCONNECT_LOOPDEACTIVATE\n" +
+            "10/14 15:09:43 [NetSteamConn] Opened Steam Net Connection on socket 'client' to 127.0.0.1:27015, connection #2321638803 UDP invalid@127.0.0.1:27015\n" +
+            "10/14 15:09:43 [Client] CL:  Connected to '127.0.0.1:27015'\n" +
+            "10/14 15:25:23 [Client] Disconnecting from server: NETWORK_DISCONNECT_EXITING\n" +
+            "10/14 15:25:23 [SteamNetSockets] [#2321638803 UDP steamid:1@127.0.0.1:27015 'server'] closed by app, linger requested but not needed (1059) NETWORK_DISCONNECT_EXITING\n";
+
+        static string SessionLineAt(string time, string conn, string server, string pop, int front, int back)
         {
-            var game = T0.AddHours(-1);
+            return "10/14 " + time + " [SteamNetSockets] [" + conn + " SDR server steamid:" + server + " vport 0] Requesting session from " + pop +
+                   "#91 (1.2.3.4:27059).  Ping = " + (front + back) + " = " + front + "+" + back + " (front+back).  Rank=1 Score=260\n";
+        }
+
+        // A new connection is always reported unless the log shows a reconnect; local servers never count
+        // the newest connection, read half a minute after its newest line
+        static bool See(MatchReporter r, GameConsole gc, DateTime game)
+        {
+            var set = gc.LastSessions.Copy();
+            return r.SeeLog(set, game, set.At.AddSeconds(30), set.At.AddSeconds(30), EuropeLock);
+        }
+
+        static void MatchReporterReconnectsAndBoundaries()
+        {
+            var game = new DateTime(2026, 10, 14, 15, 0, 0);
+            var gc = new GameConsole("unused");
+            var now = new DateTime(2026, 10, 14, 17, 0, 0);
+            // practice and sandbox (loopback, 127.0.0.1): no connection, and their disconnects end nothing
+            gc.Feed(LoopbackPractice, now, false);
+            Check(gc.LastSessions == null, "local servers are never matches");
+            gc.Feed(SessionLineAt("15:30:00", "#100", "900", "fra", 70, 1), now, false);
+            Check(gc.LastSessions.Conn == "#100" && gc.LastSessions.Boundary == null, "a local disconnect is no boundary");
             var r = new MatchReporter(null, DateTime.MinValue);
-            r.SeeLog(Conn("#1", T0, "900"), game, T0, T0, EuropeLock);
+            Check(See(r, gc, game) && r.Key == "#100" && !r.SameServerAsPrev, "first match");
             r.MarkSent();
-            Check(r.SeeLog(Conn("#2", T0.AddMinutes(20), "900"), game, T0.AddMinutes(20), T0.AddMinutes(20), EuropeLock) && r.Sent && r.Key == "#2",
-                  "the same server 20 minutes in: a reconnect, not reported again");
-            Check(r.SeeLog(Conn("#3", T0.AddMinutes(45), "901"), game, T0.AddMinutes(45), T0.AddMinutes(45), EuropeLock) && !r.Sent, "another server: a new match");
-            var n = new MatchReporter(null, DateTime.MinValue);
-            n.SeeLog(Conn("#1", T0, "900"), game, T0, T0, EuropeLock);
-            n.MarkSent();
-            n.NoMatch(T0.AddMinutes(30));
-            Check(n.SeeLog(Conn("#2", T0.AddMinutes(35), "900"), game, T0.AddMinutes(35), T0.AddMinutes(35), EuropeLock) && !n.Sent,
-                  "the same server after a check saw no match: a new match");
+            // the same server, no disconnect line between: reported again, flagged
+            gc.Feed(SessionLineAt("15:50:00", "#101", "900", "fra", 70, 1), now, false);
+            Check(See(r, gc, game) && !r.Sent && r.SameServerAsPrev, "same server, no boundary: a new row, flagged");
+            r.MarkSent();
+            // a timeout, then the same server within 10 minutes: a reconnect (the same match, not reported again)
+            gc.Feed("10/14 15:55:00 [Client] Disconnecting from server: NETWORK_DISCONNECT_TIMEDOUT\n" +
+                    SessionLineAt("15:56:00", "#102", "900", "fra", 70, 1), now, false);
+            Check(gc.LastSessions.Boundary == "NETWORK_DISCONNECT_TIMEDOUT" && gc.LastSessions.BoundaryAt == new DateTime(2026, 10, 14, 15, 55, 0), "the timeout is the boundary");
+            Check(See(r, gc, game) && r.Sent && r.Key == "#102", "a reconnect: not reported again");
+            // a timeout, then the same server 15 minutes later: a new match (not flagged: a disconnect was written)
+            gc.Feed("10/14 16:00:00 [Client] Disconnecting from server: NETWORK_DISCONNECT_TIMEDOUT\n" +
+                    SessionLineAt("16:15:00", "#103", "900", "fra", 70, 1), now, false);
+            Check(See(r, gc, game) && !r.Sent && !r.SameServerAsPrev, "late: a new match");
+            r.MarkSent();
+            // the player left (EXITING; the SDR close line too), then the same server: a new match, not flagged
+            gc.Feed("10/14 16:40:00 [Client] Disconnecting from server: NETWORK_DISCONNECT_EXITING\n" +
+                    "10/14 16:40:00 [SteamNetSockets] [#103 SDR server steamid:900 vport 0] closed by app, linger requested but not needed (1059) NETWORK_DISCONNECT_EXITING\n" +
+                    SessionLineAt("16:45:00", "#104", "900", "fra", 70, 1), now, false);
+            Check(gc.LastSessions.Boundary == "NETWORK_DISCONNECT_EXITING", "an ending reason");
+            Check(See(r, gc, game) && !r.Sent && !r.SameServerAsPrev, "left, then the same server: a new match");
+            r.MarkSent();
+            // an ending reason wins over a timeout written with it
+            gc.Feed("10/14 16:50:00 [Client] Disconnecting from server: NETWORK_DISCONNECT_TIMEDOUT\n" +
+                    "10/14 16:50:01 [SteamNetSockets] [#104 SDR server steamid:900 vport 0] closed by peer (1059): NETWORK_DISCONNECT_EXITING\n" +
+                    SessionLineAt("16:51:00", "#105", "900", "fra", 70, 1), now, false);
+            Check(gc.LastSessions.Boundary == "NETWORK_DISCONNECT_EXITING", "ending reason kept: " + gc.LastSessions.Boundary);
+            Check(See(r, gc, game) && !r.Sent, "so a new match");
+            Check(GameConsole.IsReconnectReason("NETWORK_DISCONNECT_CONNECTION_PROBLEM") && !GameConsole.IsReconnectReason("NETWORK_DISCONNECT_LOOPDEACTIVATE") &&
+                  !GameConsole.IsReconnectReason(null), "reconnect reasons");
+            Check(GameConsole.IsLocal("loopback:1") && GameConsole.IsLocal("127.0.0.1:27015") && !GameConsole.IsLocal("155.133.226.87:27020"), "local servers");
         }
 
         static SessionSet Sessions(string text, out ConsoleLine primary)
@@ -216,9 +279,9 @@ namespace PingBoost
             m.Backs.Add(new KeyValuePair<string, int>("bom2", 27));
             m.Backs.Add(new KeyValuePair<string, int>("sgp", 76));
             var start = lk.LockedAt.AddSeconds(420);
-            var d = MatchReport.Data("Deadlock", lk, m, start, lk.LockedAt, lk.LockedAt.AddSeconds(900), 66);
+            var d = MatchReport.Data("Deadlock", lk, m, start, lk.LockedAt, lk.LockedAt.AddSeconds(900), 66, false);
             var keys = new[] { "game", "locked", "picked", "picked_regions", "closed", "gateways_open", "dubai_way_in", "expected_ms", "expected_via",
-                               "dc", "region", "source", "entry", "actual_ms", "backs", "verdict", "queue_s", "lock_age_s" };
+                               "dc", "region", "source", "entry", "actual_ms", "backs", "verdict", "queue_s", "lock_age_s", "same_server_as_prev" };
             Check(d.Keys.OrderBy(k => k).SequenceEqual(keys.OrderBy(k => k)), "exactly the contract's fields: " + string.Join(",", d.Keys.ToArray()));
             Check((bool)d["locked"] && ((string[])d["picked"]).SequenceEqual(new[] { "fra", "ams" }) && ((string[])d["closed"])[0] == "dfjr" &&
                   ((string[])d["gateways_open"])[0] == "dxb" && (bool)d["dubai_way_in"], "the lock");
@@ -234,7 +297,7 @@ namespace PingBoost
             Check(MatchReport.Detail(lk, m, start) == "outside, dxb, log_located", "detail: " + MatchReport.Detail(lk, m, start));
             // no lock, nothing known: empty lists, nulls, the live ping only when given
             var gameStart = T0.AddMinutes(-3);
-            d = MatchReport.Data("Deadlock", new MatchLock { DubaiWayIn = true }, null, T0, gameStart, T0.AddMinutes(1), -1);
+            d = MatchReport.Data("Deadlock", new MatchLock { DubaiWayIn = true }, null, T0, gameStart, T0.AddMinutes(1), -1, false);
             Check(!(bool)d["locked"] && ((string[])d["picked"]).Length == 0 && ((string[])d["gateways_open"]).Length == 0, "no lock: empty lists");
             Check(d["expected_ms"] == null && d["expected_via"] == null && d["dc"] == null && d["actual_ms"] == null && d["lock_age_s"] == null,
                   "unknowns are null");
@@ -242,17 +305,15 @@ namespace PingBoost
             Check((int)d["queue_s"] == 180, "unlocked: queue from the game's start");
             // M2: the live ping (to the locked server) only for a match on the lock's servers
             var inside = new MatchSeen { Dc = "fra", OnPicked = true, Source = MatchReport.SourceCapture };
-            d = MatchReport.Data("Deadlock", lk, inside, T0, DateTime.MinValue, T0, 66);
+            d = MatchReport.Data("Deadlock", lk, inside, T0, DateTime.MinValue, T0, 66, false);
             Check((int)d["actual_ms"] == 66 && (string)d["verdict"] == "inside", "the live ping for a match inside the lock");
-            d = MatchReport.Data("Deadlock", lk, new MatchSeen(), T0, DateTime.MinValue, T0, 66);
+            d = MatchReport.Data("Deadlock", lk, new MatchSeen(), T0, DateTime.MinValue, T0, 66, false);
             Check(d["actual_ms"] == null && (string)d["verdict"] == "unknown", "no live ping for a match somewhere unknown");
             Check(MatchReport.ActualMs(lk, new MatchSeen { Dc = "sgp" }, T0, 66) == -1, "...or outside the lock");
             // M4: a lock applied after the match began couldn't steer it
             Check(MatchReport.Verdict(lk, inside, lk.LockedAt.AddSeconds(-1)) == "unknown", "lock after the match began: unknown");
-            // M1/M5: the row's server never falls back to the lock's names
-            Check(MatchReport.RowServer(inside) == "fra" && MatchReport.RowServer(new MatchSeen { Entry = "dxb" }) == "via dxb" &&
-                  MatchReport.RowServer(new MatchSeen()) == "?" && MatchReport.RowServer(null) == "?", "row server");
-            d = MatchReport.Data("Deadlock", new MatchLock(), null, T0, DateTime.MinValue, T0, -1);
+            Check(!(bool)d["same_server_as_prev"], "same_server_as_prev given as is");
+            d = MatchReport.Data("Deadlock", new MatchLock(), null, T0, DateTime.MinValue, T0, -1, false);
             Check(d["queue_s"] == null, "no lock, game start unknown: no queue time");
         }
 
@@ -290,7 +351,7 @@ namespace PingBoost
             Run("MatchReporterLogCountsOnlyWhenItGaveThisRunAConnection", MatchReporterLogCountsOnlyWhenItGaveThisRunAConnection);
             Run("MatchReporterCaptureMatchesEndOnAGap", MatchReporterCaptureMatchesEndOnAGap);
             Run("MatchReporterQueueTime", MatchReporterQueueTime);
-            Run("MatchReporterReconnectIsTheSameMatch", MatchReporterReconnectIsTheSameMatch);
+            Run("MatchReporterReconnectsAndBoundaries", MatchReporterReconnectsAndBoundaries);
             Run("MatchReportGatewayAndExpectedVia", MatchReportGatewayAndExpectedVia);
             Run("MatchReportFromTheConsoleLog", MatchReportFromTheConsoleLog);
             Run("MatchReportMergesTheCapture", MatchReportMergesTheCapture);

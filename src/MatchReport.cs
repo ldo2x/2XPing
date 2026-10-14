@@ -35,7 +35,9 @@ namespace PingBoost
     // When to send a match report: once per match, a minute after it was first seen (the log's session lines are in
     // by then). Pure: the clock is passed in.
     // - Deadlock's console log (when it gave a connection in this run of the game, LogOn): a new connection id is a new
-    //   match, except a reconnect (the same match server, see Reconnect).
+    //   match, except a reconnect: the log wrote a timeout / connection-problem disconnect before it (and no ending one)
+    //   and it goes to the same match server within ReconnectWindow. Never suppressed otherwise: a new connection to the
+    //   same server with no disconnect line between is reported with SameServerAsPrev (the dashboard can drop it).
     // - Otherwise the server checks (only while 2X Ping is in front): a new match only after a check that saw no match,
     //   or after a long silence (no sighting for CaptureSilence once the current match is MinMatch old). A different
     //   server seen without either is the same match (the game's primary relay or busiest address can change).
@@ -46,8 +48,8 @@ namespace PingBoost
         public static readonly TimeSpan Stale = TimeSpan.FromMinutes(15);
         public static readonly TimeSpan CaptureSilence = TimeSpan.FromMinutes(5);
         public static readonly TimeSpan MinMatch = TimeSpan.FromMinutes(15);
-        // a new connection to the same match server this soon after the match began is a reconnect, not a new match
-        public static readonly TimeSpan Reconnect = TimeSpan.FromMinutes(50);
+        // a new connection to the same match server this soon after a timeout disconnect is a reconnect, not a new match
+        public static readonly TimeSpan ReconnectWindow = TimeSpan.FromMinutes(10);
         // a log connection that begins this close to a match the checks started is that match
         public static readonly TimeSpan Adopt = TimeSpan.FromMinutes(3);
 
@@ -56,11 +58,12 @@ namespace PingBoost
         bool sent, gap, fromLog;
         DateTime seenAt;       // when the app first saw it
         DateTime lastCaptureAt = DateTime.MinValue;  // the newest check that saw the current (capture) match
-        DateTime lastNoMatchAt = DateTime.MinValue;  // the newest check that saw no match
+        DateTime firstNoMatchAt = DateTime.MinValue; // the first check that saw no match since the current match began
         DateTime prevStart = DateTime.MinValue;      // when the match before the current one began
         DateTime logConnAt = DateTime.MinValue;      // the first line of the newest connection the log gave
         public DateTime StartedAt { get; private set; } // when it began (its first log line, or the first check that saw it)
         public DateTime QueueFrom { get; private set; } // when its queue began (MinValue = unknown, see Start)
+        public bool SameServerAsPrev { get; private set; } // a log match on the match server of the one before, with no disconnect line between
         public MatchLock Lock { get; private set; }     // the lock when it was first seen
         public MatchSeen Log { get; private set; }      // the newest the console log says about it
         public MatchSeen Capture { get; private set; }  // the newest a capture said about it
@@ -98,9 +101,10 @@ namespace PingBoost
             if (set.Conn == key) { logConnAt = set.Since; return true; }
             if (readAt - set.At > Stale) return false;
             logConnAt = set.Since;
-            // a reconnect to the same match server, with no check that saw no match in between
-            if (key != null && fromLog && set.Server != null && set.Server == server && set.Since - StartedAt <= Reconnect &&
-                lastNoMatchAt < StartedAt)
+            bool sameServer = key != null && fromLog && set.Server != null && set.Server == server;
+            // a reconnect: a timeout / connection-problem disconnect, then the same match server soon after
+            if (sameServer && GameConsole.IsReconnectReason(set.Boundary) && set.BoundaryAt != DateTime.MinValue &&
+                set.Since - set.BoundaryAt <= ReconnectWindow)
             {
                 key = set.Conn;
                 return true;
@@ -114,8 +118,9 @@ namespace PingBoost
                 if (set.Since < StartedAt) StartedAt = set.Since;
                 return true;
             }
-            Start(set.Conn, true, set.Since, now, gameStart, lockNow);
+            Start(set.Conn, true, set.Since, now, gameStart, lockNow, set.Boundary != null ? set.BoundaryAt : DateTime.MinValue);
             server = set.Server;
+            SameServerAsPrev = sameServer && set.Boundary == null;
             return true;
         }
 
@@ -123,20 +128,25 @@ namespace PingBoost
         public bool SeeCapture(string k, DateTime gameStart, DateTime now, Func<MatchLock> lockNow)
         {
             if (string.IsNullOrEmpty(k)) return false;
+            bool silent = now - lastCaptureAt > CaptureSilence;
             bool isNew = key == null || fromLog || gap || lastCaptureAt == DateTime.MinValue ||
-                         (now - lastCaptureAt > CaptureSilence && now - StartedAt > MinMatch);
+                         (silent && now - StartedAt > MinMatch) || (silent && k != key);
             lastCaptureAt = now;
             if (!isNew) { key = k; return false; }
-            Start(k, false, now, now, gameStart, lockNow);
+            Start(k, false, now, now, gameStart, lockNow, DateTime.MinValue);
             return true;
         }
 
-        // The queue began at the lock (or the game's start without one) or, when a check saw no match since the match
-        // before, at that check, whichever is later. Unknown when neither tells (a later match whose start of queue no
-        // check saw) and for matches only the checks saw (they see a match late, so its start is unknown too).
-        void Start(string k, bool log, DateTime startedAt, DateTime now, DateTime gameStart, Func<MatchLock> lockNow)
+        // The queue: the first match after the lock (or the game's start without one) counts from it; a later match from
+        // the end of the one before: its disconnect line in the log (prevEnd), else the first check that saw no match
+        // after it began. Unknown when neither tells, and for matches only the checks saw (they see a match late, so its
+        // start is unknown too).
+        void Start(string k, bool log, DateTime startedAt, DateTime now, DateTime gameStart, Func<MatchLock> lockNow, DateTime prevEnd)
         {
             prevStart = key != null ? StartedAt : DateTime.MinValue;
+            DateTime noMatch = firstNoMatchAt;
+            firstNoMatchAt = DateTime.MinValue;
+            SameServerAsPrev = false;
             key = k;
             fromLog = log;
             sent = gap = false;
@@ -149,15 +159,16 @@ namespace PingBoost
             if (!log) return;
             DateTime start = Lock.Locked ? Lock.LockedAt : gameStart;
             if (start == DateTime.MinValue) return;
-            if (prevStart == DateTime.MinValue || prevStart < start) QueueFrom = lastNoMatchAt > start ? lastNoMatchAt : start;
-            else if (lastNoMatchAt > prevStart) QueueFrom = lastNoMatchAt;
+            if (prevStart == DateTime.MinValue || prevStart < start) QueueFrom = prevEnd > start ? prevEnd : start;
+            else if (prevEnd > prevStart) QueueFrom = prevEnd;
+            else if (noMatch > prevStart) QueueFrom = noMatch;
         }
 
         // A check saw the game in no match (or closed): the next match the checks see is a new one.
         public void NoMatch(DateTime now)
         {
             gap = true;
-            lastNoMatchAt = now;
+            if (firstNoMatchAt == DateTime.MinValue && now > StartedAt) firstNoMatchAt = now;
         }
 
         // What the log or a capture says about the current match (ignored when there is none, or it was reported).
@@ -288,17 +299,10 @@ namespace PingBoost
             return Verdict(lk, m, startedAt) == "inside" ? liveMs : -1;
         }
 
-        // The event row's server column: the datacenter, else "via <entry relay>", else "?" (never the lock's names).
-        public static string RowServer(MatchSeen m)
-        {
-            if (m != null && m.Dc != null) return m.Dc;
-            return m != null && m.Entry != null ? "via " + m.Entry : "?";
-        }
-
         // The event's data. queueFrom: when the wait for this match began (MatchReporter.QueueFrom, MinValue = unknown).
-        // liveMs: the live ping (-1 = unknown), see ActualMs.
+        // liveMs: the live ping (-1 = unknown), see ActualMs. sameServerAsPrev: MatchReporter.SameServerAsPrev.
         public static Dictionary<string, object> Data(string game, MatchLock lk, MatchSeen m, DateTime startedAt, DateTime queueFrom,
-                                                      DateTime now, int liveMs)
+                                                      DateTime now, int liveMs, bool sameServerAsPrev)
         {
             lk = lk ?? new MatchLock();
             m = m ?? new MatchSeen();
@@ -324,6 +328,7 @@ namespace PingBoost
                 { "backs", backs },
                 { "verdict", Verdict(lk, m, startedAt) },
                 { "queue_s", queueFrom != DateTime.MinValue && startedAt >= queueFrom ? (object)(int)Math.Round((startedAt - queueFrom).TotalSeconds) : null },
+                { "same_server_as_prev", sameServerAsPrev },
                 { "lock_age_s", lk.Locked && lk.LockedAt != DateTime.MinValue && now >= lk.LockedAt ? (object)(int)Math.Round((now - lk.LockedAt).TotalSeconds) : null },
             };
         }
