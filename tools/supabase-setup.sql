@@ -154,6 +154,9 @@ create table if not exists public.game_stats (
 );
 -- busy-ness right now: matches started in the latest complete hour / the 24 hours before it (1 = a usual hour)
 alter table public.game_stats add column if not exists now_factor real;
+-- when now_factor was last computed from a real hourly answer: the app ignores a factor older than 3 hours, and the
+-- job below clears it then, so a factor never sticks at its last value when the hourly query stops answering
+alter table public.game_stats add column if not exists now_factor_at timestamptz;
 -- where "regions" was counted: 'active' = /v1/matches/active (newer apps only trust regions marked so; the old /v1/sql
 -- count was about 2.6 times higher, and its numbers must never meet the newer wait thresholds)
 alter table public.game_stats add column if not exists regions_source text;
@@ -229,6 +232,10 @@ begin
     exception when others then
       reg := null;
     end;
+    -- an empty list (no match from the last hour, or an old-format answer) says nothing: keep the previous regions
+    if reg = '{}'::jsonb then
+      reg := null;
+    end if;
   end if;
   -- the list is about 200 KB: once read, its answer is dropped instead of waiting hours for pg_net's own cleanup
   if got then
@@ -266,13 +273,20 @@ begin
   end if;
 
   if reg is not null or per_day is not null or factor is not null then
-    insert into game_stats (game, regions, regions_source, matches_per_day, now_factor, updated_at)
-    values ('deadlock', reg, case when reg is not null then 'active' end, per_day, factor, case when reg is not null then now() end)
+    insert into game_stats (game, regions, regions_source, matches_per_day, now_factor, now_factor_at, updated_at)
+    values ('deadlock', reg, case when reg is not null then 'active' end, per_day, factor,
+            case when factor is not null then now() end, case when reg is not null then now() end)
     on conflict (game) do update set
       regions         = coalesce(excluded.regions, game_stats.regions),
       regions_source  = coalesce(excluded.regions_source, game_stats.regions_source),
       matches_per_day = coalesce(excluded.matches_per_day, game_stats.matches_per_day),
-      now_factor      = coalesce(excluded.now_factor, game_stats.now_factor),
+      -- a new factor only when the hourly answer was read; one older than 3 hours is cleared (the day's average)
+      now_factor      = case when excluded.now_factor is not null then excluded.now_factor
+                             when game_stats.now_factor_at > now() - interval '3 hours' then game_stats.now_factor
+                        end,
+      now_factor_at   = case when excluded.now_factor is not null then now()
+                             when game_stats.now_factor_at > now() - interval '3 hours' then game_stats.now_factor_at
+                        end,
       updated_at      = coalesce(excluded.updated_at, game_stats.updated_at);
     if not exists (select 1 from game_stats_history where game = 'deadlock' and at > now() - interval '10 minutes') then
       insert into game_stats_history (game, regions, matches_per_day, now_factor)

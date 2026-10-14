@@ -130,7 +130,8 @@ namespace PingBoost
             if (row == null || !row.TryGetValue("regions_source", out src) || !(src is string) || (string)src != "active") return null;
             if (!row.TryGetValue("regions", out regions)) return null;
             var d = regions as Dictionary<string, object>;
-            if (d == null) return null;
+            // an empty list (no match read from the last hour) says nothing: count the live list instead
+            if (d == null || d.Count == 0) return null;
             var result = new Dictionary<string, int>();
             foreach (var kv in d)
             {
@@ -138,7 +139,29 @@ namespace PingBoost
                 if (kv.Value == null || !int.TryParse(Convert.ToString(kv.Value, CultureInfo.InvariantCulture), NumberStyles.Integer, CultureInfo.InvariantCulture, out n)) continue;
                 result[kv.Key] = n;
             }
-            return result;
+            return result.Count == 0 ? null : result;
+        }
+
+        // How busy this hour is against the day's average, from Supabase's shared row: now_factor clamped to 0.3-2.5,
+        // or 1 (the day's average) when it's missing or older than 3 hours. now_factor_at is set only when the hourly
+        // answer was really read, so a factor that stopped updating never sticks (a 2.4 evening peak all night long).
+        // A row from before that column existed has no time, so its factor is not trusted either.
+        public static readonly TimeSpan NowFactorMaxAge = TimeSpan.FromHours(3);
+
+        public static double NowFactor(Dictionary<string, object> row, DateTime utcNow)
+        {
+            object f, at;
+            if (row == null || !row.TryGetValue("now_factor", out f) || f == null) return 1;
+            if (!row.TryGetValue("now_factor_at", out at) || !(at is string)) return 1;
+            DateTime when;
+            if (!DateTime.TryParse((string)at, CultureInfo.InvariantCulture,
+                                   DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out when)) return 1;
+            if (utcNow - when > NowFactorMaxAge || when - utcNow > TimeSpan.FromMinutes(10)) return 1;
+            double v;
+            try { v = Convert.ToDouble(f, CultureInfo.InvariantCulture); }
+            catch { return 1; }
+            if (double.IsNaN(v) || double.IsInfinity(v)) return 1;
+            return Math.Max(0.3, Math.Min(2.5, v));
         }
 
         public static long UnixNow() { return (long)(DateTime.UtcNow - new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds; }

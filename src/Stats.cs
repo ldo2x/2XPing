@@ -37,7 +37,7 @@ namespace PingBoost
         static Dictionary<string, object> shared;
         static DateTime sharedAt;
 
-        // The Deadlock numbers Supabase fetches once a minute for every copy of the app (tools/supabase-setup.sql),
+        // The Deadlock numbers Supabase fetches for every copy of the app (tools/supabase-setup.sql; the regions every 2 minutes),
         // or null when they're missing or more than 10 minutes old: then each PC asks deadlock-api itself.
         static Dictionary<string, object> SharedDeadlock()
         {
@@ -85,9 +85,8 @@ namespace PingBoost
                 }
                 double inMatches = deadlockPerDay / 24.0 * PlayersPerMatch * AvgMatchMinutes / 60.0;
                 // the day's average, scaled to how busy this hour is (about 0.5 at night, 1.5 at the evening peak)
-                double busy = 1;
-                if (s != null && s.ContainsKey("now_factor") && s["now_factor"] != null)
-                    busy = Math.Max(0.3, Math.Min(2.5, Convert.ToDouble(s["now_factor"], CultureInfo.InvariantCulture)));
+                // (1 when the factor is missing or more than 3 hours old: DeadlockData.NowFactor)
+                double busy = DeadlockData.NowFactor(s, DateTime.UtcNow);
                 return (int)Math.Round(inMatches * busy / InMatchShare);
             }
         }

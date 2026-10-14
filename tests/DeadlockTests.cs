@@ -138,6 +138,37 @@ namespace PingBoost
             Check(DeadlockData.SharedRegions(row) == null, "column missing (SQL not applied yet): ignored");
             Check(DeadlockData.SharedRegions(null) == null, "no row");
             Check(DeadlockData.SharedRegions(new Dictionary<string, object> { { "regions_source", "active" }, { "regions", null } }) == null, "no regions");
+            // an empty live list (no match from the last hour read) is no answer: the app counts the list itself (M7)
+            Check(DeadlockData.SharedRegions(new Dictionary<string, object> { { "regions_source", "active" }, { "regions", new Dictionary<string, object>() } }) == null, "empty regions: ignored");
+            Check(DeadlockData.SharedRegions(new Dictionary<string, object> { { "regions_source", "active" },
+                  { "regions", new Dictionary<string, object> { { "Europe", null } } } }) == null, "no readable count: ignored");
+        }
+
+        // The busy-ness factor is only trusted while the hourly answer behind it is fresh (I1): a factor that stopped
+        // updating must fall back to the day's average instead of sticking at its last value.
+        static void DeadlockNowFactorExpires()
+        {
+            var now = new DateTime(2026, 10, 14, 3, 0, 0, DateTimeKind.Utc);
+            var row = new Dictionary<string, object> { { "now_factor", 2.4m }, { "now_factor_at", "2026-10-14T01:30:00+00:00" } };
+            Check(Math.Abs(DeadlockData.NowFactor(row, now) - 2.4) < 1e-9, "fresh factor is used");
+            row["now_factor_at"] = "2026-10-14T00:01:00+00:00";
+            Check(Math.Abs(DeadlockData.NowFactor(row, now) - 2.4) < 1e-9, "2 h 59 min old: still used");
+            row["now_factor_at"] = "2026-10-13T23:59:00+00:00";
+            Check(DeadlockData.NowFactor(row, now) == 1, "older than 3 h: the day's average");
+            row["now_factor_at"] = null;
+            Check(DeadlockData.NowFactor(row, now) == 1, "no time: not trusted");
+            row.Remove("now_factor_at");
+            Check(DeadlockData.NowFactor(row, now) == 1, "column missing (SQL not applied yet): not trusted");
+            row["now_factor_at"] = "garbage";
+            Check(DeadlockData.NowFactor(row, now) == 1, "unreadable time: not trusted");
+            row["now_factor_at"] = "2026-10-14T02:59:00.123456+00:00";
+            row["now_factor"] = 9;
+            Check(DeadlockData.NowFactor(row, now) == 2.5, "clamped high");
+            row["now_factor"] = 0.01;
+            Check(DeadlockData.NowFactor(row, now) == 0.3, "clamped low");
+            row["now_factor"] = null;
+            Check(DeadlockData.NowFactor(row, now) == 1, "no factor");
+            Check(DeadlockData.NowFactor(null, now) == 1, "no row");
         }
 
         // A saved pick of a datacenter that no longer hosts matches (India became relay-only) is dropped at load.
@@ -229,6 +260,7 @@ namespace PingBoost
             Run("DeadlockRegionsFromSavedConfig", DeadlockRegionsFromSavedConfig);
             Run("DeadlockCountsRegionsFromActiveMatches", DeadlockCountsRegionsFromActiveMatches);
             Run("DeadlockSharedRegionsNeedTheMarker", DeadlockSharedRegionsNeedTheMarker);
+            Run("DeadlockNowFactorExpires", DeadlockNowFactorExpires);
             Run("StalePicksAreDropped", StalePicksAreDropped);
             Run("Ipv6AddressValidation", Ipv6AddressValidation);
             Run("Ipv6RelaysAreParsedAndBlocked", Ipv6RelaysAreParsedAndBlocked);
