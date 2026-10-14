@@ -11,12 +11,12 @@ Contact the developer (lDo2x) privately through GitHub instead, and give them ti
 
 | Feature | What it changes | Undone when |
 |---|---|---|
-| Region lock | Adds Windows Firewall rules named `2XPing-RegionLock` | You press Unlock or close the app (closing always removes them, even mid-change); after a crash, on next start |
+| Region lock | Adds Windows Firewall rules named `2XPing-RegionLock` (the other regions' game server addresses; in Deadlock also Valve's relay entry points, like Dubai, when they would lead into a blocked region). While a lock is on, 2X Ping checks every 2 minutes that the rules are still there, never while a game is in front | You press Unlock or close the app (closing always removes them, even mid-change); after a crash, on next start |
 | Relay routing | Installs a WireGuard tunnel service named `2xping` | You press Stop or close the app; after a crash, on next start |
-| Detect my server | Runs a 15-second `pktmon` UDP capture, then deletes it | Right after the capture |
+| Which server am I on? | Runs a `pktmon` UDP capture filtered to the game's own ports: 15 seconds when you press the button, 8 seconds for the automatic check (every 30-90 seconds, only while the game runs and 2X Ping's window is in front) | Right after the capture |
 | Raise game priority | Sets the game process priority to High | When the game closes |
 
-2X Ping **never** reads or modifies game files or game memory.
+2X Ping **never** modifies game files and never reads or modifies game memory. The only game file it reads is Deadlock's console log (`game\citadel\console.log`), and only if you turned it on with the `-condebug` launch option: it looks for the line that names the match's datacenter, every 20 seconds while Deadlock runs. Nothing from that file is sent anywhere except the datacenter's short name in the usage statistics.
 Windows tools (`netsh`, `pktmon`, `netstat`, `ipconfig`) are always started from `C:\Windows\System32`, never from the app's own folder.
 Still, keep `2XPing.exe` in a folder only you (or administrators) can write to, such as `C:\Program Files\2X Ping`.
 
@@ -38,7 +38,7 @@ This is shown on first launch, and accepting it is required to use the beta.
 | Problems the app detects by itself (e.g. playing on a server outside your lock, a lock whose firewall rules disappeared, Windows Firewall off, a failed download, heavy packet loss, a crash), once each per session, with the details needed to fix them | Fix bugs without you having to report them |
 | After a server check you start: up to 8 addresses the game talked to, once voice chat and service hosts are filtered out, and only for supported games with dedicated servers (never for custom servers, where other players' addresses could show up) | Build server lists for games without official ones |
 
-Nothing else is collected: no passwords, no files, no list of your other programs, no browsing data. 2X Ping never sends or stores your IP address; like any website, the statistics server and the location service see it when the app connects. The app can only **write** these statistics; it cannot read anyone's data.
+Nothing else is collected: no passwords, no files, no list of your other programs, no browsing data. 2X Ping never sends or stores your IP address; like any website, the statistics server and the location service see it when the app connects. The app can only **write** these statistics; it cannot read anyone's data. The only thing it reads from that database is the shared Deadlock player numbers, which are public and the same for everyone.
 The developer's own test tool (developer mode, which needs the developer's private key and is never on for players) also records connection addresses and program names during a lock test on the developer's PC.
 To have your data removed, contact the developer (Discord `2x.x`) with the name you used.
 
@@ -47,14 +47,16 @@ To have your data removed, contact the developer (Discord `2x.x`) with the name 
 | Service | What is sent | Why |
 |---|---|---|
 | Steam Web API | Game app id | Online player count, Valve server list |
-| deadlock-api.com | A fixed statistics query | Deadlock players per region |
+| deadlock-api.com | Nothing (download only: `/v1/info` and `/v1/matches/active`), and only when the shared numbers from the developer's database are missing or more than 10 minutes old | Deadlock players per region |
 | ip-ranges.amazonaws.com, www.gstatic.com | Nothing (download only) | Amazon and Google Cloud game server IP ranges |
 | stat.ripe.net | Nothing (download only) | Blizzard network IP ranges (Overwatch 2) |
 | gamelift-ping.*.api.aws | A small ping packet | Dead by Daylight ping per region |
+| global.gcping.com and Google Cloud's per-region ping addresses | A short web request | Overwatch 2 ping per Google Cloud region |
+| The game servers themselves (Valve, Tencent Cloud) | A ping (ICMP or a TCP connect) | Ping per region |
 | ipwho.is (HTTPS) | A once-a-day lookup of your own city, country and provider (at most every 30 minutes when it fails) | Usage statistics |
-| ip-api.com | The **game server** IP you detected; your own location only if ipwho.is doesn't answer | Show locations |
-| Supabase (developer's database) | The usage statistics listed above | Beta statistics |
-| api.github.com, github.com | Nothing (download only) | Check for a newer version and download it |
+| ip-api.com (plain HTTP) | The **game server** IP you detected (each address at most once an hour); your own location only if ipwho.is doesn't answer | Show locations |
+| Supabase (developer's database) | The usage statistics listed above (a heartbeat every 2 minutes while the app is open, plus events); it also downloads the shared Deadlock player numbers, at most every 5 minutes while the window is in front | Beta statistics, player numbers |
+| api.github.com, github.com | Nothing (download only); checked every 3 hours | Check for a newer version and download it |
 | Your own relay agent | Game server address + your token | Measure relay -> server ping |
 
 There are no accounts or passwords; apart from the usage statistics above, nothing about you is collected.
