@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.IO;
 using System.Linq;
+using System.Text;
 using System.Windows.Forms;
 
 namespace PingBoost
@@ -818,6 +820,58 @@ namespace PingBoost
             Check(ListStyle.RowBack(sel, 0) == Theme.Panel1 && ListStyle.RowBack(sel, 1) == Theme.RowAlt, "striped rows");
         }
 
+        static void DeadlockLogReadsAndLooksAgainEveryTenMinutes()
+        {
+            string path = TempLog();
+            try
+            {
+                var dl = new Game { Name = "Deadlock", Icon = "deadlock", Processes = new[] { "deadlock" } };
+                var clock = new DateTime(2026, 10, 14, 20, 0, 0);
+                var started = clock.AddMinutes(-30);
+                int lookups = 0;
+                string where = null; // not found yet
+                var log = new DeadlockLog(g => { lookups++; return where; }, g => started, ex => { }, () => clock);
+                DateTime s, readAt;
+                Check(log.Read(dl, out s, out readAt) == null && readAt == DateTime.MinValue && s == started && lookups == 1 && !log.On, "no log yet");
+                where = path;
+                clock = clock.AddMinutes(5);
+                log.Read(dl, out s, out readAt);
+                Check(lookups == 1, "looked for again only after 10 minutes");
+                File.WriteAllText(path, "Ping location: fra=20\n", new UTF8Encoding(false));
+                clock = clock.AddMinutes(6);
+                Check(log.Read(dl, out s, out readAt) == null && lookups == 2 && readAt == clock && log.On, "found: read, log on");
+                Append(path, "    Remote host is in data center 'fra'\n");
+                clock = clock.AddMinutes(1);
+                var line = log.Read(dl, out s, out readAt);
+                Check(line != null && line.Code == "fra" && line.At == clock && lookups == 2, "a new match line");
+                Check(log.Fresh(line, started, DateTime.MinValue) == line, "fresh for this game");
+                log.NoMatchSeen(clock.AddSeconds(-5), clock);
+                Check(log.Fresh(line, started, DateTime.MinValue) == null, "a later check saw no match: stale");
+                Check(log.Read(new Game { Name = "x" }, out s, out readAt) == null && readAt == DateTime.MinValue, "other games: no log");
+                File.Delete(path);
+                clock = clock.AddMinutes(1);
+                log.Read(dl, out s, out readAt);
+                Check(!log.On, "the file is gone: off");
+                // the saved exe path at startup
+                Check(!log.PeekSaved(null), "no saved exe");
+            }
+            finally { try { File.Delete(path); } catch { } }
+        }
+
+        static void DeadlockLogResolvesHostingDatacenters()
+        {
+            var g = SavedDeadlock();
+            foreach (var r in g.Regions) r.Picked = r.Id == "fra";
+            string id, region;
+            Region dc;
+            bool onPicked;
+            Check(DeadlockLog.Resolve(g, new ConsoleLine { Code = "fra" }, out id, out dc, out region, out onPicked), "Frankfurt hosts");
+            Check(id == "fra" && dc != null && dc.Id == "fra" && onPicked && region != null, "Frankfurt, picked: " + region);
+            Check(DeadlockLog.Resolve(g, new ConsoleLine { Code = "vie" }, out id, out dc, out region, out onPicked) && !onPicked, "Vienna not picked");
+            Check(!DeadlockLog.Resolve(g, new ConsoleLine { Code = "dxb" }, out id, out dc, out region, out onPicked), "Dubai is a relay only: no answer");
+            Check(!DeadlockLog.Resolve(g, new ConsoleLine { Code = "zzz" }, out id, out dc, out region, out onPicked), "unknown place: no answer");
+        }
+
         static void RunStructureTests()
         {
             Run("RoutingRelayMarginIsThreeMs", RoutingRelayMarginIsThreeMs);
@@ -853,6 +907,8 @@ namespace PingBoost
             Run("LiveMonitorStopsAndRestarts", LiveMonitorStopsAndRestarts);
             Run("LiveMonitorSlowsDownWhileTheGameIsInFront", LiveMonitorSlowsDownWhileTheGameIsInFront);
             Run("ListStyleFirstCellFollowsTheReadingOrder", ListStyleFirstCellFollowsTheReadingOrder);
+            Run("DeadlockLogReadsAndLooksAgainEveryTenMinutes", DeadlockLogReadsAndLooksAgainEveryTenMinutes);
+            Run("DeadlockLogResolvesHostingDatacenters", DeadlockLogResolvesHostingDatacenters);
         }
     }
 }

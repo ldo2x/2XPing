@@ -1128,31 +1128,20 @@ namespace PingBoost
 
         // Deadlock's own log (GameConsole): found from the game's exe while it runs, looked for again at most every 10
         // minutes while not found. Followed every 20 s while Deadlock runs, whether 2X Ping is in front or not (a file's
-        // new bytes: no network, nothing in the game's path), and by each server check; gameLogLock keeps them apart.
-        GameConsole gameLog;
-        readonly object gameLogLock = new object();
+        // new bytes: no network, nothing in the game's path), and by each server check (DeadlockLog).
+        readonly DeadlockLog gameLog = new DeadlockLog(ex => ReportCrash("console log", ex));
         System.Windows.Forms.Timer gameLogTimer;
-        volatile bool gameLogBusy;
-        DateTime gameLogLookup = DateTime.MinValue;
-        volatile bool gameLogOn; // the log file exists (the player starts the game with -condebug): no hint needed
-        // the last time a server check saw the game in no match: a console line from before it is about an earlier match
-        DateTime noMatchAt = DateTime.MinValue;
 
         // Before the first check reads it: is the log there, from the exe path saved last time? (once, in the background,
         // so the hint doesn't show to a player who already has -condebug)
-        bool gameLogPeeked;
         void PeekGameLog(Game g)
         {
-            if (gameLogPeeked || !DeadlockData.Is(g)) return;
-            gameLogPeeked = true;
+            if (gameLog.Peeked || !DeadlockData.Is(g)) return;
+            gameLog.Peeked = true;
             string exe = Storage.GetSetting("exe_" + g.Icon);
             Task.Run(() =>
             {
-                try
-                {
-                    string path = GameConsole.PathFromExe(exe);
-                    if (path != null && File.Exists(path) && !gameLogOn) { gameLogOn = true; Ui(UpdateCard); }
-                }
+                try { if (gameLog.PeekSaved(exe)) Ui(UpdateCard); }
                 catch { }
             });
         }
@@ -1165,87 +1154,21 @@ namespace PingBoost
             gameLogTimer.Tick += delegate
             {
                 var g = games.FirstOrDefault(DeadlockData.Is);
-                if (g == null || gameLogBusy) return;
-                gameLogBusy = true;
+                if (g == null || gameLog.Following) return;
+                gameLog.Following = true;
                 Task.Run(() =>
                 {
                     try
                     {
                         if (!Detector.IsRunning(g.Processes)) return;
                         DateTime start, readAt;
-                        ReadGameLog(g, out start, out readAt);
+                        gameLog.Read(g, out start, out readAt);
                     }
                     catch (Exception ex) { ReportCrash("console log", ex); }
-                    finally { gameLogBusy = false; }
+                    finally { gameLog.Following = false; }
                 });
             };
             gameLogTimer.Start();
-        }
-
-        // Background: reads what Deadlock added to its console log since the last time. The newest match datacenter it
-        // named (null = none), when the running game started (MinValue = unknown) and when the log was read (MinValue =
-        // not read: no log).
-        ConsoleLine ReadGameLog(Game g, out DateTime gameStart, out DateTime readAt)
-        {
-            gameStart = readAt = DateTime.MinValue;
-            if (!DeadlockData.Is(g)) return null;
-            try
-            {
-                foreach (var name in g.Processes)
-                    foreach (var p in Process.GetProcessesByName(name))
-                        try { if (gameStart == DateTime.MinValue || p.StartTime < gameStart) gameStart = p.StartTime; }
-                        catch { }
-                        finally { p.Dispose(); }
-                lock (gameLogLock)
-                {
-                    if (gameLog == null && DateTime.Now - gameLogLookup > TimeSpan.FromMinutes(10))
-                    {
-                        gameLogLookup = DateTime.Now;
-                        string path = GameConsole.PathFromExe(SystemInfo.FindExe(g));
-                        if (path != null) gameLog = new GameConsole(path);
-                    }
-                    if (gameLog == null) return null;
-                    readAt = DateTime.Now;
-                    gameLog.Read(readAt);
-                    // a read that failed for a moment (the game writing) doesn't turn the log off: only a missing file does
-                    gameLogOn = gameLog.Exists;
-                    return gameLog.LastDc;
-                }
-            }
-            catch (Exception ex)
-            {
-                ReportCrash("console log", ex);
-                return null;
-            }
-        }
-
-        // UI: a check saw no match, so a console line read up to now (in this check or before) is about an earlier match.
-        void NoMatchSeen(DateTime capturedAt, DateTime readAt)
-        {
-            noMatchAt = readAt > capturedAt ? readAt : capturedAt;
-        }
-
-        // UI: the match datacenter from Deadlock's log when it is about this match (GameConsole.Current). Null otherwise.
-        ConsoleLine FreshLogDc(ConsoleLine line, DateTime gameStart)
-        {
-            return GameConsole.Current(line, gameStart, lockChangedAt, noMatchAt);
-        }
-
-        // The datacenter a console line names, when it is one that hosts Deadlock matches: its id, its row (null for a
-        // place the app has no row for), the region it plays and whether the lock allows it.
-        bool ResolveLogDc(Game g, ConsoleLine line, out string id, out Region dc, out string region, out bool onPicked)
-        {
-            dc = null; region = null; onPicked = false;
-            id = GameConsole.Known(line.Code, c => DeadlockData.IsKnown(c) || g.Regions.Any(r => r.Id == c));
-            if (id == null || !DeadlockData.Hosting.ContainsKey(id)) return false; // a relay or an unknown place: no answer
-            string want = id;
-            dc = g.Regions.FirstOrDefault(r => r.Id == want);
-            bool? itself = dc != null ? dc.Picked : (bool?)null;
-            if (dc == null) dc = g.NoRelayHosts.FirstOrDefault(r => r.Id == want);
-            region = Places.RegionOfPop(g, id);
-            onPicked = DeadlockData.OnPicked(id, itself, g.Regions.Where(r => r.Picked).Select(r => r.Id),
-                                             g.Regions.Where(r => g.Hosts(r)).Select(r => r.Id));
-            return true;
         }
 
         // The console log named the match datacenter: that is the answer (it wins over the capture). Puts it on the
@@ -1255,7 +1178,7 @@ namespace PingBoost
             string id, region;
             Region dc;
             bool onPicked;
-            if (line == null || !ResolveLogDc(g, line, out id, out dc, out region, out onPicked)) return false;
+            if (line == null || !DeadlockLog.Resolve(g, line, out id, out dc, out region, out onPicked)) return false;
             string place = dc != null ? Places.PlaceName(dc) : id.ToUpperInvariant();
             bool ok = lockSummary == null || onPicked;
             dcSinceLock = true;
@@ -1376,7 +1299,7 @@ namespace PingBoost
                 CurrentServer = match.Server,
                 CurrentMs = match.Ms,
                 NoMatchLong = noMatchLong,
-                GameLogOn = gameLogOn,
+                GameLogOn = gameLog.On,
                 Simple = simple,
                 DevMode = devMode,
                 Activity = stats.Current.Activity,
@@ -1775,7 +1698,7 @@ namespace PingBoost
                     var capturedAt = DateTime.Now;
                     var hits = Detector.Capture(g.Processes, 15, out matched);
                     DateTime gameStart, readAt;
-                    var logDc = ReadGameLog(g, out gameStart, out readAt); // Deadlock with -condebug: the real answer
+                    var logDc = gameLog.Read(g, out gameStart, out readAt); // Deadlock with -condebug: the real answer
                     // a local record too (traffic.txt in the data folder), for diagnosing locks that block too much
                     try
                     {
@@ -1803,8 +1726,8 @@ namespace PingBoost
                         {
                             foreach (var h in hits)
                                 Log(T("Game connection: ", "اتصال اللعبة: ") + h.Ip + ":" + h.Port + "  (" + h.Packets + ", " + (int)Math.Round(h.Share * 100) + "%)");
-                            if (hits.Count == 0) NoMatchSeen(capturedAt, readAt);
-                            var fresh = hits.Count > 0 ? FreshLogDc(logDc, gameStart) : null;
+                            if (hits.Count == 0) gameLog.NoMatchSeen(capturedAt, readAt);
+                            var fresh = hits.Count > 0 ? gameLog.Fresh(logDc, gameStart, lockChangedAt) : null;
                             if (fresh != null && ShowLogResult(g, fresh, true)) { SetIdle(); btnDetect.Enabled = true; return; }
                             ShowValveResult(g, hits);
                         });
@@ -1843,9 +1766,9 @@ namespace PingBoost
                 SetStatus(T("Entering Valve's network at ", "داخل شبكة Valve من ") + at);
                 Telemetry.Send("detect", relay.NameEn, -1, "through relay");
                 AdvancedMsg(T("Your game enters Valve's network at " + at + "; the match server can't be seen from here." +
-                              (DeadlockData.Is(g) && !gameLogOn ? " " + CardLogic.ExactSteps() : ""),
+                              (DeadlockData.Is(g) && !gameLog.On ? " " + CardLogic.ExactSteps() : ""),
                               "لعبتك داخلة شبكة Valve من " + at + "، وسيرفر المباراة ما يبان من هنا." +
-                              (DeadlockData.Is(g) && !gameLogOn ? " " + CardLogic.ExactSteps() : "")));
+                              (DeadlockData.Is(g) && !gameLog.On ? " " + CardLogic.ExactSteps() : "")));
                 return;
             }
             if (found.Count == 0)
@@ -2009,7 +1932,7 @@ namespace PingBoost
                         bool matched;
                         capturedAt = DateTime.Now;
                         hits = MatchClassifier.ServerHits(g, Detector.Capture(g.Processes, 8, out matched)); // never voice chat or services
-                        logDc = ReadGameLog(g, out gameStart, out readAt); // Deadlock with -condebug: the real answer
+                        logDc = gameLog.Read(g, out gameStart, out readAt); // Deadlock with -condebug: the real answer
                         // games without a datacenter list: the main server's city
                         if (hits.Count > 0 && !hits.Any(h => g.DatacenterOf(h.Ip) != null)) where = Stats.Locate(hits[0].Ip);
                         // games that can't be locked: the card shows that server's ping too
@@ -2081,9 +2004,9 @@ namespace PingBoost
 
         void ShowAutoDetect(Game g, List<Detector.Hit> hits, string where, int whereMs, DateTime capturedAt, DateTime readAt, ConsoleLine logDc, DateTime gameStart)
         {
-            if (hits.Count == 0) NoMatchSeen(capturedAt, readAt); // a console line read up to now is about an earlier match
+            if (hits.Count == 0) gameLog.NoMatchSeen(capturedAt, readAt); // a console line read up to now is about an earlier match
             // Deadlock's console log names the match datacenter: that wins over the capture
-            var fresh = hits.Count > 0 ? FreshLogDc(logDc, gameStart) : null;
+            var fresh = hits.Count > 0 ? gameLog.Fresh(logDc, gameStart, lockChangedAt) : null;
             if (fresh != null && ShowLogResult(g, fresh, false)) return;
             var seen = MatchClassifier.Classify(g, hits);
             var seenDc = seen.Datacenter;
