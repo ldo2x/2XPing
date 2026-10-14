@@ -21,13 +21,14 @@ namespace PingBoost
         public string Conn;   // the connection id ("#1671292347"): a new id is a new server
         public DateTime At;   // when its newest line was written (as ConsoleLine.At)
         public DateTime Since; // when its first line was written (as ConsoleLine.At)
+        public string Server;  // the match server's id in the log ("steamid:9029…"), null = none; only compared, never sent
         public readonly List<KeyValuePair<string, int>> Backs = new List<KeyValuePair<string, int>>(); // POP id -> back ms
         public readonly List<KeyValuePair<string, int>> Pings = new List<KeyValuePair<string, int>>(); // POP id -> front+back ms
 
         // A copy that later lines of the log don't change (the log is read on another thread).
         public SessionSet Copy()
         {
-            var c = new SessionSet { Conn = Conn, At = At, Since = Since };
+            var c = new SessionSet { Conn = Conn, At = At, Since = Since, Server = Server };
             c.Backs.AddRange(Backs);
             c.Pings.AddRange(Pings);
             return c;
@@ -190,6 +191,7 @@ namespace PingBoost
         }
 
         static readonly Regex SessionConn = new Regex(@"\[(#\d+)\s", RegexOptions.CultureInvariant);
+        static readonly Regex SessionServer = new Regex(@"SDR server steamid:(\d+)", RegexOptions.CultureInvariant);
 
         // A session line adds its relay and back delay to its connection's set (a new connection starts a new set).
         void Session(string line, DateTime now, bool old)
@@ -202,7 +204,11 @@ namespace PingBoost
             string conn = c.Success ? c.Groups[1].Value : "";
             var at = TimeOf(line, now);
             if (at == DateTime.MaxValue) at = old ? DateTime.MinValue : now;
-            if (LastSessions == null || LastSessions.Conn != conn) LastSessions = new SessionSet { Conn = conn, Since = at };
+            if (LastSessions == null || LastSessions.Conn != conn)
+            {
+                var sv = SessionServer.Match(line);
+                LastSessions = new SessionSet { Conn = conn, Since = at, Server = sv.Success ? sv.Groups[1].Value : null };
+            }
             string pop = m.Groups[1].Value.ToLowerInvariant();
             if (!LastSessions.Backs.Any(kv => kv.Key == pop))
             {
