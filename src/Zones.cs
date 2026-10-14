@@ -137,4 +137,56 @@ namespace PingBoost
                           where + "، وإنت تلعب على " + played + ". ما بتلقى مباراة إلا لو كانت منطقة لعبتك " + need + ".");
         }
     }
+
+    // Overwatch: the game regions (Zones) the player's matches were on, learned from the server checks and kept in
+    // settings ("zones_seen_<game>"); never shrinks, but only zones seen in the last Zones.FreshDays days count.
+    sealed class ZoneMemory
+    {
+        readonly Func<string, string> get;
+        readonly Action<string, string> set;
+        readonly Func<DateTime> utcNow;
+
+        // Seen is asked at every card update: settings.txt is read once per game, again after Learn or an hour later
+        readonly Dictionary<string, KeyValuePair<DateTime, List<string>>> cache = new Dictionary<string, KeyValuePair<DateTime, List<string>>>();
+
+        public ZoneMemory() : this(Storage.GetSetting, (k, v) => Storage.SetSetting(k, v), () => DateTime.UtcNow) { }
+
+        // tests: a fake settings store and clock
+        public ZoneMemory(Func<string, string> get, Action<string, string> set, Func<DateTime> utcNow)
+        {
+            this.get = get;
+            this.set = set;
+            this.utcNow = utcNow;
+        }
+
+        public static string Key(Game g) { return "zones_seen_" + g.Icon; }
+
+        // The zones seen in the last Zones.FreshDays days. An old plain list ("am,eu") is saved once with today's time.
+        public List<string> Seen(Game g)
+        {
+            var now = utcNow();
+            KeyValuePair<DateTime, List<string>> cached;
+            if (cache.TryGetValue(g.Icon, out cached) && now - cached.Key < TimeSpan.FromHours(1)) return cached.Value;
+            string saved = get(Key(g));
+            if (!string.IsNullOrEmpty(saved))
+            {
+                string migrated = Zones.Format(Zones.Parse(saved, now));
+                if (migrated != saved) set(Key(g), migrated);
+                saved = migrated;
+            }
+            var recent = Zones.Recent(saved, now);
+            cache[g.Icon] = new KeyValuePair<DateTime, List<string>>(now, recent);
+            return recent;
+        }
+
+        // A server check saw these datacenters: remember their zones.
+        public void Learn(Game g, IEnumerable<Region> datacenters)
+        {
+            if (!Zones.Has(g)) return; // Valve and the rest: nothing to learn
+            string next = Zones.Learn(g, get(Key(g)), datacenters.Select(r => r.Id), utcNow());
+            if (string.IsNullOrEmpty(next)) return;
+            set(Key(g), next);
+            cache.Remove(g.Icon);
+        }
+    }
 }

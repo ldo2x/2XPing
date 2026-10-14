@@ -674,6 +674,44 @@ namespace PingBoost
             Check(m.Any && m.Server == "Bahrain" && m.Ms == 31, "a server alone counts");
         }
 
+        static void ZoneMemoryCachesAndLearns()
+        {
+            var settings = new Dictionary<string, string>();
+            int reads = 0, writes = 0;
+            var now = new DateTime(2026, 10, 14, 12, 0, 0, DateTimeKind.Utc);
+            var mem = new ZoneMemory(k => { reads++; string v; return settings.TryGetValue(k, out v) ? v : ""; },
+                                     (k, v) => { writes++; settings[k] = v; }, () => now);
+            var ow = new Game { Name = "OW", Icon = "overwatch", LockSpace = new[] { "x" },
+                                RegionMap = new List<RegionDef> { RegionDef.Of("sg", "Singapore", "Singapore", "GSG1").In(Zones.Asia),
+                                                                  RegionDef.Of("eu", "Europe", "Europe", "GEW3").In(Zones.Europe) } };
+            Check(ZoneMemory.Key(ow) == "zones_seen_overwatch", "the settings key is unchanged");
+            Check(mem.Seen(ow).Count == 0 && reads == 1, "nothing seen yet");
+            mem.Seen(ow);
+            Check(reads == 1, "cached: settings read once");
+            mem.Learn(ow, new[] { new Region { Id = "GSG1" } });
+            Check(writes == 1 && settings["zones_seen_overwatch"] == "as:" + now.Ticks, "learned Asia: " + settings["zones_seen_overwatch"]);
+            Check(mem.Seen(ow).SequenceEqual(new[] { "as" }), "learning clears the cache");
+            mem.Learn(ow, new[] { new Region { Id = "GSG1" } });
+            Check(writes == 1, "seen within the hour: no write");
+            mem.Learn(ow, new[] { new Region { Id = "unknown" } });
+            Check(writes == 1, "a datacenter in no zone: nothing");
+            var valve = new Game { Name = "V", Icon = "deadlock", Provider = Provider.Valve };
+            mem.Learn(valve, new[] { new Region { Id = "fra" } });
+            Check(writes == 1 && !settings.ContainsKey("zones_seen_deadlock"), "games without zones learn nothing");
+            // an old plain list is saved once in the new form
+            settings["zones_seen_ow2"] = "eu";
+            var old = new Game { Name = "OW2", Icon = "ow2", RegionMap = ow.RegionMap };
+            Check(mem.Seen(old).SequenceEqual(new[] { "eu" }) && settings["zones_seen_ow2"] == "eu:" + now.Ticks, "migrated");
+            // the cache lasts an hour
+            int before = reads;
+            now = now.AddMinutes(59);
+            mem.Seen(old);
+            Check(reads == before, "59 min: cached");
+            now = now.AddMinutes(2);
+            mem.Seen(old);
+            Check(reads == before + 1, "an hour later: read again");
+        }
+
         static void RunStructureTests()
         {
             Run("RoutingRelayMarginIsThreeMs", RoutingRelayMarginIsThreeMs);
@@ -704,6 +742,7 @@ namespace PingBoost
             Run("GameSessionLoadsTheGameOnScreen", GameSessionLoadsTheGameOnScreen);
             Run("GameSessionRetryForgetsAndTestsAfterLoad", GameSessionRetryForgetsAndTestsAfterLoad);
             Run("MatchStateSaysWhenTheMatchChanged", MatchStateSaysWhenTheMatchChanged);
+            Run("ZoneMemoryCachesAndLearns", ZoneMemoryCachesAndLearns);
         }
     }
 }

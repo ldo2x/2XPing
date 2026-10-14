@@ -1843,39 +1843,11 @@ namespace PingBoost
             if (quiet && top > 0 && top < serverList.Items.Count) serverList.TopItem = serverList.Items[top];
         }
 
-        // Overwatch: the game regions (Zones) the player's matches were on, learned from the server checks; never shrinks.
-        static string ZonesKey(Game g) { return "zones_seen_" + g.Icon; }
+        readonly ZoneMemory zones = new ZoneMemory(); // Overwatch: the game regions the player's matches were on
 
-        // SeenZones is asked at every card update: read settings.txt once per game, again after LearnZones or an hour
-        // later (zones age out after Zones.FreshDays days)
-        readonly Dictionary<string, KeyValuePair<DateTime, List<string>>> seenZonesCache = new Dictionary<string, KeyValuePair<DateTime, List<string>>>();
+        List<string> SeenZones(Game g) { return zones.Seen(g); }
 
-        // The zones seen in the last Zones.FreshDays days. An old plain list ("am,eu") is saved once with today's time.
-        List<string> SeenZones(Game g)
-        {
-            var now = DateTime.UtcNow;
-            KeyValuePair<DateTime, List<string>> cached;
-            if (seenZonesCache.TryGetValue(g.Icon, out cached) && now - cached.Key < TimeSpan.FromHours(1)) return cached.Value;
-            string saved = Storage.GetSetting(ZonesKey(g));
-            if (!string.IsNullOrEmpty(saved))
-            {
-                string migrated = Zones.Format(Zones.Parse(saved, now));
-                if (migrated != saved) Storage.SetSetting(ZonesKey(g), migrated);
-                saved = migrated;
-            }
-            var recent = Zones.Recent(saved, now);
-            seenZonesCache[g.Icon] = new KeyValuePair<DateTime, List<string>>(now, recent);
-            return recent;
-        }
-
-        void LearnZones(Game g, IEnumerable<Region> datacenters)
-        {
-            if (!Zones.Has(g)) return; // Valve and the rest: nothing to learn
-            string next = Zones.Learn(g, Storage.GetSetting(ZonesKey(g)), datacenters.Select(r => r.Id), DateTime.UtcNow);
-            if (string.IsNullOrEmpty(next)) return;
-            Storage.SetSetting(ZonesKey(g), next);
-            seenZonesCache.Remove(g.Icon);
-        }
+        void LearnZones(Game g, IEnumerable<Region> datacenters) { zones.Learn(g, datacenters); }
 
         void DetectServer()
         {
