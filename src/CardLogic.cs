@@ -41,6 +41,10 @@ namespace PingBoost
         public int RussiaPlayers = -1;
         // Valve: what the strict lock on the chosen regions costs (StrictLock), told on the card; null = nothing to tell
         public RouteNote Route;
+        // locked: the ping the lock should give (the best route through what it leaves open), -1 = unknown; and the
+        // place that route enters Valve's network at ("Dubai"), null = straight to the datacenter
+        public int LockedMs = -1;
+        public string LockedVia;
         // the pings shown are from an earlier session: the game was open, so no test ran on its own (performance audit item 4)
         public bool OldPings;
     }
@@ -71,6 +75,9 @@ namespace PingBoost
         public string HintLink, HintSteps;
         public bool ShowTiles, ShowLinks, ShowTest; // ShowTest: the "Test ping" link
         public Color Accent;
+        // one short line under the title (the lock's expected ping), drawn in PingLineColor; null = none
+        public string PingLine;
+        public Color PingLineColor;
     }
 
     static class CardLogic
@@ -102,15 +109,16 @@ namespace PingBoost
                         Lang.T("You're playing in " + i.MatchRegion + place + " now ✓", "تلعب دحين في " + i.MatchRegion + place + " ✓"), working, unlock)), i.Hint);
                 if (i.MatchViaRelay)
                 {
+                    // the match server can't be seen: the expected ping still says what the lock gives
                     // only the entry relay is in sight: say where the game enters, never that the lock worked (no ✓)
                     string title = i.MatchEntry != null
                         ? Lang.T("Entering Valve's network at " + i.MatchEntry + "; the match server can't be seen from here",
                                  "داخل شبكة Valve من " + i.MatchEntry + "، وسيرفر المباراة ما يبان من هنا")
                         : Lang.T("Entering Valve's network through a relay; the match server can't be seen from here",
                                  "داخل شبكة Valve من وسيط، وسيرفر المباراة ما يبان من هنا");
-                    return WithHint(Make(CardKind.InMatchRelay, title,
+                    return WithHint(WithExpected(Make(CardKind.InMatchRelay, title,
                         Lang.T("Locked to " + i.LockedNames + ". The ping shown in the game is the real one.",
-                               "مثبّت على " + i.LockedNames + ". وبنقك الحقيقي تشوفه داخل اللعبة."), unlock), i.Hint);
+                               "مثبّت على " + i.LockedNames + ". وبنقك الحقيقي تشوفه داخل اللعبة."), unlock), i), i.Hint);
                 }
                 string find = Lang.T("Open the game and find a match. Try a normal match first.", "افتح اللعبة ودوّر مباراة. جرّب مباراة عادية أول.");
                 if (i.NoMatchYet)
@@ -118,7 +126,7 @@ namespace PingBoost
                                    " ما لقيت مباراة؟ يمكن المنطقة اللي اخترتها مو من مناطق لعبتك.");
                 // a lock kept leaky on purpose (G5) says so: it may not keep the other regions away
                 if (i.Route != null && i.Route.Kind == RouteNoteKind.MayLeak) find = RouteText(i.Route) + " " + find;
-                return WithHint(Good(Make(CardKind.Locked, Lang.T("✓ Locked to " + i.LockedNames, "✓ مثبّت على " + i.LockedNames), find, unlock)), i.Hint);
+                return WithHint(WithExpected(Good(Make(CardKind.Locked, Lang.T("✓ Locked to " + i.LockedNames, "✓ مثبّت على " + i.LockedNames), find, unlock)), i), i.Hint);
             }
 
             if (i.LoadFailed) return Offline();
@@ -344,6 +352,22 @@ namespace PingBoost
         static CardView Good(CardView v)
         {
             v.Accent = Theme.Good;
+            return v;
+        }
+
+        // The lock's expected ping under the title, when known: «بنقك المتوقع تقريباً 58 عن طريق دبي» / "Expected ping:
+        // about 58 ms via Dubai". Not shown once the match's own place is known (the in-match words say it).
+        public static string ExpectedText(int ms, string via)
+        {
+            if (ms < 0) return null;
+            return Lang.T("Expected ping: about " + ms + " ms" + (via != null ? " via " + via : ""),
+                          "بنقك المتوقع تقريباً " + ms + (via != null ? " عن طريق " + via : ""));
+        }
+
+        static CardView WithExpected(CardView v, CardInput i)
+        {
+            v.PingLine = ExpectedText(i.LockedMs, i.LockedVia);
+            v.PingLineColor = Fmt.PingColor(i.LockedMs);
             return v;
         }
 

@@ -112,6 +112,35 @@ namespace PingBoost
             return info != null && info.Gateways != null && id != null && info.Gateways.Contains(id);
         }
 
+        // The ping the lock that is on should give, in ms (-1 = unknown), and via: the place its route enters Valve's
+        // network at (null = straight to the datacenter). Valve with its network table: the best route to the picked
+        // datacenters through what the lock leaves open (StrictLock.Best, as the plan's Locked route); other games: the
+        // best measured ping among the picked datacenters (latency: Routing.BestLatency).
+        public static int Expected(Game g, HashSet<string> picks, ICollection<string> closed, ICollection<string> gateways,
+                                   IDictionary<string, double> pings, Func<Region, double> latency, out string via)
+        {
+            via = null;
+            if (g == null || picks == null || picks.Count == 0) return -1;
+            if (g.Provider == Provider.Valve && g.Routes != null && pings != null)
+            {
+                var byId = new Dictionary<string, Region>();
+                foreach (var r in g.Regions) byId[r.Id] = r;
+                Func<string, bool> open = id => { Region x; return !byId.TryGetValue(id, out x) || !LockedOut(picks, closed, gateways, g, x); };
+                var rt = StrictLock.Best(g.Routes, picks, pings, open);
+                if (!rt.Known) return -1;
+                Region e;
+                if (rt.Entry != rt.To && byId.TryGetValue(rt.Entry, out e)) via = Places.PlaceName(e);
+                return (int)Math.Round(rt.Ms);
+            }
+            double best = double.MaxValue;
+            foreach (var r in g.Regions.Where(r => picks.Contains(r.Id)))
+            {
+                double ms = latency(r);
+                if (ms >= 0 && ms < best) best = ms;
+            }
+            return best < double.MaxValue ? (int)Math.Round(best) : -1;
+        }
+
         // Whether switching the Dubai setting (to nowOn) would change the lock that is on: off closes a gateway it kept
         // open; on opens one it blocked only because of the setting (none of its region picked). An SE Asia lock, or one
         // whose R3 closed Dubai anyway, doesn't change.

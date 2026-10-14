@@ -310,6 +310,47 @@ namespace PingBoost
             Lang.Ar = true;
         }
 
+        // The locked card says the ping the lock should give, under the title, in the ping's colour; not once the
+        // match's own place is known (the in-match words say it), and not when unknown.
+        static void CardLockedShowsExpectedPing()
+        {
+            Lang.Ar = true;
+            var i = LockedInput();
+            i.LockedMs = 58; i.LockedVia = "دبي";
+            var v = CardLogic.Decide(i);
+            Check(v.Kind == CardKind.Locked && v.PingLine == "بنقك المتوقع تقريباً 58 عن طريق دبي" && v.PingLineColor == Theme.Good, "Arabic: " + v.PingLine);
+            Lang.Ar = false;
+            i.LockedNames = "Europe";
+            i.LockedMs = 190; i.LockedVia = null;
+            v = CardLogic.Decide(i);
+            Check(v.PingLine == "Expected ping: about 190 ms" && v.PingLineColor == Theme.Bad, "English: " + v.PingLine);
+            i.LockedVia = "Dubai"; i.LockedMs = 90;
+            Check(CardLogic.Decide(i).PingLine == "Expected ping: about 90 ms via Dubai" && CardLogic.Decide(i).PingLineColor == Theme.Warn, "via Dubai");
+            // only the relay is in sight: still told
+            i.MatchViaRelay = true;
+            Check(CardLogic.Decide(i).Kind == CardKind.InMatchRelay && CardLogic.Decide(i).PingLine != null, "in a match behind a relay");
+            i.MatchViaRelay = false;
+            // the real place is known: the in-match words, no second ping line
+            i.MatchRegion = "Europe"; i.MatchOnPicked = true;
+            Check(CardLogic.Decide(i).Kind == CardKind.InMatchOk && CardLogic.Decide(i).PingLine == null, "in a known match: none");
+            i.MatchOnPicked = false;
+            Check(CardLogic.Decide(i).PingLine == null, "outside: none");
+            i.MatchRegion = null;
+            i.LockedMs = -1;
+            Check(CardLogic.Decide(i).PingLine == null, "unknown: hidden");
+            i.LockedNames = null; i.LockedMs = 58;
+            Check(CardLogic.Decide(i).PingLine == null, "not locked: none");
+            // the builder only passes it for the locked game
+            var g = new Game { Name = "Deadlock", Icon = "deadlock", Provider = Provider.Valve };
+            var f = new CardFacts { Loaded = true, LockGame = g, LockNames = "Europe", LockMs = 58, LockVia = "Dubai" };
+            var input = CardInputBuilder.Build(g, new List<RegionChoice>(), f);
+            Check(input.LockedMs == 58 && input.LockedVia == "Dubai", "locked game");
+            f.LockGame = new Game { Name = "Other" };
+            input = CardInputBuilder.Build(g, new List<RegionChoice>(), f);
+            Check(input.LockedMs == -1 && input.LockedVia == null, "another game's lock");
+            Lang.Ar = true;
+        }
+
         static void CardLockedEnglish()
         {
             Lang.Ar = false;
@@ -377,6 +418,7 @@ namespace PingBoost
             Run("CardInMatchViaRelay", CardInMatchViaRelay);
             Run("CardInMatchOutside", CardInMatchOutside);
             Run("CardOutsideOnKeptDubai", CardOutsideOnKeptDubai);
+            Run("CardLockedShowsExpectedPing", CardLockedShowsExpectedPing);
             Run("CardLockedEnglish", CardLockedEnglish);
             Run("CardBestOnly", CardBestOnly);
             Run("CardOnServer", CardOnServer);

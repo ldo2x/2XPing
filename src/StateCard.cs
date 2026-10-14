@@ -193,7 +193,7 @@ namespace PingBoost
 
         int ContentHeight(int w, out int titleH, out int subH, out int tileH)
         {
-            titleH = Measure(view.Title, titleFont, w);
+            titleH = Measure(view.Title, titleFont, w) + PingLineH(w);
             subH = view.Sub != null ? Measure(view.Sub, subFont, w) : Waiting ? 14 : 0;
             tileH = TilesHeight(Rows());
             bool actions = hasButton || Links().Count > 0;
@@ -214,6 +214,9 @@ namespace PingBoost
             if (StepsShown) h += (HintLinkShown ? 2 : 14) + Measure(view.HintSteps, noteFont, w);
             return h;
         }
+
+        // The lock's expected ping: one line right under the title (counted in the title's height).
+        int PingLineH(int w) { return view.PingLine != null ? 4 + Measure(view.PingLine, subFont, w) : 0; }
 
         // The footnote sits under the tiles, so it only shows with them.
         int NoteHeight(int w, int tileH) { return tileH > 0 && view.Note != null ? Measure(view.Note, noteFont, w) : 0; }
@@ -352,7 +355,12 @@ namespace PingBoost
             base.OnPaint(e);
             if (view == null) return;
             var g = e.Graphics;
-            TextRenderer.DrawText(g, view.Title, titleFont, titleRect, TitleColor, Flags);
+            int lineH = PingLineH(titleRect.Width);
+            var nameRect = new Rectangle(titleRect.X, titleRect.Y, titleRect.Width, titleRect.Height - lineH);
+            TextRenderer.DrawText(g, view.Title, titleFont, nameRect, TitleColor, Flags);
+            if (lineH > 0)
+                TextRenderer.DrawText(g, view.PingLine, subFont, new Rectangle(titleRect.X, nameRect.Bottom + 4, titleRect.Width, lineH - 4),
+                                      view.PingLineColor, Flags);
             if (view.Sub != null) TextRenderer.DrawText(g, view.Sub, subFont, subRect, Theme.Dim, Flags);
             if (noteRect != Rectangle.Empty) TextRenderer.DrawText(g, view.Note, noteFont, noteRect, Theme.Dim, Flags);
             if (stepsRect != Rectangle.Empty) TextRenderer.DrawText(g, view.HintSteps, noteFont, stepsRect, Theme.Dim, Flags);

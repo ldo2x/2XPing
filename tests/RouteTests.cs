@@ -374,6 +374,38 @@ namespace PingBoost
             Lang.Ar = true;
         }
 
+        // The locked card's expected ping: the best route through what the lock leaves open (plan.Locked), via its entry.
+        static void LockExpectedPing()
+        {
+            var g = SavedDeadlock();
+            var ping = RiyadhPings();
+            var eu = RegionIds(g, "Europe");
+            var plan = StrictLock.For(g, eu, ping, true);
+            string via;
+            Lang.Ar = false;
+            int ms = LockScope.Expected(g, new HashSet<string>(eu), plan.Close, plan.Gateways, ping, Routing.BestLatency, out via);
+            Check(ms == 58 && via == "Dubai" && ms == (int)plan.Locked.Ms, "Europe, Dubai kept: 58 via Dubai, got " + ms + " " + via);
+            var off = StrictLock.For(g, eu, ping, false);
+            ms = LockScope.Expected(g, new HashSet<string>(eu), off.Close, off.Gateways, ping, Routing.BestLatency, out via);
+            Check(ms == 68 && via == null, "Europe, Dubai blocked: 68 straight, got " + ms + " " + (via ?? "-"));
+            var sea = RegionIds(g, "SEAsia");
+            var sp = StrictLock.For(g, sea, ping, true);
+            ms = LockScope.Expected(g, new HashSet<string>(sea), sp.Close, sp.Gateways, ping, Routing.BestLatency, out via);
+            Check(ms == 31 && via == null, "SE Asia lock: 31 at Dubai, got " + ms);
+            Check(LockScope.Expected(g, null, null, null, ping, Routing.BestLatency, out via) == -1, "no lock: unknown");
+            Check(LockScope.Expected(g, new HashSet<string>(eu), plan.Close, plan.Gateways, new Dictionary<string, double>(), Routing.BestLatency, out via) == -1,
+                  "no pings: unknown");
+            // a game without Valve's table: the best measured ping among the picked datacenters
+            var ow = new Game { Name = "OW", LockSpace = new[] { "x" } };
+            ow.Regions.Add(new Region { Id = "a" });
+            ow.Regions.Add(new Region { Id = "b" });
+            ow.Regions.Add(new Region { Id = "c" });
+            Func<Region, double> lat = r => r.Id == "a" ? 80 : r.Id == "b" ? 45.4 : 20;
+            Check(LockScope.Expected(ow, new HashSet<string> { "a", "b" }, null, null, null, lat, out via) == 45 && via == null, "best picked: 45");
+            Check(LockScope.Expected(ow, new HashSet<string> { "a" }, null, null, null, r => double.MaxValue, out via) == -1, "unmeasured: unknown");
+            Lang.Ar = true;
+        }
+
         // Review fix 4: a closed best entry is only told when it costs 10 ms or more.
         static void ClosedEntryNoteNeedsTenMs()
         {
@@ -399,6 +431,7 @@ namespace PingBoost
             Run("StrictLockSeAsiaWithoutDubai", StrictLockSeAsiaWithoutDubai);
             Run("StrictLockEuropeDubaiSetting", StrictLockEuropeDubaiSetting);
             Run("GulfDefaultStaysEurope", GulfDefaultStaysEurope);
+            Run("LockExpectedPing", LockExpectedPing);
             Run("EuropePlusSingaporeNamesDubai", EuropePlusSingaporeNamesDubai);
             Run("StrictLockNorthAmericaFromRiyadh", StrictLockNorthAmericaFromRiyadh);
             Run("StrictLockBoundaryAndGuard", StrictLockBoundaryAndGuard);

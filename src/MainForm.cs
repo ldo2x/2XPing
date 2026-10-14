@@ -1295,6 +1295,10 @@ namespace PingBoost
             if (stateCard == null || g == null) return;
             if (g != choices.Game) RebuildChoices();
             PeekGameLog(g);
+            // the lock's expected ping, from the latest pings through what the lock leaves open
+            string lockVia = null;
+            int lockMs = LockedFor(g) ? LockScope.Expected(g, LockPicks(g), lockClosed, lockInfo != null ? lockInfo.Gateways : null,
+                                                           StrictLock.Pings(g), Routing.BestLatency, out lockVia) : -1;
             var input = CardInputBuilder.Build(g, choices.Every, new CardFacts
             {
                 Loaded = session.IsLoaded(g),
@@ -1309,6 +1313,8 @@ namespace PingBoost
                 LockGame = lockSummary != null ? lockGame : null,
                 LockNames = lockNames,
                 LockRoute = lockRoute,
+                LockMs = lockMs,
+                LockVia = lockVia,
                 MatchRegion = match.Region,
                 MatchOnPicked = match.OnPicked,
                 MatchViaRelay = match.ViaRelay,

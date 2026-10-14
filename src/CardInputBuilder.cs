@@ -16,6 +16,8 @@ namespace PingBoost
         public Game LockGame;                 // the locked game; null = no lock
         public string LockNames;              // the lock in the card's words
         public RouteNote LockRoute;           // what the lock that is on costs
+        public int LockMs = -1;               // the lock's expected ping (LockScope.Expected), -1 = unknown
+        public string LockVia;                // ...and where that route enters Valve's network, null = straight there
         public string MatchRegion, MatchEntry, MatchPlace, CurrentServer;
         public bool MatchOnPicked, MatchViaRelay;
         public bool MatchKeptGateway;         // the match is on a gateway the lock kept open (MatchState.KeptGateway)
@@ -57,6 +59,8 @@ namespace PingBoost
                 // every region, shown or folded away: the button names and locks all the selected ones
                 Choices = every,
                 LockedNames = locked ? f.LockNames : null,
+                LockedMs = locked ? f.LockMs : -1,
+                LockedVia = locked && f.LockMs >= 0 ? f.LockVia : null,
                 MatchRegion = f.MatchRegion,
                 MatchOnPicked = f.MatchOnPicked,
                 MatchViaRelay = f.MatchViaRelay,
