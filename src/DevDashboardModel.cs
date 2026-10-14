@@ -287,12 +287,15 @@ namespace PingBoost
             return "‎" + (signed && r > 0 ? "+" : "") + r.ToString(Inv) + " ms‎";
         }
 
-        // The Arabic noun after a number: the plural for 2 and 3..10 (and 103..110...), the singular otherwise
-        // ("7 مرات، 4 لاعبين" but "1 مرة", "15 لاعب").
-        public static string ArNoun(long n, string one, string few)
+        // The Arabic noun after a number: the plural for 3..10 (and 103..110...), the dual for 2 when there is one
+        // (the plural otherwise), the singular for the rest ("7 مرات، 4 لاعبين", "2 مرتين", "1 مرة", "15 لاعب").
+        public static string ArNoun(long n, string one, string few) { return ArNoun(n, one, few, few); }
+
+        public static string ArNoun(long n, string one, string few, string two)
         {
-            long m = Math.Abs(n) % 100;
-            return Math.Abs(n) == 2 || (m >= 3 && m <= 10) ? few : one;
+            long a = Math.Abs(n), m = a % 100;
+            if (a == 2) return two;
+            return m >= 3 && m <= 10 ? few : one;
         }
 
         // 95 -> "1:35", 30 -> "0:30", NaN -> "-"

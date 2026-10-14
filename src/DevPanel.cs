@@ -78,9 +78,11 @@ namespace PingBoost
             refresh.Tick += delegate { if (Visible && ListsShown) Reload(); };
             refresh.Start();
             VisibleChanged += delegate { LoadListsOnce(); };
-            // the summary and Refresh above the tabs are the lists': hidden while the dashboard (with its own) is shown
-            top.Visible = ListsShown;
-            tabs.SelectedIndexChanged += delegate { top.Visible = ListsShown; LoadListsOnce(); };
+            // the summary and Refresh above the tabs are the lists': hidden while the dashboard (with its own) is shown;
+            // «Forget key» stays
+            Action listBar = () => { summary.Visible = ListsShown; btn.Visible = ListsShown; };
+            listBar();
+            tabs.SelectedIndexChanged += delegate { listBar(); LoadListsOnce(); };
             Disposed += delegate { refresh.Dispose(); };
         }
 

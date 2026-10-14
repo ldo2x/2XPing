@@ -126,7 +126,7 @@ namespace PingBoost
         readonly System.Windows.Forms.Timer timer;
         readonly List<Control> laidOut = new List<Control>();
         readonly List<DashLayout.Item> items = new List<DashLayout.Item>();
-        bool loading, built;
+        bool loading, built, building;
         DashStats shown;
 
         static readonly Color[] Palette =
@@ -165,7 +165,9 @@ namespace PingBoost
                                  ForeColor = Theme.Dim, Font = Fonts.Ui(9f), AutoEllipsis = true };
 
             body = new Panel { Dock = DockStyle.Fill, AutoScroll = true, BackColor = Theme.Bg };
-            body.Resize += delegate { Place(); };
+            // the scroll area measured the pieces at their old (wider) places before this ran: place them, then let it
+            // measure again, or narrowing the window brings back a horizontal scrollbar (a rebuild does this itself)
+            body.Resize += delegate { Place(); if (!building) body.PerformLayout(); };
             Controls.Add(body);
             Controls.Add(status);
             Controls.Add(top);
@@ -266,6 +268,7 @@ namespace PingBoost
         void Build(DashStats s)
         {
             int keepY = -body.AutoScrollPosition.Y; // stay where the reader was
+            building = true;
             body.SuspendLayout();
             foreach (var c in laidOut) c.Dispose();
             laidOut.Clear();
@@ -297,7 +300,7 @@ namespace PingBoost
             AddPair(Breakdown(s, "version", T("App version", "نسخة البرنامج"), null),
                     Breakdown(s, "country", T("Country", "الدولة"), null));
             AddPair(Breakdown(s, "game", T("Games used", "الألعاب المستخدمة"), null),
-                    Breakdown(s, "lock_region", T("Deadlock regions picked", "مناطق ديدلوك اللي اختاروها"), RegionWords()));
+                    Breakdown(s, "lock_region", T("Deadlock regions picked", "مناطق ديدلوك المختارة"), RegionWords()));
             AddPair(Breakdown(s, "mode", T("Layout", "الواجهة"), Words("simple", T("Simple", "بسيطة"), "advanced", T("Advanced", "متقدمة"))),
                     Breakdown(s, "lang", T("Language", "اللغة"), Words("ar", "عربي", "en", "English")));
             AddPair(Breakdown(s, "os", T("Windows", "الويندوز"), null), null);
@@ -311,7 +314,7 @@ namespace PingBoost
 
             var donut = new DonutChart { Title = T("Did the lock hold? (match reports)", "التثبيت مسك؟ (تقارير المباريات)"),
                                          CenterText = DashFmt.Count(s.MatchTotal), CenterSub = T("matches", DashFmt.ArNoun(s.MatchTotal, "مباراة", "مباريات")) };
-            if (s.DupSuspect > 0) donut.Note = "+" + s.DupSuspect + " ?";
+            if (s.DupSuspect > 0) donut.Note = T("+" + s.DupSuspect + " maybe repeats", "+" + s.DupSuspect + " يمكن مكررة");
             foreach (var v in s.Verdicts)
                 donut.Slices.Add(new DonutChart.Slice { Label = VerdictName(v.Key), Value = v.Count, Color = VerdictColor(v.Key) });
             var sources = Bars(T("How the match server was found", "كيف عرفنا سيرفر المباراة"),
@@ -366,6 +369,7 @@ namespace PingBoost
 
             Place();
             body.ResumeLayout(true);
+            building = false;
             body.AutoScrollPosition = new Point(0, keepY);
         }
 
@@ -418,7 +422,7 @@ namespace PingBoost
         static string IssueText(DashIssue i)
         {
             return T(DashFmt.Count(i.Count) + "x, " + i.Players + (i.Players == 1 ? " player" : " players"),
-                     DashFmt.Count(i.Count) + " " + DashFmt.ArNoun(i.Count, "مرة", "مرات") + "، " + i.Players + " " + DashFmt.ArNoun(i.Players, "لاعب", "لاعبين"));
+                     DashFmt.Count(i.Count) + " " + DashFmt.ArNoun(i.Count, "مرة", "مرات", "مرتين") + "، " + i.Players + " " + DashFmt.ArNoun(i.Players, "لاعب", "لاعبين", "لاعبَين"));
         }
 
         static BarList.Bar Bar(string label, double value, string text, Color color)
