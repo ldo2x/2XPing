@@ -61,6 +61,7 @@ namespace PingBoost
         public void Run(List<Region> regions, List<Relay> relays)
         {
             var g = Testing;
+            if (g == null) return; // Prepare names the game first
             var watch = System.Diagnostics.Stopwatch.StartNew();
             background(() =>
             {

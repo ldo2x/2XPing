@@ -14,7 +14,10 @@ namespace PingBoost
         [DllImport("gdi32.dll")]
         static extern IntPtr AddFontMemResourceEx(IntPtr data, uint size, IntPtr reserved, ref uint fonts);
 
-        static readonly PrivateFontCollection pfc = new PrivateFontCollection();
+        // Regular and Bold share a collection; Medium and SemiBold each get their own. SemiBold also names "Readex Pro"
+        // as its family, and in one collection with Regular GDI+ sometimes folded it in there, so "Readex Pro SemiBold"
+        // was missing on about 3 launches in 4 and the titles fell back to Segoe UI. Every collection is kept alive.
+        static readonly Dictionary<string, PrivateFontCollection> collections = new Dictionary<string, PrivateFontCollection>();
         static readonly Dictionary<string, FontFamily> families = new Dictionary<string, FontFamily>();
         static bool loaded;
 
@@ -40,13 +43,26 @@ namespace PingBoost
                     // the memory must stay valid while the fonts are in use: it is never freed
                     IntPtr mem = Marshal.AllocCoTaskMem(data.Length);
                     Marshal.Copy(data, 0, mem, data.Length);
-                    pfc.AddMemoryFont(mem, data.Length);
+                    Collection(name).AddMemoryFont(mem, data.Length);
                     uint count = 0;
                     AddFontMemResourceEx(mem, (uint)data.Length, IntPtr.Zero, ref count);
                 }
                 catch { }
             }
-            foreach (var f in pfc.Families) families[f.Name] = f;
+            // the shared Regular/Bold collection first, so a weight's own collection never replaces "Readex Pro"
+            PrivateFontCollection main;
+            if (collections.TryGetValue("", out main)) foreach (var f in main.Families) families[f.Name] = f;
+            foreach (var c in collections)
+                foreach (var f in c.Value.Families)
+                    if (!families.ContainsKey(f.Name)) families[f.Name] = f;
+        }
+
+        static PrivateFontCollection Collection(string resource)
+        {
+            string key = resource.Contains("Medium") ? "Medium" : resource.Contains("SemiBold") ? "SemiBold" : "";
+            PrivateFontCollection c;
+            if (!collections.TryGetValue(key, out c)) collections[key] = c = new PrivateFontCollection();
+            return c;
         }
 
         static Font Make(string family, string fallback, float size, FontStyle style)

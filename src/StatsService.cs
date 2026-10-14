@@ -8,11 +8,18 @@ namespace PingBoost
     // Player numbers at one moment (immutable once fetched).
     sealed class PlayerStats
     {
-        public static readonly PlayerStats None = new PlayerStats();
+        public static readonly PlayerStats None = new PlayerStats(null, -1, -1);
 
-        public Dictionary<string, int> Activity; // Deadlock matches/hour per matchmaking region; null = none
-        public int Online = -1;                  // Deadlock players online (in matches, the queue, the menus or away); -1 = unknown
-        public int Steam = -1;                   // Steam's player count of the game; -1 = unknown
+        public readonly Dictionary<string, int> Activity; // Deadlock matches/hour per matchmaking region; null = none
+        public readonly int Online;              // Deadlock players online (in matches, the queue, the menus or away); -1 = unknown
+        public readonly int Steam;               // Steam's player count of the game; -1 = unknown
+
+        public PlayerStats(Dictionary<string, int> activity, int online, int steam)
+        {
+            Activity = activity;
+            Online = online;
+            Steam = steam;
+        }
 
         // A region's players: the online total split by the region's share of the live matches.
         // Without the total, the old estimate from the live-match sample (far below the real number).
@@ -54,14 +61,14 @@ namespace PingBoost
         // The real sources (deadlock-api through Supabase, Steam); runs on a background thread.
         public static PlayerStats Fetch(Game g)
         {
-            var s = new PlayerStats();
+            Dictionary<string, int> activity = null;
+            int online = -1;
             if (g.AppId == "1422450")
             {
-                try { s.Activity = Stats.DeadlockActivity(); } catch { }
-                try { s.Online = Stats.DeadlockOnline(); } catch { }
+                try { activity = Stats.DeadlockActivity(); } catch { }
+                try { online = Stats.DeadlockOnline(); } catch { }
             }
-            s.Steam = Stats.SteamPlayers(g.SteamAppId);
-            return s;
+            return new PlayerStats(activity, online, Stats.SteamPlayers(g.SteamAppId));
         }
     }
 

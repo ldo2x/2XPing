@@ -427,7 +427,7 @@ namespace PingBoost
             var clock = new DateTime(2026, 10, 14, 12, 0, 0);
             int fetched = 0, raised = 0;
             bool lastQuiet = false;
-            var s = new StatsService(new InlineDispatcher(), g => { fetched++; return new PlayerStats { Steam = 5 }; }, () => onScreen,
+            var s = new StatsService(new InlineDispatcher(), g => { fetched++; return new PlayerStats(null, -1, 5); }, () => onScreen,
                                      work => work(), () => clock);
             s.Updated += (g, st, quiet) => { raised++; lastQuiet = quiet; };
             Check(s.Current == PlayerStats.None && s.Current.Online == -1, "nothing yet: never null");
@@ -449,9 +449,9 @@ namespace PingBoost
         static void PlayerStatsPlayersAndSummary()
         {
             var act = new Dictionary<string, int> { { "eu", 300 }, { "na", 100 } };
-            var p = new PlayerStats { Activity = act, Online = 40000 };
+            var p = new PlayerStats(act, 40000, -1);
             Check(p.PlayersOf(300) == 30000 && p.PlayersOf(100) == 10000, "online total split by match share: " + p.PlayersOf(300));
-            var noTotal = new PlayerStats { Activity = act };
+            var noTotal = new PlayerStats(act, -1, -1);
             Check(noTotal.PlayersOf(100) == Stats.EstimatePlayers(100), "without the total: the estimate");
             Check(PlayerStats.None.PlayersOf(10) == Stats.EstimatePlayers(10), "no numbers: the estimate");
             var dl = new Game { Name = "Deadlock", AppId = "1422450" };
@@ -459,7 +459,7 @@ namespace PingBoost
             Lang.Ar = false;
             string sum = p.Summary(dl);
             Check(sum.StartsWith("Online now (est.): ~40,000   |   ") && sum.IndexOf("~30,000") > 0, "Deadlock summary: " + sum);
-            Check(new PlayerStats { Steam = 1234 }.Summary(new Game { Name = "x" }) == "Online now on Steam: 1,234 players (all regions together)", "Steam summary");
+            Check(new PlayerStats(null, -1, 1234).Summary(new Game { Name = "x" }) == "Online now on Steam: 1,234 players (all regions together)", "Steam summary");
             Check(PlayerStats.None.Summary(new Game { Name = "c", Provider = Provider.Custom }) == "", "custom: empty");
             Check(PlayerStats.None.Summary(new Game { Name = "x" }) == "Player numbers aren't available for this game.", "nothing known");
             Lang.Ar = true;
