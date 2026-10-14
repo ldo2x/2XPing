@@ -995,9 +995,9 @@ namespace PingBoost
             games = GameDb.Available(allGames);
             var g = CurrentGame;
             // re-selecting the game below starts its card over: the match seen and the player's choices survive a rebuild
-            string keepRegion = matchRegion, keepServer = currentServer;
-            bool keepOnPicked = matchOnPicked, keepViaRelay = matchViaRelay, keepUserPicked = choices.UserPicked, keepExpanded = choices.Expanded;
-            int keepMs = currentMs;
+            string keepRegion = match.Region, keepServer = match.Server;
+            bool keepOnPicked = match.OnPicked, keepViaRelay = match.ViaRelay, keepUserPicked = choices.UserPicked, keepExpanded = choices.Expanded;
+            int keepMs = match.Ms;
             SuspendLayout();
             var old = Controls.Cast<Control>().ToArray();
             Controls.Clear();
@@ -1013,8 +1013,8 @@ namespace PingBoost
             if (g != null && gameList.Items.Contains(g))
             {
                 gameList.SelectedItem = g;
-                matchRegion = keepRegion; currentServer = keepServer; currentMs = keepMs;
-                matchOnPicked = keepOnPicked; matchViaRelay = keepViaRelay;
+                match.Region = keepRegion; match.Server = keepServer; match.Ms = keepMs;
+                match.OnPicked = keepOnPicked; match.ViaRelay = keepViaRelay;
                 choices.UserPicked = keepUserPicked; choices.Expanded = keepExpanded;
                 UpdateCard();
             }
@@ -1216,32 +1216,16 @@ namespace PingBoost
         string lockNames;   // the lock in the card's words: region names, or the picked server names
         string lockingNames; // the same for the lock being applied right now
         // what the automatic check saw: the region of the running match, or (games that can't be locked) the server
-        string matchRegion, currentServer;
-        bool matchOnPicked, matchViaRelay;
-        // matchViaRelay: where the game enters Valve's network ("Dubai"); matchPlace: the match server's datacenter, known
-        // only from Deadlock's console log
-        string matchEntry, matchPlace;
-        int currentMs = -1;
+        readonly MatchState match = new MatchState();
 
-        void ClearMatch()
-        {
-            matchRegion = matchEntry = matchPlace = null;
-            matchOnPicked = matchViaRelay = false;
-            currentServer = null;
-            currentMs = -1;
-        }
+        void ClearMatch() { match.Clear(); }
 
         void SetMatch(string region, bool onPicked, bool viaRelay) { SetMatch(region, onPicked, viaRelay, null, null); }
 
         void SetMatch(string region, bool onPicked, bool viaRelay, string entry, string place)
         {
             // a different match: the warnings held about the last one are stale (the same match keeps them)
-            if (region != matchRegion || onPicked != matchOnPicked || viaRelay != matchViaRelay || place != matchPlace) DropHeldWarnings();
-            matchRegion = region;
-            matchOnPicked = onPicked;
-            matchViaRelay = viaRelay;
-            matchEntry = entry;
-            matchPlace = place;
+            if (match.Set(region, onPicked, viaRelay, entry, place)) DropHeldWarnings();
         }
 
         // ---------------------------------------------------------------- Deadlock's console log (-condebug)
@@ -1488,13 +1472,13 @@ namespace PingBoost
                 LockGame = lockSummary != null ? lockGame : null,
                 LockNames = lockNames,
                 LockRoute = lockRoute,
-                MatchRegion = matchRegion,
-                MatchOnPicked = matchOnPicked,
-                MatchViaRelay = matchViaRelay,
-                MatchEntry = matchEntry,
-                MatchPlace = matchPlace,
-                CurrentServer = currentServer,
-                CurrentMs = currentMs,
+                MatchRegion = match.Region,
+                MatchOnPicked = match.OnPicked,
+                MatchViaRelay = match.ViaRelay,
+                MatchEntry = match.Entry,
+                MatchPlace = match.Place,
+                CurrentServer = match.Server,
+                CurrentMs = match.Ms,
                 NoMatchLong = noMatchLong,
                 GameLogOn = gameLogOn,
                 Simple = simple,
@@ -1980,9 +1964,9 @@ namespace PingBoost
             SetIdle();
             btnDetect.Enabled = true;
             foreach (var r in g.Regions) r.Here = false;
-            var match = MatchClassifier.Classify(g, hits);
-            var found = match.Found;
-            var relay = match.Relay;
+            var seen = MatchClassifier.Classify(g, hits);
+            var found = seen.Found;
+            var relay = seen.Relay;
             if (relay != null)
             {
                 // the game enters Valve's network at a relay, which hides which datacenter the match is on: say only that
@@ -2060,7 +2044,7 @@ namespace PingBoost
                 var top = found[0];
                 if (CurrentGame == g)
                 {
-                    if (!g.CanLock) { currentServer = Fmt.ShortName(top); currentMs = top.Direct.Ok ? (int)Math.Round(top.Direct.Avg) : -1; }
+                    if (!g.CanLock) match.SetServer(Fmt.ShortName(top), top.Direct.Ok ? (int)Math.Round(top.Direct.Avg) : -1);
                     FillServers(g);
                 }
                 SetStatus(T("You are on: ", "إنت دحين على: ") + top.Name);
@@ -2181,7 +2165,7 @@ namespace PingBoost
                         lastObservedCheck = DateTime.MinValue; // time with the game closed is never "no match yet"
                         if (session.ClearSkippedAutoTest(g)) UpdateCard(); // the card no longer says the game is open
                         if (lastAutoServer != null) ResetDetectButton();
-                        if (matchRegion != null || matchViaRelay || currentServer != null) { ClearMatch(); UpdateCard(); }
+                        if (match.Any) { ClearMatch(); UpdateCard(); }
                         return;
                     }
                     if (hits != null) ShowAutoDetect(g, hits, where, whereMs, capturedAt, readAt, logDc, gameStart);
@@ -2233,8 +2217,8 @@ namespace PingBoost
             // Deadlock's console log names the match datacenter: that wins over the capture
             var fresh = hits.Count > 0 ? FreshLogDc(logDc, gameStart) : null;
             if (fresh != null && ShowLogResult(g, fresh, false)) return;
-            var match = MatchClassifier.Classify(g, hits);
-            var seenDc = match.Datacenter;
+            var seen = MatchClassifier.Classify(g, hits);
+            var seenDc = seen.Datacenter;
             if (seenDc != null)
             {
                 dcSinceLock = true;
@@ -2254,7 +2238,7 @@ namespace PingBoost
             if (hits.Count == 0)
             {
                 // not in a match (any more)
-                if (matchRegion != null || matchViaRelay || currentServer != null) { ClearMatch(); UpdateCard(); }
+                if (match.Any) { ClearMatch(); UpdateCard(); }
                 bool waiting = lockSummary != null && !matchSinceLock;
                 SetDetect(waiting ? T("Checking at your next match...", "بنتأكد في مباراتك الجاية...") : T("Not in a match", "مو داخل مباراة"),
                           waiting ? Theme.Lavender : Theme.Dim);
@@ -2268,7 +2252,7 @@ namespace PingBoost
             matchSinceLock = true;
             var top = hits[0];
             var dc = seenDc;
-            var relay = match.Relay;
+            var relay = seen.Relay;
             if (relay != null)
             {
                 // only the entry relay in sight: the match server is hidden behind it, so there's nothing to check or report
@@ -2286,7 +2270,7 @@ namespace PingBoost
             SetDetect(T("On: ", "إنت على: ") + name, ok ? Theme.Good : Theme.Warn);
             // the card: a datacenter we know names the region; a game without them shows the city and its ping
             if (dc != null) SetMatch(Places.RegionNameOf(g, dc), dc.Picked, false);
-            else if (!g.CanLock && where != null) { currentServer = where; currentMs = whereMs; }
+            else if (!g.CanLock && where != null) match.SetServer(where, whereMs);
             UpdateCard();
             if (dc != null && !dc.Here)
             {

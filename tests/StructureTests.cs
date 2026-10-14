@@ -656,6 +656,24 @@ namespace PingBoost
             Check(s.ClearSkippedAutoTest(g) && !s.ClearSkippedAutoTest(g) && !s.NotAutoTested(g), "skipped flag cleared once");
         }
 
+        static void MatchStateSaysWhenTheMatchChanged()
+        {
+            var m = new MatchState();
+            Check(!m.Any && m.Ms == -1, "empty");
+            Check(m.Set("Europe", true, false, null, "Frankfurt"), "first match: different");
+            Check(m.Any && m.Region == "Europe" && m.OnPicked && m.Place == "Frankfurt", "set");
+            Check(!m.Set("Europe", true, false, "x", "Frankfurt"), "same region, pick, relay and place: the same match (entry doesn't count)");
+            Check(m.Entry == "x", "entry still updated");
+            Check(m.Set("Europe", true, false, null, "Vienna"), "another server: a different match");
+            Check(m.Set("Europe", false, false, null, "Vienna"), "on picked changed: different");
+            Check(m.Set(null, false, true, "Dubai", null), "through a relay: different");
+            Check(m.Any && m.ViaRelay && m.Entry == "Dubai", "via relay counts as a match");
+            m.Clear();
+            Check(!m.Any && m.Region == null && m.Entry == null && m.Place == null && !m.OnPicked && !m.ViaRelay && m.Server == null && m.Ms == -1, "cleared");
+            m.SetServer("Bahrain", 31);
+            Check(m.Any && m.Server == "Bahrain" && m.Ms == 31, "a server alone counts");
+        }
+
         static void RunStructureTests()
         {
             Run("RoutingRelayMarginIsThreeMs", RoutingRelayMarginIsThreeMs);
@@ -685,6 +703,7 @@ namespace PingBoost
             Run("PingTestFailureIsReportedThenRaised", PingTestFailureIsReportedThenRaised);
             Run("GameSessionLoadsTheGameOnScreen", GameSessionLoadsTheGameOnScreen);
             Run("GameSessionRetryForgetsAndTestsAfterLoad", GameSessionRetryForgetsAndTestsAfterLoad);
+            Run("MatchStateSaysWhenTheMatchChanged", MatchStateSaysWhenTheMatchChanged);
         }
     }
 }
