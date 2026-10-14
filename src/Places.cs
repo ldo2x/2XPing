@@ -23,6 +23,9 @@ namespace PingBoost
                 int i = n.IndexOf(cut, StringComparison.Ordinal);
                 if (i > 0) n = n.Substring(0, i);
             }
+            // Valve's own English names start some sites with their host ("Datapacket Fujairah"): the place is enough
+            const string host = "Datapacket ";
+            if (n.StartsWith(host, StringComparison.OrdinalIgnoreCase) && n.Length > host.Length) n = n.Substring(host.Length);
             return n;
         }
 

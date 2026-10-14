@@ -259,8 +259,23 @@ namespace PingBoost
             Check(ids.Count == 1 && ids[0] == "ee", "locks only ee: " + string.Join(",", ids.ToArray()));
         }
 
+        static void PlaceNameIsThePlace()
+        {
+            bool was = Lang.Ar;
+            try
+            {
+                Lang.Ar = false;
+                Check(Places.PlaceName(new Region { Id = "dfjr", NameEn = "Datapacket Fujairah" }) == "Fujairah", "Datapacket host dropped");
+                Check(Places.PlaceName(new Region { Id = "dxb", NameEn = "Dubai - UAE" }) == "Dubai", "country dropped");
+                Lang.Ar = true;
+                Check(Places.PlaceName(new Region { Id = "dfjr", NameEn = "Datapacket Fujairah", NameAr = "الفجيرة (Datapacket) - الإمارات" }) == "الفجيرة", "Arabic place");
+            }
+            finally { Lang.Ar = was; }
+        }
+
         static int Main()
         {
+            Run("PlaceNameIsThePlace", PlaceNameIsThePlace);
             Run("OverwatchRegionsCoverEveryDatacenterOnce", OverwatchRegionsCoverEveryDatacenterOnce);
             Run("DeadlockRegionsSkipRelayOnly", DeadlockRegionsSkipRelayOnly);
             Run("DbdRegionsMatchSpec", DbdRegionsMatchSpec);
