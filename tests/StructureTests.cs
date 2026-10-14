@@ -598,6 +598,64 @@ namespace PingBoost
             Check(PingTestService.Parallel == 16, "16 regions at a time");
         }
 
+        static void GameSessionLoadsTheGameOnScreen()
+        {
+            var g = new Game { Name = "G", Processes = new[] { "g" } };
+            var other = new Game { Name = "O" };
+            Game onScreen = g;
+            int attempts = 0, slept = 0, failAttempts = 0;
+            bool open = false, autoTest = true;
+            var s = new GameSession(new InlineDispatcher(),
+                game => { attempts++; if (attempts <= failAttempts) throw new Exception("steam slow " + attempts); game.Regions.Add(new Region { Id = "r" }); },
+                game => open, () => onScreen, work => work(), ms => slept += ms);
+            string failed = null;
+            int loaded = 0;
+            bool lastOpen = false;
+            s.Failed += (game, err) => failed = err;
+            s.Loaded += (game, o) => { loaded++; lastOpen = o; };
+            // one quiet retry
+            failAttempts = 1;
+            s.Load(g, () => autoTest);
+            Check(attempts == 2 && slept == 1500 && failed == null && loaded == 1 && s.IsLoaded(g) && s.LoadFailed == null, "one retry, then loaded");
+            // two failures: LoadFailed, Failed raised with the last error
+            var h = new Game { Name = "H" };
+            onScreen = h; attempts = 0; failAttempts = 2;
+            s.Load(h, () => autoTest);
+            Check(failed == "steam slow 2" && s.LoadFailed == h && !s.IsLoaded(h) && loaded == 1, "load failure -> LoadFailed: " + failed);
+            // loaded but no servers: LoadFailed too, and Loaded is still raised
+            var empty = new Game { Name = "E" };
+            onScreen = empty; failAttempts = 0; attempts = 0;
+            var noServers = new GameSession(new InlineDispatcher(), game => { }, game => false, () => onScreen, work => work(), ms => { });
+            int emptyLoaded = 0;
+            noServers.Loaded += (game, o) => emptyLoaded++;
+            noServers.Load(empty, () => true);
+            Check(noServers.LoadFailed == empty && noServers.IsLoaded(empty) && emptyLoaded == 1, "no servers -> LoadFailed");
+            // another game on screen by the time it's loaded: nothing is raised
+            onScreen = other; loaded = 0; failed = null;
+            s.Load(g, () => autoTest);
+            Check(loaded == 0 && failed == null, "another game on screen: dropped");
+            // the game is open: only asked with the automatic test on
+            onScreen = g; open = true;
+            s.Load(g, () => autoTest);
+            Check(lastOpen, "open with auto test -> gameOpen");
+            autoTest = false;
+            s.Load(g, () => autoTest);
+            Check(!lastOpen, "auto test off: never 'open'");
+        }
+
+        static void GameSessionRetryForgetsAndTestsAfterLoad()
+        {
+            var g = new Game { Name = "G" };
+            var s = new GameSession(new InlineDispatcher(), game => game.Regions.Add(new Region { Id = "r" }), game => false, () => g, work => work(), ms => { });
+            s.Load(g, () => true);
+            s.MarkTested(g);
+            s.SkippedAutoTest(g);
+            Check(s.IsLoaded(g) && s.Tested(g) && s.NotAutoTested(g), "loaded, tested, skipped");
+            s.Retry(g);
+            Check(!s.IsLoaded(g) && !s.Tested(g) && s.RetestAfterLoad == g, "Offline retry: forget loaded + tested, test after load");
+            Check(s.ClearSkippedAutoTest(g) && !s.ClearSkippedAutoTest(g) && !s.NotAutoTested(g), "skipped flag cleared once");
+        }
+
         static void RunStructureTests()
         {
             Run("RoutingRelayMarginIsThreeMs", RoutingRelayMarginIsThreeMs);
@@ -625,6 +683,8 @@ namespace PingBoost
             Run("NoticeCenterHoldsWarningsWhileMinimized", NoticeCenterHoldsWarningsWhileMinimized);
             Run("PingTestPicksTheBestAddressAndReportsOnce", PingTestPicksTheBestAddressAndReportsOnce);
             Run("PingTestFailureIsReportedThenRaised", PingTestFailureIsReportedThenRaised);
+            Run("GameSessionLoadsTheGameOnScreen", GameSessionLoadsTheGameOnScreen);
+            Run("GameSessionRetryForgetsAndTestsAfterLoad", GameSessionRetryForgetsAndTestsAfterLoad);
         }
     }
 }

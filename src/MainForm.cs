@@ -52,8 +52,7 @@ namespace PingBoost
         int currentPage;
 
         bool busy, boosting, clickedCheck;
-        readonly HashSet<Game> tested = new HashSet<Game>(); // games tested since the app opened
-        readonly HashSet<Game> notAutoTested = new HashSet<Game>(); // the automatic test was skipped: the game was open
+        readonly GameSession session; // what this session knows about each game (loaded, tested...)
         volatile bool tunnelActive;
         int monitorGen;     // read by the monitor thread: always through Volatile/Interlocked
         int boostGen;       // bumped by Stop: a relay route still being built then goes away instead of starting
@@ -76,6 +75,9 @@ namespace PingBoost
             stats = new StatsService(ui, PlayerStats.Fetch, () => CurrentGame);
             stats.Updated += ShowStats;
             notices = new NoticeCenter(ui, () => Minimized, () => simple, ShowChat, FlashTaskbar);
+            session = new GameSession(ui, () => CurrentGame);
+            session.Failed += ServersFailed;
+            session.Loaded += ServersLoaded;
             tests = new PingTestService(ui, new LiveProbe(), ex => ReportCrash("ping test", ex));
             tests.RelaysMeasured += RefreshRelays;
             tests.RegionDone += (tg, r, n, total) => { UpdateRegion(r); SetStatus(T("Testing... ", "نفحص... ") + n + "/" + total); };
@@ -1071,7 +1073,7 @@ namespace PingBoost
             ClearMatch();
             choices.Forget();
             choices.UserPicked = choices.Expanded = false;
-            if (loadFailed == g) loadFailed = null;
+            if (session.LoadFailed == g) session.LoadFailed = null;
             pickBar.Visible = g.CanLock;
             // the lock bar tells Valve games what to do, so their note would say it a second time; games locked by their
             // own traffic (Overwatch, Dead by Daylight...) keep theirs: it warns that a blocked pick won't load the match
@@ -1080,62 +1082,48 @@ namespace PingBoost
             serverList.Items.Clear();
             UpdateCard();
             SetStatus(T("Getting the servers of ", "نجيب سيرفرات ") + g.Name + "...");
-            Task.Run(() =>
+            session.Load(g, () => Prefs.AutoTest);
+        }
+
+        // The servers of g, the game on screen, couldn't be had (GameSession.Failed).
+        void ServersFailed(Game g, string err)
+        {
+            UpdateCard();
+            SetStatus(T("Couldn't get the servers. Check your internet, then pick the game again.",
+                        "ما قدرنا نجيب السيرفرات. شيّك على النت، وبعدين اختار اللعبة مرة ثانية."));
+            Log(g.Name + ": " + err);
+            Issues.Report("servers_load_failed", g.Name + ": " + err, null, g.Icon);
+        }
+
+        // The servers of g, the game on screen, are in (GameSession.Loaded). gameOpen: no automatic test then.
+        void ServersLoaded(Game g, bool gameOpen)
+        {
+            // last time's results show up straight away; the new test then refreshes them
+            if (g.Regions.All(r => r.Direct == null))
             {
-                string err = null;
-                // one quiet retry: a slow answer from Steam now and then shouldn't show up as an error
-                for (int attempt = 0; attempt < 2; attempt++)
-                {
-                    try { GameDb.Load(g); err = null; break; }
-                    catch (Exception ex) { err = ex.Message; Thread.Sleep(1500); }
-                }
-                // the game is open (maybe in a match): no automatic test (performance audit item 4); the card says the pings
-                // are from last time and how to refresh them (CardInput.OldPings)
-                bool gameOpen = false;
-                try { gameOpen = err == null && Prefs.AutoTest && Detector.IsRunning(g.Processes); } catch { }
-                Ui(() =>
-                {
-                    if (CurrentGame != g) return;
-                    if (err != null)
-                    {
-                        loadFailed = g;
-                        UpdateCard();
-                        SetStatus(T("Couldn't get the servers. Check your internet, then pick the game again.",
-                                    "ما قدرنا نجيب السيرفرات. شيّك على النت، وبعدين اختار اللعبة مرة ثانية."));
-                        Log(g.Name + ": " + err);
-                        Issues.Report("servers_load_failed", g.Name + ": " + err, null, g.Icon);
-                        return;
-                    }
-                    loadedGames.Add(g);
-                    if (g.Regions.Count == 0) loadFailed = g;
-                    // last time's results show up straight away; the new test then refreshes them
-                    if (g.Regions.All(r => r.Direct == null))
-                    {
-                        Storage.LoadLast(g);
-                        if (g.Regions.Any(r => r.Direct != null))
-                            g.Regions = Routing.SortForList(g.Regions, r => LockedOut(g, r));
-                    }
-                    FillServers(g);
-                    UpdateLockBar();
-                    LoadStats(g);
-                    if (g.Regions.Count == 0)
-                        SetStatus(T("No servers for this game right now. Try again in a bit.", "ما لقينا سيرفرات لهادي اللعبة دحين، جرّب بعد شوي."));
-                    else if ((Prefs.AutoTest && !tested.Contains(g) && !gameOpen) || retestGame == g)
-                    {
-                        retestGame = null;
-                        RunTest();
-                    }
-                    else if (gameOpen && !tested.Contains(g))
-                    {
-                        notAutoTested.Add(g);
-                        UpdateCard();
-                        SetStatus(T(g.Name + " is open, so we didn't test on our own (it would add traffic to your match). Press Test ping when you want.",
-                                    g.Name + " مفتوحة، فما فحصنا من نفسنا عشان ما نزحم اتصال مباراتك. اضغط «افحص البنق» لما تبغى."));
-                    }
-                    else
-                        SetStatus(g.Regions.Count + T(" regions ready. Press Test ping.", " منطقة جاهزة، اضغط «افحص البنق»."));
-                });
-            });
+                Storage.LoadLast(g);
+                if (g.Regions.Any(r => r.Direct != null))
+                    g.Regions = Routing.SortForList(g.Regions, r => LockedOut(g, r));
+            }
+            FillServers(g);
+            UpdateLockBar();
+            LoadStats(g);
+            if (g.Regions.Count == 0)
+                SetStatus(T("No servers for this game right now. Try again in a bit.", "ما لقينا سيرفرات لهادي اللعبة دحين، جرّب بعد شوي."));
+            else if ((Prefs.AutoTest && !session.Tested(g) && !gameOpen) || session.RetestAfterLoad == g)
+            {
+                session.RetestAfterLoad = null;
+                RunTest();
+            }
+            else if (gameOpen && !session.Tested(g))
+            {
+                session.SkippedAutoTest(g);
+                UpdateCard();
+                SetStatus(T(g.Name + " is open, so we didn't test on our own (it would add traffic to your match). Press Test ping when you want.",
+                            g.Name + " مفتوحة، فما فحصنا من نفسنا عشان ما نزحم اتصال مباراتك. اضغط «افحص البنق» لما تبغى."));
+            }
+            else
+                SetStatus(g.Regions.Count + T(" regions ready. Press Test ping.", " منطقة جاهزة، اضغط «افحص البنق»."));
         }
 
         void FillServers(Game g)
@@ -1223,9 +1211,8 @@ namespace PingBoost
         // ---------------------------------------------------------------- the state card
 
         readonly ChoiceSet choices = new ChoiceSet(); // the region tiles and the player's selection
-        Game retestGame, loadFailed, lockGame;
+        Game lockGame;
         Game lockingGame;   // a lock for this game is being applied right now (the card says so)
-        readonly HashSet<Game> loadedGames = new HashSet<Game>();
         string lockNames;   // the lock in the card's words: region names, or the picked server names
         string lockingNames; // the same for the lock being applied right now
         // what the automatic check saw: the region of the running match, or (games that can't be locked) the server
@@ -1432,7 +1419,7 @@ namespace PingBoost
         // The regions to choose from. Games without a region table (developer mode only) get one per datacenter.
         List<RegionChoice> BuildChoices(Game g)
         {
-            if (g == null || !g.CanLock || !loadedGames.Contains(g)) return new List<RegionChoice>();
+            if (g == null || !g.CanLock || !session.IsLoaded(g)) return new List<RegionChoice>();
             if (g.RegionMap != null && g.Provider == Provider.Valve && g.Routes != null)
             {
                 // a tile's ping is the game's: the best route through what is open now (the lock's open relays, or all
@@ -1489,10 +1476,10 @@ namespace PingBoost
             PeekGameLog(g);
             var input = CardInputBuilder.Build(g, choices.Every, new CardFacts
             {
-                Loaded = loadedGames.Contains(g),
-                LoadFailed = loadFailed == g,
-                Tested = tested.Contains(g),
-                NotAutoTested = notAutoTested.Contains(g),
+                Loaded = session.IsLoaded(g),
+                LoadFailed = session.LoadFailed == g,
+                Tested = session.Tested(g),
+                NotAutoTested = session.NotAutoTested(g),
                 AutoTest = Prefs.AutoTest,
                 TestGame = tests.Testing,
                 TestNext = tests.Next,
@@ -1608,9 +1595,7 @@ namespace PingBoost
                     break;
                 case CardKind.Offline:
                     // the same as picking the game again, and test it once it's there
-                    tested.Remove(g);
-                    loadedGames.Remove(g); // "Loading" until it's back, so no test runs on the old list
-                    retestGame = g;
+                    session.Retry(g);
                     OnGameChanged();
                     break;
             }
@@ -1725,14 +1710,14 @@ namespace PingBoost
         {
             busy = false;
             btnTest.Enabled = true;
-            tested.Add(g);
+            session.MarkTested(g);
             Storage.SaveLast(g);
             if (pendingRebuild) { pendingRebuild = false; RebuildUi(); return; }
             // the user switched games while this test ran: test the game they are looking at now
             var cur = CurrentGame;
             bool wanted = tests.Next == cur;
             tests.Next = null;
-            if (cur != g && cur != null && (Prefs.AutoTest || wanted) && cur.Regions.Count > 0 && !tested.Contains(cur))
+            if (cur != g && cur != null && (Prefs.AutoTest || wanted) && cur.Regions.Count > 0 && !session.Tested(cur))
             {
                 RunTest();
                 return;
@@ -2194,7 +2179,7 @@ namespace PingBoost
                     if (!running)
                     {
                         lastObservedCheck = DateTime.MinValue; // time with the game closed is never "no match yet"
-                        if (notAutoTested.Remove(g)) UpdateCard(); // the card no longer says the game is open
+                        if (session.ClearSkippedAutoTest(g)) UpdateCard(); // the card no longer says the game is open
                         if (lastAutoServer != null) ResetDetectButton();
                         if (matchRegion != null || matchViaRelay || currentServer != null) { ClearMatch(); UpdateCard(); }
                         return;
