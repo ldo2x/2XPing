@@ -38,13 +38,13 @@ namespace PingBoost
             return l.ToArray();
         }
 
-        // the smallest of 1, 2, 5, 10, 20, 50... (times a power of ten) that is at least raw
+        // the closest of 1, 2, 5, 10, 20, 50... (times a power of ten) to raw (Heckbert's nice numbers)
         public static double NiceStep(double raw)
         {
             if (raw <= 0 || double.IsNaN(raw) || double.IsInfinity(raw)) return 1;
             double p = Math.Pow(10, Math.Floor(Math.Log10(raw)));
             double f = raw / p;
-            double nice = f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10;
+            double nice = f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10;
             return nice * p;
         }
 

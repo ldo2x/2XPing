@@ -1,0 +1,50 @@
+{
+  "days": 7,
+  "generated_at": "2026-10-14T09:30:12Z",
+  "counters": {
+    "installs_total": 1234, "online_now": 17, "active_today": 58, "active_7d": 240, "active_30d": 610, "active_period": 240,
+    "new_today": 6, "new_7d": 41, "matches_today": 93, "locks_today": 71, "issues_24h": 12, "errors_24h": 3,
+    "matches_period": 640, "locks_period": 455
+  },
+  "deltas": {
+    "active_today": 4, "active_7d": -12, "new_today": 0, "new_7d": 9, "matches_today": 11, "locks_today": -3,
+    "issues_24h": 5, "errors_24h": -1
+  },
+  "series": [
+    {"day": "2026-10-14", "active": 58, "new": 6, "matches": 93, "locks": 71, "errors": 1, "issues": 4},
+    {"day": "2026-10-08", "active": 61, "new": 5, "matches": 80, "locks": 60, "errors": 0, "issues": 2},
+    {"day": "2026-10-09", "active": 70, "new": 7, "matches": 95, "locks": 66, "errors": 2, "issues": 1},
+    {"day": "2026-10-10", "active": 66, "new": 4, "matches": 88, "locks": 63, "errors": 0, "issues": 0},
+    {"day": "2026-10-11", "active": 72, "new": 9, "matches": 101, "locks": 70, "errors": 1, "issues": 3},
+    {"day": "2026-10-12", "active": 68, "new": 6, "matches": 90, "locks": 61, "errors": 0, "issues": 1},
+    {"day": "2026-10-13", "active": 64, "new": 4, "matches": 93, "locks": 64, "errors": 3, "issues": 6}
+  ],
+  "breakdowns": {
+    "version": {"total": 240, "multi": false, "items": [{"k": "0.12.0", "n": 180}, {"k": "0.11.0", "n": 50}, {"k": "?", "n": 6}]},
+    "country": {"total": 240, "multi": false, "items": [{"k": "Saudi Arabia", "n": 150}, {"k": "Kuwait", "n": 40}, {"k": "UAE", "n": 30}]},
+    "lang": {"total": 240, "multi": false, "items": [{"k": "ar", "n": 200}, {"k": "en", "n": 40}]},
+    "mode": {"total": 240, "multi": false, "items": [{"k": "simple", "n": 170}, {"k": "advanced", "n": 70}]},
+    "os": {"total": 240, "multi": false, "items": [{"k": "Windows 11", "n": 160}, {"k": "Windows 10", "n": 80}]},
+    "game": {"total": 210, "multi": true, "items": [{"k": "Deadlock", "n": 190}, {"k": "Overwatch 2", "n": 60}, {"k": "Dead by Daylight", "n": 12}]},
+    "lock_region": {"total": 150, "multi": true, "items": [{"k": "Europe", "n": 140}, {"k": "SEAsia", "n": 15}]}
+  },
+  "match": {
+    "total": 640,
+    "verdict": [{"k": "inside", "n": 500}, {"k": "nolock", "n": 80}, {"k": "outside_gateway", "n": 30}, {"k": "outside", "n": 20}, {"k": "unknown", "n": 10}],
+    "source": [{"k": "log_colocated", "n": 400}, {"k": "capture", "n": 150}, {"k": "relay_only", "n": 60}, {"k": "none", "n": 30}],
+    "by_region": [
+      {"region": "Europe", "n": 520, "inside": 480, "outside": 15, "gateway": 25, "unknown": 0, "nolock": 0, "queue_median_s": 42.5, "avg_diff_ms": 3.2},
+      {"region": "(none)", "n": 80, "inside": 0, "outside": 0, "gateway": 0, "unknown": 0, "nolock": 80, "queue_median_s": 35, "avg_diff_ms": null},
+      {"region": "SEAsia", "n": 40, "inside": 20, "outside": 5, "gateway": 5, "unknown": 10, "nolock": 0, "queue_median_s": null, "avg_diff_ms": -4}
+    ],
+    "ping": {"n": 4, "avg_expected": 61.5, "avg_actual": 67.25, "avg_diff": 5.8, "median_diff": 3,
+             "pairs": [[58, 61], [58, 58], [70, 95], [60, 55.5]]},
+    "dcs": [
+      {"region": "Europe", "dc": "fra", "n": 300, "known": true},
+      {"region": "Europe", "dc": "dxb", "n": 25, "known": true},
+      {"region": "SEAsia", "dc": "xyz", "n": 3, "known": false}
+    ],
+    "unknown_dc": 3
+  },
+  "issues": [{"code": "lock_outside", "n": 7, "players": 4}, {"code": "crash", "n": 2, "players": 2}]
+}
