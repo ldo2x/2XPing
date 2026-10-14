@@ -872,6 +872,68 @@ namespace PingBoost
             Check(!DeadlockLog.Resolve(g, new ConsoleLine { Code = "zzz" }, out id, out dc, out region, out onPicked), "unknown place: no answer");
         }
 
+        // M3: what the console log calls "inside the lock" follows the lock's own picks, not ticks changed afterwards
+        static void DeadlockLogJudgesAgainstTheLocksPicks()
+        {
+            var g = SavedDeadlock();
+            foreach (var r in g.Regions) r.Picked = r.Id == "fra";
+            var info = new LockTest.LockInfo { Picked = new List<string> { "fra" } };
+            var picks = LockScope.PicksOf(g, info, g);
+            foreach (var r in g.Regions) r.Picked = r.Id == "vie"; // ticked differently after the lock, not locked again
+            string id, region;
+            Region dc;
+            bool onPicked;
+            Check(DeadlockLog.Resolve(g, new ConsoleLine { Code = "fra" }, picks, out id, out dc, out region, out onPicked) && onPicked,
+                  "Frankfurt is still inside the lock after unticking it");
+            Check(DeadlockLog.Resolve(g, new ConsoleLine { Code = "vie" }, picks, out id, out dc, out region, out onPicked) && !onPicked,
+                  "Vienna ticked after the lock is still outside it");
+            Check(DeadlockLog.Resolve(g, new ConsoleLine { Code = "vie" }, null, out id, out dc, out region, out onPicked) && onPicked,
+                  "no lock: the current ticks");
+        }
+
+        // M3 + M4: the lock that is on belongs to one game and to the picks it was applied with
+        static void LockScopeBelongsToTheLockedGameAndItsPicks()
+        {
+            var g = SavedDeadlock();
+            var other = new Game { Name = "Other" };
+            var info = new LockTest.LockInfo { Picked = new List<string> { "fra" } };
+            Check(LockScope.PicksOf(g, info, other) == null, "another game has no lock");
+            Check(LockScope.PicksOf(null, info, g) == null, "no lock");
+            var picks = LockScope.PicksOf(g, info, g);
+            Check(picks != null && picks.Contains("fra") && picks.Count == 1, "the locked game's picks");
+            Region fra = g.Regions.First(r => r.Id == "fra"), sgp = g.Regions.First(r => r.Id == "sgp");
+            fra.Picked = false; // unticked after the lock
+            sgp.Picked = true;  // ticked after the lock
+            Check(LockScope.Picked(picks, fra) && !LockScope.Picked(picks, sgp), "the lock's picks win over the ticks");
+            Check(!LockScope.LockedOut(picks, null, g, fra), "Frankfurt stays open");
+            Check(LockScope.LockedOut(picks, null, g, sgp), "Singapore stays blocked although ticked");
+            Check(!LockScope.Picked(null, fra) && LockScope.Picked(null, sgp), "no lock: the ticks");
+            Check(!LockScope.LockedOut(null, null, g, sgp), "M4: not the locked game (no picks): nothing is locked out");
+            var dxb = g.Regions.FirstOrDefault(r => r.Id == "dxb");
+            if (dxb != null)
+            {
+                Check(LockScope.LockedOut(picks, new HashSet<string> { "dxb" }, g, dxb), "a closed entry relay is locked out");
+                Check(!LockScope.LockedOut(picks, null, g, dxb), "an open relay is not");
+            }
+        }
+
+        // M1: every region picked leaves nothing to block, so the lock is refused instead of an empty rule
+        static void LockWithEveryRegionPickedHasNothingToBlock()
+        {
+            var g = SavedDeadlock();
+            Func<IEnumerable<string>, List<string>> resolve = names => new List<string>();
+            foreach (var r in g.Regions) r.Picked = g.Hosts(r);
+            var all = g.Regions.Where(r => r.Picked).ToList();
+            var plan = StrictLock.For(g, all.Select(r => r.Id).ToList(), StrictLock.Pings(g));
+            var closed = LockPlanner.ClosedCidrs(g, new HashSet<string>(plan.Close));
+            var info = LockPlanner.Plan(g, all, null, closed, resolve);
+            Check(LockPlanner.NothingToBlock(info), "every region picked: nothing to block (" + info.Block.Count + ")");
+            foreach (var r in g.Regions) r.Picked = r.Id == "fra";
+            var one = g.Regions.Where(r => r.Picked).ToList();
+            Check(!LockPlanner.NothingToBlock(LockPlanner.Plan(g, one, null, new List<string>(), resolve)), "one picked: the others are blocked");
+            Check(LockPlanner.NothingToBlock(null), "no plan");
+        }
+
         static void FrontTrackerKnowsWhoIsInFront()
         {
             uint fg = 100;
@@ -935,6 +997,9 @@ namespace PingBoost
             Run("ListStyleFirstCellFollowsTheReadingOrder", ListStyleFirstCellFollowsTheReadingOrder);
             Run("DeadlockLogReadsAndLooksAgainEveryTenMinutes", DeadlockLogReadsAndLooksAgainEveryTenMinutes);
             Run("DeadlockLogResolvesHostingDatacenters", DeadlockLogResolvesHostingDatacenters);
+            Run("DeadlockLogJudgesAgainstTheLocksPicks", DeadlockLogJudgesAgainstTheLocksPicks);
+            Run("LockScopeBelongsToTheLockedGameAndItsPicks", LockScopeBelongsToTheLockedGameAndItsPicks);
+            Run("LockWithEveryRegionPickedHasNothingToBlock", LockWithEveryRegionPickedHasNothingToBlock);
             Run("FrontTrackerKnowsWhoIsInFront", FrontTrackerKnowsWhoIsInFront);
         }
     }

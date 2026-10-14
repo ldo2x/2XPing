@@ -42,6 +42,13 @@ namespace PingBoost
             return info;
         }
 
+        // A lock that would add no rule (every region picked): refused, so the card never says "locked" with nothing
+        // blocked and the rule check never mistakes the empty rule for one a security app removed.
+        public static bool NothingToBlock(LockTest.LockInfo info)
+        {
+            return info == null || info.Block == null || info.Block.Count == 0;
+        }
+
         // The rule's scope in words (developer tools, English only). n: the ranges the rule holds.
         public static string Scope(LockTest.LockInfo info, int n)
         {
@@ -59,6 +66,33 @@ namespace PingBoost
             var covered = new HashSet<string>(whole.SelectMany(c => c.Members).Select(m => m.Id));
             if (whole.Count > 0 && ids.All(covered.Contains)) return CardLogic.JoinNames(whole.Select(c => c.Name).ToList());
             return string.Join(Lang.Ar ? "، " : ", ", picked.Select(Fmt.ShortName).ToArray());
+        }
+    }
+
+    // Pure: what the lock that is on allows. It belongs to one game (lockGame) and to the datacenters picked when it was
+    // applied (LockInfo.Picked): ticking servers afterwards, or another game's old ticks, change neither the firewall
+    // nor these answers.
+    static class LockScope
+    {
+        // The picked ids of the lock that is on for g, or null when g isn't the locked game (no lock for it).
+        public static HashSet<string> PicksOf(Game lockGame, LockTest.LockInfo info, Game g)
+        {
+            if (lockGame == null || g == null || g != lockGame || info == null || info.Picked == null) return null;
+            return new HashSet<string>(info.Picked);
+        }
+
+        // Whether r counts as picked: the lock's own picks while g is locked, the current ticks otherwise.
+        public static bool Picked(HashSet<string> picks, Region r)
+        {
+            return picks != null ? picks.Contains(r.Id) : r.Picked;
+        }
+
+        // A row the lock that is on blocks: a hosting datacenter it didn't pick, or an entry relay it closed.
+        // Only for the locked game (another game has no rule).
+        public static bool LockedOut(HashSet<string> picks, ICollection<string> closed, Game g, Region r)
+        {
+            if (picks == null || g == null || !g.CanLock || r == null || r.NoRelay || picks.Contains(r.Id)) return false;
+            return g.Hosts(r) || (closed != null && closed.Contains(r.Id));
         }
     }
 

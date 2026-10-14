@@ -64,11 +64,20 @@ namespace PingBoost
         readonly StatsService stats; // player numbers of the game on screen
 
         Game CurrentGame { get { return gameList.SelectedItem as Game; } }
+        // Only the locked game, judged by the picks the lock was applied with (LockScope): never another game's old
+        // ticks, never ticks changed after the lock (M3, M4).
         bool LockedOut(Game g, Region r)
         {
-            if (lockSummary == null || g == null || !g.CanLock || r.Picked || r.NoRelay) return false;
-            return g.Hosts(r) || (g == lockGame && lockClosed != null && lockClosed.Contains(r.Id));
+            return LockScope.LockedOut(LockPicks(g), lockClosed, g, r);
         }
+
+        // The datacenters the lock that is on picked, when it is g's lock; null otherwise.
+        HashSet<string> LockPicks(Game g)
+        {
+            return lockSummary != null ? LockScope.PicksOf(lockGame, lockInfo, g) : null;
+        }
+
+        bool LockedFor(Game g) { return lockSummary != null && g != null && lockGame == g; }
 
         public MainForm()
         {
@@ -1165,9 +1174,9 @@ namespace PingBoost
             string id, region;
             Region dc;
             bool onPicked;
-            if (line == null || !DeadlockLog.Resolve(g, line, out id, out dc, out region, out onPicked)) return false;
+            if (line == null || !DeadlockLog.Resolve(g, line, LockPicks(g), out id, out dc, out region, out onPicked)) return false;
             string place = dc != null ? Places.PlaceName(dc) : id.ToUpperInvariant();
-            bool ok = lockSummary == null || onPicked;
+            bool ok = !LockedFor(g) || onPicked;
             dcSinceLock = true;
             matchSinceLock = true;
             if (CurrentGame == g)
@@ -1183,7 +1192,7 @@ namespace PingBoost
                 UpdateCard();
             }
             SetDetect(T("On: ", "إنت على: ") + place, ok ? Theme.Good : Theme.Warn);
-            if (lockSummary != null && !ok)
+            if (!ok)
                 Issues.Report("lock_outside", g.Name + " on " + id + " (console log) while locked on " + lockSummary,
                     new Dictionary<string, object> { { "game", g.Name }, { "datacenter", id }, { "source", "console log" }, { "locked", lockSummary } },
                     g.Icon + id);
@@ -1191,7 +1200,7 @@ namespace PingBoost
             {
                 Telemetry.Server = dc != null ? dc.NameEn : id;
                 Telemetry.Send("detect", Telemetry.Server, -1, (manual ? "" : "auto, ") + "console log, " +
-                    (lockSummary == null ? "no lock" : ok ? "lock OK" : "NOT on picked servers"));
+                    (!LockedFor(g) ? "no lock" : ok ? "lock OK" : "NOT on picked servers"));
                 if (manual)
                 {
                     SetStatus(T("You are on: ", "إنت دحين على: ") + place);
@@ -1766,11 +1775,14 @@ namespace PingBoost
             }
             foreach (var r in found) r.Here = true;
             LearnZones(g, found);
+            var picks = LockPicks(g); // the lock's own picks (M3); null when g isn't locked
+            bool allPicked = found.All(r => LockScope.Picked(picks, r));
+            bool locked = LockedFor(g);
             if (CurrentGame == g)
             {
                 dcSinceLock = true;
                 noMatchLong = false;
-                SetMatch(Places.RegionNameOf(g, found[0]), found.All(r => r.Picked), false);
+                SetMatch(Places.RegionNameOf(g, found[0]), allPicked, false);
                 FillServers(g);
                 foreach (ListViewItem item in serverList.Items)
                     if (item.Tag == found[0]) { item.Selected = true; item.EnsureVisible(); }
@@ -1779,15 +1791,15 @@ namespace PingBoost
             SetStatus(T("You are on: ", "إنت دحين على: ") + names);
             Telemetry.Server = string.Join(", ", found.Select(r => r.NameEn));
             Telemetry.Send("detect", Telemetry.Server, -1,
-                lockSummary == null ? "no lock" : found.All(r => r.Picked) ? "lock OK" : "NOT on picked servers");
-            if (lockSummary != null && !found.All(r => r.Picked))
+                !locked ? "no lock" : allPicked ? "lock OK" : "NOT on picked servers");
+            if (locked && !allPicked)
                 Issues.Report("lock_outside", g.Name + " on " + string.Join(", ", found.Select(r => r.Id)) + " while locked on " + lockSummary,
                     new Dictionary<string, object> { { "game", g.Name }, { "ips", hits.Take(3).Select(h => h.Ip).ToArray() }, { "locked", lockSummary } },
                     g.Icon + string.Join(",", found.Select(r => r.Id)));
 
-            bool onPicked = lockSummary == null || found.All(r => r.Picked);
+            bool onPicked = !locked || allPicked;
             AdvancedMsg(T("You're playing on: ", "إنت تلعب دحين على: ") + names, onPicked ? ToastKind.Good : ToastKind.Warn);
-            if (lockSummary != null)
+            if (locked)
                 AdvancedMsg(onPicked
                     ? T("✓ That's one of your picked servers, so the lock is working.", "هادا من السيرفرات اللي اخترتها، يعني التثبيت شغّال صح ✓")
                     : T("That's not one of your picked servers. Restart the game and queue again.",
@@ -2003,7 +2015,7 @@ namespace PingBoost
             {
                 // not in a match (any more)
                 if (match.Any) { ClearMatch(); UpdateCard(); }
-                bool waiting = lockSummary != null && !matchSinceLock;
+                bool waiting = LockedFor(g) && !matchSinceLock;
                 SetDetect(waiting ? T("Checking at your next match...", "بنتأكد في مباراتك الجاية...") : T("Not in a match", "مو داخل مباراة"),
                           waiting ? Theme.Lavender : Theme.Dim);
                 // locked a while ago and still no match: the lock may be blocking more than it should
@@ -2030,10 +2042,13 @@ namespace PingBoost
                 return;
             }
             string name = dc != null ? Fmt.ShortName(dc) : (where ?? top.Ip);
-            bool ok = dc == null ? lockSummary == null : (lockSummary == null || dc.Picked);
+            // judged against the lock that is on for this game, with the picks it was applied with (M3, M4)
+            var lockPicks = LockPicks(g);
+            bool dcPicked = dc != null && LockScope.Picked(lockPicks, dc);
+            bool ok = dc == null ? !LockedFor(g) : (!LockedFor(g) || dcPicked);
             SetDetect(T("On: ", "إنت على: ") + name, ok ? Theme.Good : Theme.Warn);
             // the card: a datacenter we know names the region; a game without them shows the city and its ping
-            if (dc != null) SetMatch(Places.RegionNameOf(g, dc), dc.Picked, false);
+            if (dc != null) SetMatch(Places.RegionNameOf(g, dc), dcPicked, false);
             else if (!g.CanLock && where != null) match.SetServer(where, whereMs);
             UpdateCard();
             if (dc != null && !dc.Here)
@@ -2153,28 +2168,60 @@ namespace PingBoost
             UpdateLockBar();
             SetStatus(T("Locking your servers...", "نثبّت لك السيرفرات..."));
             UpdateCard();
-            Action<Exception> failed = ex => Ui(() =>
+            // applied: the error came from ServerLock.Apply, which removes the old rules first, so a lock that was on is
+            // gone too and the card must stop saying "locked" (M2)
+            Action<Exception, bool> failed = (ex, applied) => Ui(() =>
+            {
+                lockingGame = null;
+                bool oldLockGone = applied && lockSummary != null;
+                if (oldLockGone)
+                {
+                    lockSummary = null;
+                    lockGame = null;
+                    lockNames = null;
+                    lockInfo = null;
+                    lockClosed = null;
+                    lockRoute = null;
+                    if (!boosting) StopMonitor();
+                    Telemetry.Server = null;
+                    LockChanged(CurrentGame);
+                    var cg = CurrentGame;
+                    if (cg != null) FillServers(cg);
+                }
+                btnLock.Enabled = true;
+                UpdateLockBar();
+                UpdateCard();
+                Log(T("Lock failed: ", "ما زبط التثبيت: ") + ex.Message);
+                Issues.Report("lock_apply_failed", g.Name + ": " + ex.Message + (oldLockGone ? " (the previous lock is off too)" : ""), null, g.Icon);
+                Msg(T("Lock failed: ", "ما زبط التثبيت: ") + ex.Message +
+                    (oldLockGone ? T(" Your previous lock is off too, so every server is open now.",
+                                     " والتثبيت اللي كان قبل انشال بعد، يعني كل السيرفرات مفتوحة دحين.") : ""), ToastKind.Bad);
+            });
+            // nothing to block (every region picked): refused, the lock that is on (if any) stays as it is (M1)
+            Action nothingToBlock = () => Ui(() =>
             {
                 lockingGame = null;
                 btnLock.Enabled = true;
                 UpdateLockBar();
                 UpdateCard();
-                Log(T("Lock failed: ", "ما زبط التثبيت: ") + ex.Message);
-                Issues.Report("lock_apply_failed", g.Name + ": " + ex.Message, null, g.Icon);
-                Msg(T("Lock failed: ", "ما زبط التثبيت: ") + ex.Message, ToastKind.Bad);
+                Msg(T("You picked every region, so there's nothing to block. Leave at least one out, or just play without a lock.",
+                      "اخترت كل المناطق، فما في شي نحجبه. خلّي منطقة وحدة على الأقل برّا، أو العب بدون تثبيت."), ToastKind.Warn);
             });
             Task.Run(() =>
             {
                 try
                 {
                     var info = LockPlanner.Plan(g, picked, exe, closedCidrs, IpLists.Resolve);
+                    if (LockPlanner.NothingToBlock(info)) { nothingToBlock(); return; } // no rule, no rule check
                     var block = info.Block;
                     FirewallWorker.Run(() =>
                     {
                         if (FirewallWorker.Closing) return; // the app is closing: no new rules
                         int n;
                         try { n = ServerLock.Apply(block, exe, exe != null ? "UDP" : null, g.LockPorts); }
-                        catch (Exception ex) { failed(ex); return; }
+                        catch (Exception ex) { failed(ex, true); return; }
+                        // every entry was an invalid address: the rule is empty (and the old one already removed)
+                        if (n == 0) { failed(new Exception(T("nothing valid to block.", "ما في شي صالح نحجبه.")), true); return; }
                         int skipped = ServerLock.Skipped; // entries of a downloaded list that weren't valid addresses
                         info.Scope = LockPlanner.Scope(info, n);
                         bool firewallOn = ServerLock.FirewallOn();
@@ -2221,7 +2268,7 @@ namespace PingBoost
                         });
                     });
                 }
-                catch (Exception ex) { failed(ex); }
+                catch (Exception ex) { failed(ex, false); }
             });
         }
 

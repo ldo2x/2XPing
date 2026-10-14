@@ -109,15 +109,21 @@ namespace PingBoost
         // place the app has no row for), the region it plays and whether the lock allows it.
         public static bool Resolve(Game g, ConsoleLine line, out string id, out Region dc, out string region, out bool onPicked)
         {
+            return Resolve(g, line, null, out id, out dc, out region, out onPicked);
+        }
+
+        // picks: the datacenters the lock that is on picked (LockScope.PicksOf), or null for the current ticks.
+        public static bool Resolve(Game g, ConsoleLine line, HashSet<string> picks, out string id, out Region dc, out string region, out bool onPicked)
+        {
             dc = null; region = null; onPicked = false;
             id = GameConsole.Known(line.Code, c => DeadlockData.IsKnown(c) || g.Regions.Any(r => r.Id == c));
             if (id == null || !DeadlockData.Hosting.ContainsKey(id)) return false; // a relay or an unknown place: no answer
             string want = id;
             dc = g.Regions.FirstOrDefault(r => r.Id == want);
-            bool? itself = dc != null ? dc.Picked : (bool?)null;
+            bool? itself = dc != null ? LockScope.Picked(picks, dc) : (bool?)null;
             if (dc == null) dc = g.NoRelayHosts.FirstOrDefault(r => r.Id == want);
             region = Places.RegionOfPop(g, id);
-            onPicked = DeadlockData.OnPicked(id, itself, g.Regions.Where(r => r.Picked).Select(r => r.Id),
+            onPicked = DeadlockData.OnPicked(id, itself, g.Regions.Where(r => LockScope.Picked(picks, r)).Select(r => r.Id),
                                              g.Regions.Where(r => g.Hosts(r)).Select(r => r.Id));
             return true;
         }
