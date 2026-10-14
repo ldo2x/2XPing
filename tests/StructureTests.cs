@@ -213,6 +213,81 @@ namespace PingBoost
             Lang.Ar = true;
         }
 
+        static Region Dc(string id, string cidr, bool picked)
+        {
+            return new Region { Id = id, NameEn = id, Picked = picked, Cidrs = new List<string> { cidr } };
+        }
+
+        static void LockPlannerValveKeepsRelayOnlyPopsOpen()
+        {
+            var g = new Game { Name = "V", Provider = Provider.Valve, HostPops = new HashSet<string> { "fra", "sto", "dxb" } };
+            var fra = Dc("fra", "10.0.1.0/24", true);
+            var sto = Dc("sto", "10.0.2.0/24", false);
+            var dxb = Dc("dxb", "10.0.3.0/24", false);
+            var relay = Dc("relay", "10.0.4.0/24", false);       // relay only: the game enters through it
+            var closedRelay = Dc("closed", "10.0.5.0/24", false); // a relay the strict lock closes
+            var found = Dc("found", "10.0.6.0/24", false); found.Detected = true;
+            g.Regions.AddRange(new[] { fra, sto, dxb, relay, closedRelay, found });
+            g.HostPops.Add("found");
+            var closed = new HashSet<string> { "closed" };
+            Func<IEnumerable<string>, List<string>> resolve = specs => specs.ToList();
+            var info = LockPlanner.Plan(g, new List<Region> { fra }, null, LockPlanner.ClosedCidrs(g, closed), resolve);
+            string block = string.Join(" ", info.Block.ToArray());
+            Check(block == "10.0.2.0/24 10.0.3.0/24 10.0.5.0/24", "other hosts + the closed relay: " + block);
+            Check(info.Mode == "valve-all" && info.Program == null && info.Protocol == null && info.Ports == null, "whole PC, any protocol");
+            Check(info.Active && info.Picked.SequenceEqual(new[] { "fra" }), "picked");
+            // a picked datacenter's range is never blocked, even when a closed relay shares it
+            var shared = LockPlanner.Plan(g, new List<Region> { fra }, null, new List<string> { "10.0.1.0/24" }, resolve);
+            Check(!shared.Block.Contains("10.0.1.0/24"), "picked range stays open");
+        }
+
+        static void LockPlannerLockSpaceMinusPickedMinusAllow()
+        {
+            var g = new Game { Name = "OW", LockSpace = new[] { "space" }, LockAllow = new[] { "allow" }, LockPorts = "1-3723,3725-65535" };
+            var pick = Dc("sg", "10.1.0.0/16", true);
+            g.Regions.Add(pick);
+            g.Regions.Add(Dc("us", "10.2.0.0/16", false));
+            var asked = new List<string>();
+            Func<IEnumerable<string>, List<string>> resolve = specs =>
+            {
+                var l = specs.ToList(); asked.AddRange(l);
+                if (l.Contains("space")) return new List<string> { "10.0.0.0/8" };
+                if (l.Contains("allow")) return new List<string> { "10.3.0.0/16" };
+                return new List<string>();
+            };
+            var info = LockPlanner.Plan(g, new List<Region> { pick }, @"C:\Games\Overwatch.exe", new List<string>(), resolve);
+            Check(asked.Contains("space") && asked.Contains("allow"), "both lists resolved");
+            Check(!LockTest.Blocks(info.Block, "10.1.2.3"), "picked datacenter open");
+            Check(!LockTest.Blocks(info.Block, "10.3.2.3"), "service hosts (allow) never blocked");
+            Check(LockTest.Blocks(info.Block, "10.2.2.3") && LockTest.Blocks(info.Block, "10.200.0.1"), "the rest of the space blocked");
+            Check(info.Allow.SequenceEqual(new[] { "10.3.0.0/16" }), "allow kept for the lock test");
+            Check(info.Mode == "game-udp" && info.Protocol == "UDP" && info.Program == @"C:\Games\Overwatch.exe" && info.Ports == "1-3723,3725-65535",
+                  "the game's own UDP on its ports");
+            // without the exe (never happens for LockSpace games: LockServers asks for it) no ports either
+            var noExe = LockPlanner.Plan(g, new List<Region> { pick }, null, new List<string>(), resolve);
+            Check(noExe.Protocol == null && noExe.Ports == null, "no exe: no protocol, no ports");
+        }
+
+        static void LockPlannerScopeAndCardNames()
+        {
+            var info = new LockTest.LockInfo { Protocol = "UDP", Program = "ow.exe", Ports = "1-100" };
+            Check(LockPlanner.Scope(info, 12) == "UDP, in+out, program ow.exe, remote ports 1-100, 12 ranges", LockPlanner.Scope(info, 12));
+            Check(LockPlanner.Scope(new LockTest.LockInfo(), 3) == "any protocol, in+out, whole PC (every program), all ports, 3 ranges",
+                  LockPlanner.Scope(new LockTest.LockInfo(), 3));
+            Lang.Ar = false;
+            var g = new Game { Name = "V", Provider = Provider.Valve };
+            var a1 = Dc("a1", "1", true); var a2 = Dc("a2", "2", true); var b1 = Dc("b1  [b1]", "3", true);
+            var eu = new RegionChoice { Def = RegionDef.Of("eu", "Europe", "أوروبا"), Members = new List<Region> { a1, a2 } };
+            var me = new RegionChoice { Def = RegionDef.Of("me", "Middle East", "الشرق الأوسط"), Members = new List<Region> { b1 } };
+            var tiles = new List<RegionChoice> { eu, me };
+            Check(LockPlanner.CardNames(g, new List<Region> { a1, a2 }, tiles) == "Europe", "a whole region: its name");
+            Check(LockPlanner.CardNames(g, new List<Region> { a1, a2, b1 }, tiles) == CardLogic.JoinNames(new List<string> { "Europe", "Middle East" }),
+                  "two whole regions: " + LockPlanner.CardNames(g, new List<Region> { a1, a2, b1 }, tiles));
+            Check(LockPlanner.CardNames(g, new List<Region> { a1, b1 }, tiles) == "a1, b1", "part of a region: the servers' short names: " +
+                  LockPlanner.CardNames(g, new List<Region> { a1, b1 }, tiles));
+            Lang.Ar = true;
+        }
+
         static void RunStructureTests()
         {
             Run("RoutingRelayMarginIsThreeMs", RoutingRelayMarginIsThreeMs);
@@ -225,6 +300,9 @@ namespace PingBoost
             Run("CardInputLockAndMatch", CardInputLockAndMatch);
             Run("CardInputZoneWarningOnlyForLockableGamesWithZones", CardInputZoneWarningOnlyForLockableGamesWithZones);
             Run("CardInputBestServerForUnlockableGames", CardInputBestServerForUnlockableGames);
+            Run("LockPlannerValveKeepsRelayOnlyPopsOpen", LockPlannerValveKeepsRelayOnlyPopsOpen);
+            Run("LockPlannerLockSpaceMinusPickedMinusAllow", LockPlannerLockSpaceMinusPickedMinusAllow);
+            Run("LockPlannerScopeAndCardNames", LockPlannerScopeAndCardNames);
         }
     }
 }

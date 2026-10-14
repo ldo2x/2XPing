@@ -129,12 +129,11 @@ namespace PingBoost
             Check(v.Kind == CardKind.InMatchOk && !v.Sub.Contains("ما لقيت مباراة"), "in a match: no hint");
         }
 
-        // The block list built like MainForm.LockServers, with only Singapore picked.
+        // The block list LockServers applies, with only the given datacenters picked.
         static List<string> OverwatchBlock(Game g, params string[] picked)
         {
-            var allow = IpLists.Resolve(g.LockAllow ?? new string[0]);
-            var keep = g.Regions.Where(r => picked.Contains(r.Id)).SelectMany(r => r.Cidrs);
-            return IpLists.Subtract(IpLists.Resolve(g.LockSpace), keep.Concat(allow));
+            var regions = g.Regions.Where(r => picked.Contains(r.Id)).ToList();
+            return LockPlanner.Plan(g, regions, "Overwatch.exe", new List<string>(), IpLists.Resolve).Block;
         }
 
         static void OverwatchServiceHostsStayOpen()

@@ -63,7 +63,7 @@ namespace PingBoost
             Check(plan.Close.SequenceEqual(new[] { "gum" }) && !plan.MayLeak, "Europe from Riyadh closes only unmeasured gum: " + string.Join(",", plan.Close.ToArray()));
             Check(!plan.Close.Contains("dxb") && !plan.Close.Contains("dfjr") && !plan.Close.Contains("bom2"), "dxb, dfjr, bom2 open");
             Check(plan.Locked.Ms == 58 && plan.Locked.Entry == "dxb", "Europe stays 58 via dxb, got " + plan.Locked.Ms + " via " + plan.Locked.Entry);
-            Check(MainForm.NoteOf(g, plan, "Europe") == null, "nothing to tell");
+            Check(RouteAdvisor.NoteOf(g, plan, "Europe") == null, "nothing to tell");
         }
 
         static void StrictLockSeAsiaClosesDubai()
@@ -81,12 +81,12 @@ namespace PingBoost
             Check(cidrs.Count > 0 && cidrs.Contains("185.25.183.163/32"), "dxb's relay is in the block list");
 
             Lang.Ar = true;
-            var note = MainForm.NoteOf(g, plan, "جنوب شرق آسيا");
+            var note = RouteAdvisor.NoteOf(g, plan, "جنوب شرق آسيا");
             Check(note != null && note.Kind == RouteNoteKind.ClosedEntry, "a closed best entry is told");
             string ar = CardLogic.RouteText(note);
             Check(ar == "لازم نقفل دبي لأنها توصل لأوروبا. بنقك لجنوب شرق آسيا بيصير تقريباً 197 بدل 106.", "Arabic: " + ar);
             Lang.Ar = false;
-            note = MainForm.NoteOf(g, plan, "SE Asia");
+            note = RouteAdvisor.NoteOf(g, plan, "SE Asia");
             string en = CardLogic.RouteText(note);
             Check(en == "We have to close Dubai because it reaches Europe. Your ping to SE Asia becomes about 197 instead of 106.", "English: " + en);
             Lang.Ar = true;
@@ -105,12 +105,12 @@ namespace PingBoost
             Check(plan.Reason["dxb"].To != null && plan.Reason["dxb"].Ms == 58, "dxb's reason is kept: Europe in 58");
             Check(Near(plan.Locked.Ms, 154) && plan.Locked.Entry == "dxb", "NA ~154 via dxb: " + plan.Locked.Ms);
             Lang.Ar = true;
-            var note = MainForm.NoteOf(g, plan, "أمريكا الشمالية");
+            var note = RouteAdvisor.NoteOf(g, plan, "أمريكا الشمالية");
             Check(note.Kind == RouteNoteKind.MayLeak, "may-leak note");
             Check(CardLogic.RouteText(note) == "ما قدرنا نقيس طريق مباشر لأمريكا الشمالية، فبنخلي دبي مفتوحة. بس دبي توصل لأوروبا بعد، فالتثبيت ممكن ما يمسك.",
                   "Arabic: " + CardLogic.RouteText(note));
             Lang.Ar = false;
-            note = MainForm.NoteOf(g, plan, "North America");
+            note = RouteAdvisor.NoteOf(g, plan, "North America");
             Check(CardLogic.RouteText(note) == "We couldn't measure a direct way to North America, so Dubai stays open. Dubai also reaches Europe, so the lock may not hold.",
                   "English: " + CardLogic.RouteText(note));
             Lang.Ar = true;
@@ -124,14 +124,14 @@ namespace PingBoost
             Check(Near(plan.Unlocked.Ms, 153) && plan.Unlocked.Entry == "dfra", "unlocked: ~153 via Datapacket Frankfurt: " + plan.Unlocked.Ms + " " + plan.Unlocked.Entry);
             // the best way in is a European datacenter the lock blocks anyway (I3): pick Europe too to keep it
             Lang.Ar = false;
-            note = MainForm.NoteOf(g, plan, "North America");
+            note = RouteAdvisor.NoteOf(g, plan, "North America");
             Check(note.Kind == RouteNoteKind.BlockedHost && note.Entry == "Europe", "blocked host note: " + (note == null ? "-" : note.Kind + " " + note.Entry));
             Check(CardLogic.RouteText(note) == "Your shortest way to North America goes through Europe, and the lock closes it: your ping becomes about 190 instead of 153. Pick Europe too to keep it.",
                   "English: " + CardLogic.RouteText(note));
             Lang.Ar = true;
-            Check(CardLogic.RouteText(MainForm.NoteOf(g, plan, "أمريكا الشمالية")) ==
+            Check(CardLogic.RouteText(RouteAdvisor.NoteOf(g, plan, "أمريكا الشمالية")) ==
                   "أقصر طريق لك لأمريكا الشمالية يمر من أوروبا، والتثبيت يقفله: بنقك بيصير تقريباً 190 بدل 153. اختار أوروبا بعد عشان يبقى مفتوح.",
-                  "Arabic: " + CardLogic.RouteText(MainForm.NoteOf(g, plan, "أمريكا الشمالية")));
+                  "Arabic: " + CardLogic.RouteText(RouteAdvisor.NoteOf(g, plan, "أمريكا الشمالية")));
         }
 
         // A small network: picked p, a left-out x, an entry relay e.
@@ -273,9 +273,9 @@ namespace PingBoost
             plan.Locked = new Route { Ms = 115, Entry = "sgp", To = "sgp" };
             plan.Close.Add("dxb");
             plan.Reason["dxb"] = new Route { Ms = 58, Entry = "dxb", To = "dvie" };
-            Check(MainForm.NoteOf(g, plan, "SE Asia") == null, "9 ms: nothing to tell");
+            Check(RouteAdvisor.NoteOf(g, plan, "SE Asia") == null, "9 ms: nothing to tell");
             plan.Locked.Ms = 116;
-            var note = MainForm.NoteOf(g, plan, "SE Asia");
+            var note = RouteAdvisor.NoteOf(g, plan, "SE Asia");
             Check(note != null && note.Kind == RouteNoteKind.ClosedEntry && note.AfterMs == 116, "10 ms: told");
         }
 
