@@ -872,6 +872,32 @@ namespace PingBoost
             Check(!DeadlockLog.Resolve(g, new ConsoleLine { Code = "zzz" }, out id, out dc, out region, out onPicked), "unknown place: no answer");
         }
 
+        static void FrontTrackerKnowsWhoIsInFront()
+        {
+            uint fg = 100;
+            var clock = new DateTime(2026, 10, 14, 12, 0, 0);
+            var names = new Dictionary<uint, string> { { 200, "project8" }, { 300, "chrome" } };
+            var t = new FrontTracker(() => fg, pid => { string n; return names.TryGetValue(pid, out n) ? n : null; }, 100, () => clock);
+            var dl = new Game { Name = "Deadlock", Processes = new[] { "Project8" } };
+            Check(t.AppFront, "2X Ping in front");
+            Check(!t.GameInFront(new[] { dl }), "2X Ping is no game");
+            fg = 200;
+            Check(!t.AppFront && t.GameInFront(new[] { dl }), "the game in front (names compare without case)");
+            fg = 300;
+            Check(!t.GameInFront(new[] { dl }), "a browser is no game");
+            fg = 400;
+            Check(!t.GameInFront(new[] { dl }), "a process that's gone: no");
+            fg = 0;
+            Check(!t.GameInFront(new[] { dl }), "no foreground window: no");
+            // coming back counts only after 20 s away
+            clock = clock.AddSeconds(19);
+            Check(!t.CameBack(), "19 s away: not a return");
+            clock = clock.AddSeconds(1);
+            Check(t.CameBack(), "20 s away: a return");
+            fg = 100;
+            Check(t.AppFront && !t.CameBack(), "seen in front again: the absence starts over");
+        }
+
         static void RunStructureTests()
         {
             Run("RoutingRelayMarginIsThreeMs", RoutingRelayMarginIsThreeMs);
@@ -909,6 +935,7 @@ namespace PingBoost
             Run("ListStyleFirstCellFollowsTheReadingOrder", ListStyleFirstCellFollowsTheReadingOrder);
             Run("DeadlockLogReadsAndLooksAgainEveryTenMinutes", DeadlockLogReadsAndLooksAgainEveryTenMinutes);
             Run("DeadlockLogResolvesHostingDatacenters", DeadlockLogResolvesHostingDatacenters);
+            Run("FrontTrackerKnowsWhoIsInFront", FrontTrackerKnowsWhoIsInFront);
         }
     }
 }

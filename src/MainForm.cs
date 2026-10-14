@@ -237,31 +237,18 @@ namespace PingBoost
             // check pause, so nothing runs next to the match; coming back refreshes them right away
             Activated += delegate
             {
-                if (DateTime.Now - lastInFront < TimeSpan.FromSeconds(20)) return; // only after a real absence
+                if (!front.CameBack()) return; // only after a real absence
                 lastAutoDetect = DateTime.MinValue;
                 RefreshStats(TimeSpan.FromMinutes(1));
                 if (autoDetectTimer != null) AutoDetectTick();
             };
         }
 
-        [System.Runtime.InteropServices.DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
-        [System.Runtime.InteropServices.DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
-        static readonly uint myPid = (uint)Process.GetCurrentProcess().Id;
-        DateTime lastInFront = DateTime.Now;
+        readonly FrontTracker front = new FrontTracker(); // which window is in front: 2X Ping, a game, or something else
 
-        // Is one of 2X Ping's windows in front? Asked of Windows each time (focus events can be missed,
-        // e.g. when a notice or a dialog takes the focus), so the app never stays paused while it's looked at.
-        bool appActive
-        {
-            get
-            {
-                uint pid;
-                GetWindowThreadProcessId(GetForegroundWindow(), out pid);
-                bool front = pid == myPid;
-                if (front) lastInFront = DateTime.Now;
-                return front;
-            }
-        }
+        // Is one of 2X Ping's windows in front?
+        bool appActive { get { return front.AppFront; } }
+
         // Player numbers: every 5 minutes while the window is in front (they're shared by all copies through
         // Supabase, so this costs deadlock-api nothing); "fresh" = how old they may be before refreshing
         void RefreshStats(TimeSpan fresh)
@@ -1965,21 +1952,7 @@ namespace PingBoost
         }
 
         // Is one of the listed games the window in front (someone is playing)?
-        bool GameInFront()
-        {
-            uint pid;
-            GetWindowThreadProcessId(GetForegroundWindow(), out pid);
-            if (pid == 0 || pid == myPid) return false;
-            try
-            {
-                using (var p = Process.GetProcessById((int)pid))
-                {
-                    string name = p.ProcessName;
-                    return allGames.Any(g => g.Processes.Any(n => string.Equals(n, name, StringComparison.OrdinalIgnoreCase)));
-                }
-            }
-            catch { return false; } // it closed meanwhile, or Windows wouldn't say
-        }
+        bool GameInFront() { return front.GameInFront(allGames); }
 
         // The lock's firewall rules can vanish (antivirus, another tool, a firewall reset): check every 2 minutes.
         void CheckLockRules()
