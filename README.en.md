@@ -36,40 +36,46 @@ Requires **Windows 10 or 11**. Nothing to install, and after that updates are on
 
 | Feature | What it does |
 |---|---|
-| ✦ Best server in one click | Suggests the lowest ping with enough players; **Play on it** locks you to it |
-| 📶 Ping test | Ping, jitter and packet loss per server, grouped by region |
-| 🔒 Server picker | **Deadlock, Overwatch 2, Dead by Daylight**: tick the servers you want and lock out the rest |
+| ✦ Where do you want to play? | One card shows your regions with ping, wait time and players; **Play in ...** locks you to them |
+| 📶 Ping test | Every region in 2-3 seconds; the Advanced layout adds jitter and packet loss per server |
+| 🔒 Region lock | **Deadlock** (and **Overwatch 2** and **Dead by Daylight**, in development: they work, still being tested): pick your regions and lock out the rest |
+| 🧭 Smart Deadlock lock | Knows your shortest way into Valve's network (for example through Dubai), and tells you before you lock if the lock would raise your ping, and by how much |
+| ✅ Where am I playing? | While you're in a match, the card says which region you're on and whether it's one you picked |
 | 👥 Player numbers | Estimated players per region and expected time to find a match (Deadlock) |
-| ✅ Which server am I on? | While in a match, the button updates by itself with your server and whether it is one you picked |
 | 🛠️ Finds problems by itself | Errors (like landing on a server outside your lock) reach us automatically, without interrupting you |
 | 🎛️ Your way | Pick your games on first launch; Simple layout for everyday players, Advanced with every tool |
-| 🕒 Next to the clock | Minimize it while you play: the lock keeps working and the tray icon shows your live ping |
+| 🕒 In the taskbar | Minimize it while you play: the lock keeps working, hovering its taskbar button shows your live ping, and important notices flash it |
+| 🪶 Light | Open and idle it uses about 56 KB of internet an hour; while you're in the game it stays quiet and the automatic check waits until you come back |
 | 💬 No annoying popups | Notices show up like game-chat lines and fade out by themselves |
 | ⚡ One-click updates | Downloads the new version, checks its SHA256 and reopens in seconds |
-| 🚀 Relay BOOST (Advanced) | Routes only the game's traffic through your own VPS when that path is faster |
+| 🚀 Relay speed-up (Advanced) | Routes only the game's connection through your own VPS when that path is faster |
 | 🌐 Arabic & English | Full right-to-left Arabic interface |
 
 ### Supported games
-Deadlock · Overwatch 2 · Dead by Daylight · Arena Breakout: Infinite
+Deadlock · Arena Breakout: Infinite · Overwatch 2 (in development) · Dead by Daylight (in development)
+
+Deadlock is the main and best-supported game. Overwatch 2 and Dead by Daylight carry an "in development" tag: their lock works but is still being tested.
 
 Other games (CS2, Dota 2, Valorant, Fortnite, PUBG, Apex, Rocket League) are being tested and will be added once they are verified.
 
 ## How to use
 
-- **Ping test:** pick a game and every server is tested at once in 2-3 seconds (or press **Test ping**). Green is great (under 60 ms), yellow is OK, red is high.
-- **Server picker (Deadlock, Overwatch 2, Dead by Daylight):** tick the servers, press **Lock my servers**, restart the game, then queue. Minimize 2X Ping while you play; it waits next to the clock. 2X Ping blocks the game's other servers in Windows Firewall (match traffic only: login, voice chat and practice are untouched). The lock is removed when you press **Unlock** or close the app.
-- **Which server am I on?:** join a real match (not practice) and press **Which server am I on?**. 2X Ping watches the game's traffic for 15 seconds and names the server, with a ✓ if it is one you picked. For other games it saves the server it finds.
-- **Relay BOOST (optional):**
+- **Pick where to play:** choose a game and every region is tested in 2-3 seconds (if the game is already open you see last time's results; press **Test ping** to refresh). Green is great (under 60 ms), yellow is OK, red is high. Tick one or more regions on the card and press **Play in ...**. **Other regions** shows more, and **Pick by hand** opens the full server list.
+- **Then:** restart the game if it's open, and queue. Minimize 2X Ping while you play; it stays in the taskbar. 2X Ping blocks the game's other regions in Windows Firewall (login, voice chat and practice are untouched). The lock is removed when you press **Unlock** or close the app.
+- **Deadlock:** the lock follows your shortest way into Valve's network. A player in the Gulf, for example, enters through Dubai and reaches Europe faster. If a lock has to close a way like that, the card tells you your new ping before you press the button. **Russia** is its own queue played on the European servers, so the lock can't choose it.
+- **Where am I playing?:** join a real match (not practice) and come back to 2X Ping: the card says "You're playing in Europe now ✓", or warns you if the game put you somewhere else. It checks by itself while the game runs and you're looking at 2X Ping. In the Advanced layout, **Which server am I on?** watches the game's connection for 15 seconds and names the server. For other games it saves the server it finds.
+- **Exact Deadlock server:** when the game enters Valve's network through a relay (like Dubai), the match server itself can't be seen. In Steam: Deadlock → Properties → Launch options, add `-condebug`, then restart the game. 2X Ping then reads the game's console log and names the exact city (for example Frankfurt).
+- **Relay speed-up (optional):**
   1. Rent an Ubuntu VPS near the game servers and run `sudo bash setup-relay.sh` on it.
   2. Install [WireGuard for Windows](https://www.wireguard.com/install/).
   3. Switch to the **Advanced** layout in **Settings**, then add the printed `client.conf` under **Relays**.
-  4. Leave the route on **Auto** and press **BOOST**.
+  4. Leave the route on **Auto** and press **Speed up**.
 
 ## Notes
 - Player numbers and match times are **estimates** based on public data.
 - **Updates are required during the beta:** when a new version is out a bar appears, and you have 3 days to update with one click. After that the old version stops until you update.
 - **Beta statistics:** while open, the app sends the name you enter on first launch, your computer's name, your city, country and internet provider, your PC's hardware and setup, the game, server and ping you use, ping-test results, which features you use, and error logs, to improve the beta. You are told on first launch and accepting is required to use the beta. Details in [SECURITY.md](SECURITY.md).
-- 2X Ping **never touches game files or memory**. Everything it changes (firewall rules, tunnel) is undone when you stop it or close the app. See [SECURITY.md](SECURITY.md).
+- 2X Ping **never changes game files or touches game memory** (the only game file it reads is Deadlock's console log, if you turned on `-condebug`). Everything it changes (firewall rules, tunnel) is undone when you stop it or close the app. See [SECURITY.md](SECURITY.md).
 - Some games have their own anti-cheat policies; use the app at your own risk.
 
 ## Build from source
@@ -89,9 +95,11 @@ What's next: [ROADMAP.md](ROADMAP.md)
 ### Known issues
 - Windows shows a SmartScreen warning because the app is not code-signed yet.
 - Region lock has no effect if Windows Firewall is off or replaced by another security suite.
-- Which server am I on? only works while you are **inside** a match or raid (not the menu or practice).
+- 2X Ping only sees your server while you are **inside** a match or raid (not the menu or practice).
+- In Deadlock, when the game enters through a relay (like Dubai), the match server can't be seen without `-condebug`.
 - Per-region player numbers exist for Deadlock only; other games show the Steam total.
-- In Overwatch 2 and Dead by Daylight the lock works for casual matches; ranked may still put you on your home region.
+- In Overwatch 2 and Dead by Daylight (in development) the lock works for casual matches; ranked may still put you on your home region.
+- In Overwatch 2 a lock only works inside your game's region (Americas, Europe or Asia, as set in the game); 2X Ping warns you before you lock outside it.
 
 ## 💬 Contact
 | Channel | For |
