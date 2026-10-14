@@ -61,7 +61,7 @@ namespace PingBoost
         LockTest.LockInfo lockInfo; // how the current lock was applied (developer lock test)
         HashSet<string> lockClosed; // Valve: the entry relays the current lock closes too (StrictLock, ruling R3)
         RouteNote lockRoute;        // ...and what it costs, as the card tells it (null = nothing to tell)
-        Dictionary<string, int> activity; // Deadlock matches/hour per matchmaking region
+        readonly StatsService stats; // player numbers of the game on screen
 
         Game CurrentGame { get { return gameList.SelectedItem as Game; } }
         bool LockedOut(Game g, Region r)
@@ -73,6 +73,8 @@ namespace PingBoost
         public MainForm()
         {
             ui = new ControlDispatcher(this);
+            stats = new StatsService(ui, PlayerStats.Fetch, () => CurrentGame);
+            stats.Updated += ShowStats;
             Lang.Ar = Storage.LoadArabic();
             simple = Prefs.Simple;
             devMode = DevModeSaved;
@@ -243,14 +245,12 @@ namespace PingBoost
                 return front;
             }
         }
-        DateTime statsAt = DateTime.MinValue;
-
         // Player numbers: every 5 minutes while the window is in front (they're shared by all copies through
         // Supabase, so this costs deadlock-api nothing); "fresh" = how old they may be before refreshing
         void RefreshStats(TimeSpan fresh)
         {
             var g = CurrentGame;
-            if (g == null || !g.Loaded || busy || DateTime.Now - statsAt < fresh) return;
+            if (g == null || !g.Loaded || busy || !stats.Stale(fresh)) return;
             LoadStats(g, true);
         }
 
@@ -1155,43 +1155,22 @@ namespace PingBoost
             });
         }
 
-        // Deadlock: servers are grouped under their matchmaking region, busiest region first.
-        bool Grouped(Game g) { return g != null && g.AppId == "1422450" && activity != null && activity.Count > 0; }
-
-        string RegionKey(Region r)
-        {
-            string mm;
-            return DeadlockData.Hosting.TryGetValue(r.Id, out mm) && activity != null && activity.ContainsKey(mm) ? mm : "";
-        }
-
-        // Deadlock players online (in matches, the queue, the menus or away), -1 when unknown
-        int deadlockOnline = -1;
-
-        // A region's players: the online total split by the region's share of the live matches.
-        // Without the total, the old estimate from the live-match sample (far below the real number).
-        int PlayersOf(int matches)
-        {
-            int all = activity != null ? activity.Values.Sum() : 0;
-            if (deadlockOnline > 0 && all > 0) return (int)Math.Round((double)deadlockOnline * matches / all);
-            return Stats.EstimatePlayers(matches);
-        }
-
         void FillServers(Game g)
         {
             serverList.BeginUpdate();
             serverList.Items.Clear();
             // the datacenters that host matches but can't be locked (no relay) are listed too, after the others
             var rows = g.Regions.Concat(g.NoRelayHosts).ToList();
-            if (Grouped(g))
+            if (stats.Current.Grouped(g))
             {
-                var groups = rows.GroupBy(RegionKey)
+                var groups = rows.GroupBy(stats.Current.RegionKey)
                     .OrderBy(gr => gr.Key == "" ? 1 : 0)
-                    .ThenByDescending(gr => gr.Key == "" ? 0 : activity[gr.Key]).ToList();
+                    .ThenByDescending(gr => gr.Key == "" ? 0 : stats.Current.Activity[gr.Key]).ToList();
                 bool first = true, russia = false;
                 foreach (var gr in groups)
                 {
                     if (gr.Key == "" && !russia) russia = AddRussiaHeader();
-                    AddHeader(new GroupHeader { Key = gr.Key, Matches = gr.Key == "" ? 0 : activity[gr.Key], Top = first && gr.Key != "" });
+                    AddHeader(new GroupHeader { Key = gr.Key, Matches = gr.Key == "" ? 0 : stats.Current.Activity[gr.Key], Top = first && gr.Key != "" });
                     first = false;
                     foreach (var r in gr.OrderBy(x => x.NoRelay ? 2 : LockedOut(g, x) ? 1 : 0).ThenBy(Routing.BestLatency)) AddRegionRow(r);
                 }
@@ -1216,7 +1195,7 @@ namespace PingBoost
         bool AddRussiaHeader()
         {
             int matches;
-            if (activity == null || !activity.TryGetValue(DeadlockData.Russia, out matches)) return false;
+            if (stats.Current.Activity == null || !stats.Current.Activity.TryGetValue(DeadlockData.Russia, out matches)) return false;
             AddHeader(new GroupHeader { Key = DeadlockData.Russia, Matches = matches });
             return true;
         }
@@ -1235,9 +1214,9 @@ namespace PingBoost
             if (h.Key == "") return T("Other regions (no player data)", "مناطق ثانية (ما عندنا أرقامها)");
             string name = Stats.MmRegions.ContainsKey(h.Key) ? Lang.T(Stats.MmRegions[h.Key][0], Stats.MmRegions[h.Key][1]) : h.Key;
             if (h.Key == DeadlockData.Russia)
-                return name + "   ·   " + Stats.Approx(PlayersOf(h.Matches)) + T(" online", " أونلاين") + "   ·   " +
+                return name + "   ·   " + Stats.Approx(stats.Current.PlayersOf(h.Matches)) + T(" online", " أونلاين") + "   ·   " +
                        T("separate queue on the European servers, the lock can't choose it", "لها كيو خاص، ومبارياتها على سيرفرات أوروبا، والتثبيت ما يقدر يختارها");
-            return name + "   ·   " + Stats.Approx(PlayersOf(h.Matches)) + T(" online", " أونلاين") +
+            return name + "   ·   " + Stats.Approx(stats.Current.PlayersOf(h.Matches)) + T(" online", " أونلاين") +
                    "   ·   " + T("wait ", "الانتظار ") + Stats.EstimateWait(h.Matches);
         }
 
@@ -1497,10 +1476,10 @@ namespace PingBoost
                     Region e;
                     return rt.Known && rt.Entry != r.Id && latency(r) >= rt.Ms && byId.TryGetValue(rt.Entry, out e) && !g.Hosts(e) ? Places.PlaceName(e) : null;
                 };
-                return RegionGroups.Build(g, g.AppId == "1422450" ? activity : null, PlayersOf, latency, via);
+                return RegionGroups.Build(g, g.AppId == "1422450" ? stats.Current.Activity : null, stats.Current.PlayersOf, latency, via);
             }
             if (g.RegionMap != null)
-                return RegionGroups.Build(g, g.AppId == "1422450" ? activity : null, PlayersOf, Routing.BestLatency);
+                return RegionGroups.Build(g, g.AppId == "1422450" ? stats.Current.Activity : null, stats.Current.PlayersOf, Routing.BestLatency);
             return g.Regions.Where(r => g.Hosts(r) && !r.Detected).Select(r => new RegionChoice
             {
                 Def = RegionDef.Of(r.Id, Fmt.ShortName(r.NameEn), Fmt.ShortName(r.NameAr ?? r.NameEn), r.Id),
@@ -1550,8 +1529,8 @@ namespace PingBoost
                 GameLogOn = gameLogOn,
                 Simple = simple,
                 DevMode = devMode,
-                Activity = activity,
-                PlayersOf = PlayersOf,
+                Activity = stats.Current.Activity,
+                PlayersOf = stats.Current.PlayersOf,
                 SeenZones = () => SeenZones(g),
                 RoutePreview = chosen => RouteAdvisor.NoteOf(g, StrictLock.For(g, RegionGroups.PickIds(g, chosen), StrictLock.Pings(g)),
                                                 CardLogic.JoinNames(chosen.Select(c => c.Name).ToList()))
@@ -1680,10 +1659,10 @@ namespace PingBoost
 
             string mm;
             int matches;
-            if (g != null && g.AppId == "1422450" && activity != null && DeadlockData.Hosting.TryGetValue(r.Id, out mm) &&
-                activity.TryGetValue(mm, out matches))
+            if (g != null && g.AppId == "1422450" && stats.Current.Activity != null && DeadlockData.Hosting.TryGetValue(r.Id, out mm) &&
+                stats.Current.Activity.TryGetValue(mm, out matches))
             {
-                SetSub(item, ColPlayers, Stats.Approx(PlayersOf(matches)), Theme.TextC);
+                SetSub(item, ColPlayers, Stats.Approx(stats.Current.PlayersOf(matches)), Theme.TextC);
                 SetSub(item, ColWait, Stats.EstimateWait(matches), matches >= Stats.FastQueue ? Theme.Accent : matches >= Stats.MediumQueue ? Theme.Warn : Theme.Bad);
             }
             else
@@ -1963,51 +1942,23 @@ namespace PingBoost
 
         void LoadStats(Game g, bool quiet = false)
         {
-            statsAt = DateTime.Now;
             if (!quiet)
             {
                 infoLabel.Text = T("Getting player numbers...", "لحظة، نجيب عدد اللاعبين...");
                 infoLabel.ForeColor = Theme.Dim;
             }
-            Task.Run(() =>
-            {
-                Dictionary<string, int> act = null;
-                int online = -1;
-                if (g.AppId == "1422450")
-                {
-                    try { act = Stats.DeadlockActivity(); } catch { }
-                    try { online = Stats.DeadlockOnline(); } catch { }
-                }
-                int steam = Stats.SteamPlayers(g.SteamAppId);
-                Ui(() =>
-                {
-                    if (CurrentGame != g) return;
-                    activity = act;
-                    deadlockOnline = online;
-                    string text;
-                    if (act != null && act.Count > 0)
-                    {
-                        int total = act.Values.Sum(m => PlayersOf(m));
-                        text = T("Online now (est.): ", "أونلاين دحين تقريباً: ") + Stats.Approx(total) + T("", " لاعب") + "   |   " +
-                               string.Join("   ", act.OrderByDescending(kv => kv.Value).Take(4).Select(kv =>
-                                   (Stats.MmRegions.ContainsKey(kv.Key) ? Lang.T(Stats.MmRegions[kv.Key][0], Stats.MmRegions[kv.Key][1]) : kv.Key) +
-                                   " " + Stats.Approx(PlayersOf(kv.Value))));
-                    }
-                    else if (steam >= 0)
-                        text = T("Online now on Steam: ", "أونلاين دحين على Steam: ") + steam.ToString("N0") +
-                               T(" players (all regions together)", " لاعب (كل المناطق مع بعض)");
-                    else if (g.Provider == Provider.Custom)
-                        text = "";
-                    else
-                        text = T("Player numbers aren't available for this game.", "عدد اللاعبين مو متوفر لهادي اللعبة.");
-                    infoLabel.Text = text;
-                    infoLabel.ForeColor = Theme.TextC;
-                    // regroup now that the activity numbers are in, keeping the list where the player left it
-                    int top = serverList.TopItem != null ? serverList.TopItem.Index : 0;
-                    FillServers(g);
-                    if (quiet && top > 0 && top < serverList.Items.Count) serverList.TopItem = serverList.Items[top];
-                });
-            });
+            stats.Load(g, quiet);
+        }
+
+        // New player numbers for the game on screen (StatsService.Updated, on the UI thread).
+        void ShowStats(Game g, PlayerStats s, bool quiet)
+        {
+            infoLabel.Text = s.Summary(g);
+            infoLabel.ForeColor = Theme.TextC;
+            // regroup now that the activity numbers are in, keeping the list where the player left it
+            int top = serverList.TopItem != null ? serverList.TopItem.Index : 0;
+            FillServers(g);
+            if (quiet && top > 0 && top < serverList.Items.Count) serverList.TopItem = serverList.Items[top];
         }
 
         // Overwatch: the game regions (Zones) the player's matches were on, learned from the server checks; never shrinks.

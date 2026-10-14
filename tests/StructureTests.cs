@@ -416,6 +416,52 @@ namespace PingBoost
             Check(ran == 0, "disposed: dropped");
         }
 
+        static void StatsServiceRaisesOnceForTheGameOnScreen()
+        {
+            var dl = new Game { Name = "Deadlock", AppId = "1422450" };
+            var ow = new Game { Name = "OW" };
+            Game onScreen = dl;
+            var clock = new DateTime(2026, 10, 14, 12, 0, 0);
+            int fetched = 0, raised = 0;
+            bool lastQuiet = false;
+            var s = new StatsService(new InlineDispatcher(), g => { fetched++; return new PlayerStats { Steam = 5 }; }, () => onScreen,
+                                     work => work(), () => clock);
+            s.Updated += (g, st, quiet) => { raised++; lastQuiet = quiet; };
+            Check(s.Current == PlayerStats.None && s.Current.Online == -1, "nothing yet: never null");
+            Check(s.Stale(TimeSpan.FromMinutes(5)), "never loaded = stale");
+            s.Load(dl, true);
+            Check(fetched == 1 && raised == 1 && lastQuiet && s.Current.Steam == 5, "fetched and raised once");
+            Check(!s.Stale(TimeSpan.FromMinutes(5)), "fresh right after");
+            clock = clock.AddMinutes(4);
+            Check(!s.Stale(TimeSpan.FromMinutes(5)), "4 min: still fresh");
+            clock = clock.AddMinutes(1);
+            Check(s.Stale(TimeSpan.FromMinutes(5)) && !s.Stale(TimeSpan.FromMinutes(6)), "5 min: stale for 5, fresh for 6");
+            // another game came on screen while fetching: the numbers are dropped
+            var before = s.Current;
+            s.Load(ow, false);
+            Check(fetched == 2 && raised == 1 && s.Current == before, "another game's numbers are not shown");
+            Check(!s.Stale(TimeSpan.FromMinutes(1)), "the time counts from the start of the fetch, even when dropped");
+        }
+
+        static void PlayerStatsPlayersAndSummary()
+        {
+            var act = new Dictionary<string, int> { { "eu", 300 }, { "na", 100 } };
+            var p = new PlayerStats { Activity = act, Online = 40000 };
+            Check(p.PlayersOf(300) == 30000 && p.PlayersOf(100) == 10000, "online total split by match share: " + p.PlayersOf(300));
+            var noTotal = new PlayerStats { Activity = act };
+            Check(noTotal.PlayersOf(100) == Stats.EstimatePlayers(100), "without the total: the estimate");
+            Check(PlayerStats.None.PlayersOf(10) == Stats.EstimatePlayers(10), "no numbers: the estimate");
+            var dl = new Game { Name = "Deadlock", AppId = "1422450" };
+            Check(p.Grouped(dl) && !p.Grouped(new Game { Name = "x" }) && !PlayerStats.None.Grouped(dl), "grouped only for Deadlock with numbers");
+            Lang.Ar = false;
+            string sum = p.Summary(dl);
+            Check(sum.StartsWith("Online now (est.): ~40,000   |   ") && sum.IndexOf("~30,000") > 0, "Deadlock summary: " + sum);
+            Check(new PlayerStats { Steam = 1234 }.Summary(new Game { Name = "x" }) == "Online now on Steam: 1,234 players (all regions together)", "Steam summary");
+            Check(PlayerStats.None.Summary(new Game { Name = "c", Provider = Provider.Custom }) == "", "custom: empty");
+            Check(PlayerStats.None.Summary(new Game { Name = "x" }) == "Player numbers aren't available for this game.", "nothing known");
+            Lang.Ar = true;
+        }
+
         static void RunStructureTests()
         {
             Run("RoutingRelayMarginIsThreeMs", RoutingRelayMarginIsThreeMs);
@@ -437,6 +483,8 @@ namespace PingBoost
             Run("HeldNoticesKeepFourWithoutRepeats", HeldNoticesKeepFourWithoutRepeats);
             Run("InlineDispatcherRunsAtOnce", InlineDispatcherRunsAtOnce);
             Run("ControlDispatcherWaitsForTheHandle", ControlDispatcherWaitsForTheHandle);
+            Run("StatsServiceRaisesOnceForTheGameOnScreen", StatsServiceRaisesOnceForTheGameOnScreen);
+            Run("PlayerStatsPlayersAndSummary", PlayerStatsPlayersAndSummary);
         }
     }
 }
