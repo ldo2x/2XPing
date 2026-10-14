@@ -2041,12 +2041,6 @@ namespace PingBoost
             });
         }
 
-        // The addresses that can be the game's server: voice chat and service hosts (Game.DetectIgnore) are left out.
-        internal static List<Detector.Hit> ServerHits(Game g, List<Detector.Hit> hits)
-        {
-            return hits.Where(h => !g.Ignored(h.Ip)).ToList();
-        }
-
         // Overwatch: the game regions (Zones) the player's matches were on, learned from the server checks; never shrinks.
         static string ZonesKey(Game g) { return "zones_seen_" + g.Icon; }
 
@@ -2079,28 +2073,6 @@ namespace PingBoost
             if (string.IsNullOrEmpty(next)) return;
             Storage.SetSetting(ZonesKey(g), next);
             seenZonesCache.Remove(g.Icon);
-        }
-
-        // The datacenter the game is on, from the addresses it talks to: one that hosts matches, or null when the game
-        // only talks to a relay (e.g. Dubai), which hides the match server behind it. Valve: an address carries the
-        // match only with at least half of the game's packets (Detector.MatchShare); a hosting datacenter with less is
-        // a relay the game keeps open next to its primary one, never the match (Deadlock audit B3).
-        internal static Region HostRegionOf(Game g, List<Detector.Hit> hits)
-        {
-            return hits.Where(h => g.Provider != Provider.Valve || Detector.CarriesMatch(h))
-                       .Select(h => g.DatacenterOf(h.Ip)).FirstOrDefault(r => r != null && g.Hosts(r));
-        }
-
-        // Where the game enters Valve's network when no address carries the match: Valve, the busiest of its addresses
-        // (a relay like Dubai, or a hosting datacenter used as one); other games, a relay-only place. Null = none.
-        // The limit: traffic only shows the relays the game talks to. Even an address with most of the packets at a
-        // hosting datacenter can be the front relay of a route whose server is elsewhere (front+back routing), and a
-        // server at a place without relays (Helsinki, Falkenstein) is never seen at all. Only the game's console log
-        // names the server itself; HostRegionOf's answer is the best the capture can do.
-        internal static Region RelayRegionOf(Game g, List<Detector.Hit> hits)
-        {
-            if (g.Provider == Provider.Valve) return hits.Select(h => g.DatacenterOf(h.Ip)).FirstOrDefault(r => r != null);
-            return hits.Select(h => g.DatacenterOf(h.Ip)).FirstOrDefault(r => r != null && !g.Hosts(r));
         }
 
         void DetectServer()
@@ -2147,7 +2119,7 @@ namespace PingBoost
                     }
                     catch { }
                     // voice chat and service hosts are never the server the player is on
-                    hits = ServerHits(g, hits);
+                    hits = MatchClassifier.ServerHits(g, hits);
                     // the game servers it talked to, so the server lists can grow: only after that filter, and only for
                     // games with dedicated servers (a custom game's capture can hold other players' home addresses)
                     if (g.Provider != Provider.Custom && g.Processes.Length > 0 && hits.Count > 0)
@@ -2190,9 +2162,9 @@ namespace PingBoost
             SetIdle();
             btnDetect.Enabled = true;
             foreach (var r in g.Regions) r.Here = false;
-            var found = hits.Where(h => g.Provider != Provider.Valve || Detector.CarriesMatch(h))
-                            .Select(h => g.DatacenterOf(h.Ip)).Where(r => r != null && g.Hosts(r)).Distinct().ToList();
-            var relay = found.Count == 0 ? RelayRegionOf(g, hits) : null;
+            var match = MatchClassifier.Classify(g, hits);
+            var found = match.Found;
+            var relay = match.Relay;
             if (relay != null)
             {
                 // the game enters Valve's network at a relay, which hides which datacenter the match is on: say only that
@@ -2366,7 +2338,7 @@ namespace PingBoost
                     {
                         bool matched;
                         capturedAt = DateTime.Now;
-                        hits = ServerHits(g, Detector.Capture(g.Processes, 8, out matched)); // never voice chat or services
+                        hits = MatchClassifier.ServerHits(g, Detector.Capture(g.Processes, 8, out matched)); // never voice chat or services
                         logDc = ReadGameLog(g, out gameStart, out readAt); // Deadlock with -condebug: the real answer
                         // games without a datacenter list: the main server's city
                         if (hits.Count > 0 && !hits.Any(h => g.DatacenterOf(h.Ip) != null)) where = Stats.Locate(hits[0].Ip);
@@ -2443,7 +2415,8 @@ namespace PingBoost
             // Deadlock's console log names the match datacenter: that wins over the capture
             var fresh = hits.Count > 0 ? FreshLogDc(logDc, gameStart) : null;
             if (fresh != null && ShowLogResult(g, fresh, false)) return;
-            var seenDc = hits.Count > 0 ? HostRegionOf(g, hits) : null;
+            var match = MatchClassifier.Classify(g, hits);
+            var seenDc = match.Datacenter;
             if (seenDc != null)
             {
                 dcSinceLock = true;
@@ -2477,7 +2450,7 @@ namespace PingBoost
             matchSinceLock = true;
             var top = hits[0];
             var dc = seenDc;
-            var relay = dc == null ? RelayRegionOf(g, hits) : null;
+            var relay = match.Relay;
             if (relay != null)
             {
                 // only the entry relay in sight: the match server is hidden behind it, so there's nothing to check or report

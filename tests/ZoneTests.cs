@@ -164,13 +164,13 @@ namespace PingBoost
                 new Detector.Hit { Ip = "137.221.104.171", Port = 3724, Packets = 50 },
                 new Detector.Hit { Ip = "137.221.69.103", Port = 26503, Packets = 400 },
             };
-            var server = MainForm.ServerHits(g, hits);
+            var server = MatchClassifier.ServerHits(g, hits);
             Check(server.Count == 1 && server[0].Ip == "137.221.69.103", "only the match server is left: " + string.Join(",", server.Select(h => h.Ip).ToArray()));
-            Check(MainForm.ServerHits(g, new List<Detector.Hit> { hits[0] }).Count == 0, "voice chat alone = not in a match (no unknown_server)");
+            Check(MatchClassifier.ServerHits(g, new List<Detector.Hit> { hits[0] }).Count == 0, "voice chat alone = not in a match (no unknown_server)");
             // Irvine (the menu and Practice Range host, always allowed) is no match server either
             Check(g.Ignored("64.224.0.10") && g.Ignored("64.224.7.200") && !g.Ignored("64.224.8.1"), "Irvine 64.224.0.0/21 is ignored");
             var menu = new List<Detector.Hit> { new Detector.Hit { Ip = "64.224.3.9", Port = 1119, Packets = 300 }, hits[0] };
-            Check(MainForm.ServerHits(g, menu).Count == 0, "menu traffic to Irvine + voice chat = not in a match");
+            Check(MatchClassifier.ServerHits(g, menu).Count == 0, "menu traffic to Irvine + voice chat = not in a match");
             Check(g.LockAllow.All(c => g.DetectIgnore.Contains(c)), "everything the lock leaves open is ignored by the server check");
             var dbd = Find("Dead by Daylight");
             Check(!dbd.Ignored("85.236.97.1"), "other games ignore nothing");

@@ -39,21 +39,21 @@ namespace PingBoost
             string dxb = RelayIp(g, "dxb"), fra = RelayIp(g, "fra");
             // the audit's case: Dubai carries the game, Frankfurt is the backup router kept alive (B3)
             var hits = Detector.Top(new[] { HitOf(dxb, 950), HitOf(fra, 50) });
-            Check(MainForm.HostRegionOf(g, hits) == null, "a 5% Frankfurt is never the match");
-            var relay = MainForm.RelayRegionOf(g, hits);
+            Check(MatchClassifier.HostRegionOf(g, hits) == null, "a 5% Frankfurt is never the match");
+            var relay = MatchClassifier.RelayRegionOf(g, hits);
             Check(relay != null && relay.Id == "dxb", "entering at Dubai: " + (relay != null ? relay.Id : "none"));
             // Frankfurt carries most of it: that's the match
             hits = Detector.Top(new[] { HitOf(dxb, 100), HitOf(fra, 900) });
-            var dc = MainForm.HostRegionOf(g, hits);
+            var dc = MatchClassifier.HostRegionOf(g, hits);
             Check(dc != null && dc.Id == "fra", "90% Frankfurt is the match");
             // 45% Frankfurt, 40% Dubai, the rest elsewhere: no match, the busiest Valve address is the way in
             hits = Detector.Top(new[] { HitOf(fra, 450), HitOf(dxb, 400), HitOf("8.8.8.8", 150) });
-            Check(MainForm.HostRegionOf(g, hits) == null, "45% is not the match");
-            relay = MainForm.RelayRegionOf(g, hits);
+            Check(MatchClassifier.HostRegionOf(g, hits) == null, "45% is not the match");
+            relay = MatchClassifier.RelayRegionOf(g, hits);
             Check(relay != null && relay.Id == "fra", "entering at Frankfurt (used as a relay): " + (relay != null ? relay.Id : "none"));
             // nothing of Valve's
             hits = Detector.Top(new[] { HitOf("8.8.8.8", 500) });
-            Check(MainForm.HostRegionOf(g, hits) == null && MainForm.RelayRegionOf(g, hits) == null, "no Valve address, nothing");
+            Check(MatchClassifier.HostRegionOf(g, hits) == null && MatchClassifier.RelayRegionOf(g, hits) == null, "no Valve address, nothing");
         }
 
         // The game's real lines (format strings from Deadlock's steamnetworkingsockets.dll, audit §4).

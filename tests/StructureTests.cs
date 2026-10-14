@@ -288,6 +288,51 @@ namespace PingBoost
             Lang.Ar = true;
         }
 
+        static void MatchClassifierDeadlock()
+        {
+            var g = SavedDeadlock();
+            string dxb = RelayIp(g, "dxb"), fra = RelayIp(g, "fra");
+            // Dubai carries the game, Frankfurt is the backup router: through a relay, never "on Frankfurt"
+            var m = MatchClassifier.Classify(g, Detector.Top(new[] { HitOf(dxb, 950), HitOf(fra, 50) }));
+            Check(m.Kind == MatchKind.ViaRelay && m.Relay != null && m.Relay.Id == "dxb" && m.Datacenter == null && m.Found.Count == 0,
+                  "relay-only hits -> ViaRelay at Dubai: " + m.Kind);
+            // Frankfurt carries the match; picked -> on a picked server
+            foreach (var r in g.Regions) r.Picked = r.Id == "fra";
+            m = MatchClassifier.Classify(g, Detector.Top(new[] { HitOf(dxb, 100), HitOf(fra, 900) }));
+            Check(m.Kind == MatchKind.OnDatacenter && m.Datacenter.Id == "fra" && m.AllPicked && m.Relay == null, "hosting dc + picked: " + m.Kind);
+            foreach (var r in g.Regions) r.Picked = false;
+            Check(!MatchClassifier.Classify(g, Detector.Top(new[] { HitOf(dxb, 100), HitOf(fra, 900) })).AllPicked, "not picked");
+            // nothing captured: not in a match
+            Check(MatchClassifier.Classify(g, new List<Detector.Hit>()).Kind == MatchKind.NoMatch, "no hits -> NoMatch");
+            // traffic, but not to Valve
+            m = MatchClassifier.Classify(g, Detector.Top(new[] { HitOf("8.8.8.8", 500) }));
+            Check(m.Kind == MatchKind.OnUnknownServer && m.Datacenter == null && m.Relay == null, "no Valve address -> unknown server");
+            // HostsOf names every hosting datacenter that carries the match, the busiest first; HostRegionOf is its first
+            var hits = Detector.Top(new[] { HitOf(fra, 600), HitOf(dxb, 400) });
+            Check(MatchClassifier.HostsOf(g, hits).Select(r => r.Id).SequenceEqual(new[] { "fra" }), "only the half-or-more address");
+            Check(MatchClassifier.HostRegionOf(g, hits) == MatchClassifier.HostsOf(g, hits).FirstOrDefault(), "HostRegionOf = HostsOf first");
+        }
+
+        static void MatchClassifierOtherGames()
+        {
+            // Arena Breakout: no datacenter list, so any server is an unknown one (the city is looked up)
+            var ab = new Game { Name = "Arena Breakout", Processes = new[] { "UAGame" } };
+            var m = MatchClassifier.Classify(ab, new List<Detector.Hit> { HitOf("20.1.2.3", 300) });
+            Check(m.Kind == MatchKind.OnUnknownServer, "Arena Breakout hits -> OnUnknownServer: " + m.Kind);
+            // Overwatch: voice chat + Irvine (menu) are left out by ServerHits, so that is no match at all
+            var ow = Find("Overwatch 2");
+            var menu = new List<Detector.Hit>
+            {
+                new Detector.Hit { Ip = "85.236.97.1", Port = 12000, Packets = 900 },
+                new Detector.Hit { Ip = "64.224.3.9", Port = 1119, Packets = 300 },
+            };
+            Check(MatchClassifier.Classify(ow, MatchClassifier.ServerHits(ow, menu)).Kind == MatchKind.NoMatch, "Overwatch voice + Irvine -> NoMatch");
+            // a match server in Chicago (not Valve: no packet share needed)
+            menu.Add(new Detector.Hit { Ip = "137.221.69.103", Port = 26503, Packets = 40 });
+            m = MatchClassifier.Classify(ow, MatchClassifier.ServerHits(ow, menu));
+            Check(m.Kind == MatchKind.OnDatacenter && m.Datacenter.Id == "ORD1", "Overwatch Chicago: " + m.Kind);
+        }
+
         static void RunStructureTests()
         {
             Run("RoutingRelayMarginIsThreeMs", RoutingRelayMarginIsThreeMs);
@@ -303,6 +348,8 @@ namespace PingBoost
             Run("LockPlannerValveKeepsRelayOnlyPopsOpen", LockPlannerValveKeepsRelayOnlyPopsOpen);
             Run("LockPlannerLockSpaceMinusPickedMinusAllow", LockPlannerLockSpaceMinusPickedMinusAllow);
             Run("LockPlannerScopeAndCardNames", LockPlannerScopeAndCardNames);
+            Run("MatchClassifierDeadlock", MatchClassifierDeadlock);
+            Run("MatchClassifierOtherGames", MatchClassifierOtherGames);
         }
     }
 }
