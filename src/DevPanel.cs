@@ -21,6 +21,8 @@ namespace PingBoost
         System.Windows.Forms.Timer refresh;
         object[] installs = new object[0], events = new object[0], issueEvents = new object[0];
         bool loadedOnce;
+        TabControl tabs;
+        TabPage dashPage;
         public event Action ForgetKey;
 
         public DevPanel()
@@ -43,7 +45,11 @@ namespace PingBoost
             top.Controls.Add(new Panel { Dock = DockStyle.Right, Width = 8 });
             top.Controls.Add(btn);
 
-            var tabs = new TabControl { Dock = DockStyle.Fill };
+            tabs = new TabControl { Dock = DockStyle.Fill };
+            // the dashboard first: counters and charts from one dev_stats() call (it loads and refreshes by itself)
+            dashPage = new TabPage(Lang.T("Dashboard", "لوحة الأرقام")) { BackColor = Theme.Bg };
+            dashPage.Controls.Add(new DevDashboard { Dock = DockStyle.Fill });
+            tabs.TabPages.Add(dashPage);
             online = List("Name", 120, "Device", 120, "City", 100, "Country", 100, "Game", 120, "Server", 160, "Ping", 55, "Version", 90,
                           "Net", 70, "ISP", 150, "Last seen", 90);
             stats = List("What", 200, "Value", 420, "Count", 90);
@@ -67,12 +73,24 @@ namespace PingBoost
             Controls.Add(tabs);
             Controls.Add(top);
 
-            // refreshes every 30 s while the page is on screen
+            // the lists refresh every 30 s while one of them is on screen (not while the dashboard is: it has its own pace)
             refresh = new System.Windows.Forms.Timer { Interval = 30000 };
-            refresh.Tick += delegate { if (Visible) Reload(); };
+            refresh.Tick += delegate { if (Visible && ListsShown) Reload(); };
             refresh.Start();
-            VisibleChanged += delegate { if (Visible && !loadedOnce) { loadedOnce = true; Reload(); } };
+            VisibleChanged += delegate { LoadListsOnce(); };
+            // the summary and Refresh above the tabs are the lists': hidden while the dashboard (with its own) is shown;
+            // «Forget key» stays
+            Action listBar = () => { summary.Visible = ListsShown; btn.Visible = ListsShown; };
+            listBar();
+            tabs.SelectedIndexChanged += delegate { listBar(); LoadListsOnce(); };
             Disposed += delegate { refresh.Dispose(); };
+        }
+
+        bool ListsShown { get { return tabs.SelectedTab != dashPage; } }
+
+        void LoadListsOnce()
+        {
+            if (Visible && ListsShown && !loadedOnce) { loadedOnce = true; Reload(); }
         }
 
         static TabPage Page(string title, Control c)
