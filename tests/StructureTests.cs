@@ -333,6 +333,50 @@ namespace PingBoost
             Check(m.Kind == MatchKind.OnDatacenter && m.Datacenter.Id == "ORD1", "Overwatch Chicago: " + m.Kind);
         }
 
+        static void LossTrackerReportsFifteenPercent()
+        {
+            var t = new LossTracker();
+            int lost = 0;
+            bool reported = false;
+            for (int i = 0; i < 59; i++) reported |= t.Add("eu", i < 20 ? -1 : 50, out lost);
+            Check(!reported, "fewer than 60 samples: never, even with 20 lost");
+            // 8 of 60 lost (13%): no report
+            t = new LossTracker();
+            for (int i = 0; i < 60; i++) reported = t.Add("eu", i < 8 ? -1 : 50, out lost);
+            Check(!reported, "8/60 = no report");
+            // 9 of 60 lost (15%): report
+            t = new LossTracker();
+            for (int i = 0; i < 60; i++) reported = t.Add("eu", i < 9 ? -1 : 50, out lost);
+            Check(reported && lost == 9, "9/60 (15%) = report");
+            // the window slides: the oldest lost ping leaves, 8 lost remain
+            reported = t.Add("eu", 50, out lost);
+            Check(!reported && lost == 8, "sliding window: " + lost);
+            // a new label starts over
+            reported = t.Add("asia", -1, out lost);
+            Check(!reported && lost == 0, "label change resets");
+        }
+
+        static void HeldNoticesKeepFourWithoutRepeats()
+        {
+            var h = new HeldNotices();
+            for (int i = 1; i <= 6; i++) h.Hold("n" + i, ToastKind.Warn, false);
+            var all = h.TakeAll();
+            Check(all.Count == HeldNotices.Max && all[0].Key == "n3" && all[3].Key == "n6", "max 4, oldest dropped first");
+            Check(h.Count == 0 && h.TakeAll().Count == 0, "TakeAll empties it");
+            h.Hold("a", ToastKind.Warn, false);
+            h.Hold("b", ToastKind.Warn, false);
+            h.Hold("a", ToastKind.Bad, false);
+            all = h.TakeAll();
+            Check(all.Count == 2 && all[0].Key == "b" && all[1].Key == "a" && all[1].Value == ToastKind.Bad, "a repeat moves to the end");
+            h.Hold("match warn", ToastKind.Warn, true);
+            h.Hold("match error", ToastKind.Bad, true);
+            h.Hold("other warn", ToastKind.Warn, false);
+            h.DropMatchWarnings();
+            all = h.TakeAll();
+            Check(all.Count == 2 && all.Any(n => n.Key == "match error") && all.Any(n => n.Key == "other warn"),
+                  "DropMatchWarnings keeps errors and the rest");
+        }
+
         static void RunStructureTests()
         {
             Run("RoutingRelayMarginIsThreeMs", RoutingRelayMarginIsThreeMs);
@@ -350,6 +394,8 @@ namespace PingBoost
             Run("LockPlannerScopeAndCardNames", LockPlannerScopeAndCardNames);
             Run("MatchClassifierDeadlock", MatchClassifierDeadlock);
             Run("MatchClassifierOtherGames", MatchClassifierOtherGames);
+            Run("LossTrackerReportsFifteenPercent", LossTrackerReportsFifteenPercent);
+            Run("HeldNoticesKeepFourWithoutRepeats", HeldNoticesKeepFourWithoutRepeats);
         }
     }
 }

@@ -200,9 +200,7 @@ namespace PingBoost
         bool wasMinimized;
         FormWindowState restoreState = FormWindowState.Normal; // what a restore goes back to (Normal or Maximized)
         string liveStatus;                                          // e.g. "locked on Europe · 78 ms"; null = nothing yet
-        readonly List<HeldNotice> heldNotices = new List<HeldNotice>();
-        class HeldNotice { public string Text; public ToastKind Kind; public bool AboutMatch; }
-        const int HeldMax = 4;
+        readonly HeldNotices heldNotices = new HeldNotices();
 
         void BuildWindowEvents()
         {
@@ -315,24 +313,20 @@ namespace PingBoost
         // An important notice while minimized: kept (the latest few) for when the window is back.
         void HoldNotice(string text, ToastKind kind, bool aboutMatch)
         {
-            heldNotices.RemoveAll(n => n.Text == text);
-            heldNotices.Add(new HeldNotice { Text = text, Kind = kind, AboutMatch = aboutMatch });
-            while (heldNotices.Count > HeldMax) heldNotices.RemoveAt(0);
+            heldNotices.Hold(text, kind, aboutMatch);
             FlashTaskbar();
         }
 
         // A new match or a lock change: the held warnings about the old match or lock check are stale. Errors stay.
         void DropHeldWarnings()
         {
-            heldNotices.RemoveAll(n => n.AboutMatch && n.Kind != ToastKind.Bad);
+            heldNotices.DropMatchWarnings();
         }
 
         void ShowHeldNotices()
         {
             if (Minimized || heldNotices.Count == 0) return;
-            var list = heldNotices.ToList();
-            heldNotices.Clear();
-            foreach (var n in list) Msg(n.Text, n.Kind);
+            foreach (var n in heldNotices.TakeAll()) Msg(n.Key, n.Value);
         }
 
         void ApplyDirection()
@@ -2905,17 +2899,12 @@ namespace PingBoost
         }
 
         // Packet loss to the locked/boosted server over the last minute: heavy loss is reported (once per server).
-        readonly Queue<bool> lossWindow = new Queue<bool>();
-        string lossLabel;
+        readonly LossTracker loss = new LossTracker();
 
         void TrackLoss(string label, double v)
         {
-            if (label != lossLabel) { lossLabel = label; lossWindow.Clear(); }
-            lossWindow.Enqueue(v < 0);
-            if (lossWindow.Count > 60) lossWindow.Dequeue();
-            if (lossWindow.Count < 60) return;
-            int lost = lossWindow.Count(x => x);
-            if (lost * 100 / lossWindow.Count >= 15)
+            int lost;
+            if (loss.Add(label, v, out lost))
                 Issues.Report("connection_loss", label + ": " + lost + " of the last 60 pings lost",
                     new Dictionary<string, object> { { "server", label }, { "lost", lost } }, label);
         }
