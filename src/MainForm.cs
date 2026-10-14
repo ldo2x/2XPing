@@ -2194,8 +2194,12 @@ namespace PingBoost
                 Log(T("Lock failed: ", "ما زبط التثبيت: ") + ex.Message);
                 Issues.Report("lock_apply_failed", g.Name + ": " + ex.Message + (oldLockGone ? " (the previous lock is off too)" : ""), null, g.Icon);
                 Msg(T("Lock failed: ", "ما زبط التثبيت: ") + ex.Message +
-                    (oldLockGone ? T(" Your previous lock is off too, so every server is open now.",
-                                     " والتثبيت اللي كان قبل انشال بعد، يعني كل السيرفرات مفتوحة دحين.") : ""), ToastKind.Bad);
+                    (!oldLockGone ? "" :
+                     ServerLock.MayExist // Apply's own cleanup failed too: some rules may still be on until close
+                         ? T(" Your previous lock is off, but some lock rules may still be on: they're removed when you close 2X Ping.",
+                             " والتثبيت اللي كان قبل انشال، بس ممكن يكون باقي شي من قواعده، وتنشال لما تقفل البرنامج.")
+                         : T(" Your previous lock is off too, so every server is open now.",
+                             " والتثبيت اللي كان قبل انشال بعد، يعني كل السيرفرات مفتوحة دحين.")), ToastKind.Bad);
             });
             // nothing to block (every region picked): refused, the lock that is on (if any) stays as it is (M1)
             Action nothingToBlock = () => Ui(() =>
@@ -2528,9 +2532,10 @@ namespace PingBoost
         // While servers are locked, the status bar follows the ping of the locked server.
         void StartLockMonitor()
         {
-            var g = CurrentGame;
+            var g = lockGame; // the locked game and the picks it was locked with, not the game on screen's ticks
             if (lockSummary == null || boosting || g == null) return;
-            var r = g.Regions.Where(x => x.Picked && x.Target != null).OrderBy(Routing.BestLatency).FirstOrDefault();
+            var picks = LockPicks(g);
+            var r = g.Regions.Where(x => LockScope.Picked(picks, x) && x.Target != null).OrderBy(Routing.BestLatency).FirstOrDefault();
             if (r != null) StartMonitor(r.Target, T("locked on ", "مثبّت على ") + Fmt.ShortName(r));
         }
 
