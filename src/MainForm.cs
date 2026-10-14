@@ -34,7 +34,8 @@ namespace PingBoost
 
         readonly List<Game> allGames; // every game the app knows
         List<Game> games;              // the ones shown: released games, plus the rest in developer mode
-        readonly List<Relay> relays;
+        readonly RelayStore relayStore; // the player's own relays
+        List<Relay> relays { get { return relayStore.All; } }
         bool simple;
 
         ListBox gameList;
@@ -102,7 +103,7 @@ namespace PingBoost
                 if (!devMode) return;
                 Ui(() => { Msg("Problem · " + r.Code + ": " + r.Detail, ToastKind.Warn); DevOut("problem  " + r.Code + ": " + r.Detail); });
             };
-            relays = Storage.LoadRelays();
+            relayStore = new RelayStore();
 
             SuspendLayout();
             AutoScaleDimensions = new SizeF(96f, 96f);
@@ -2784,20 +2785,13 @@ namespace PingBoost
                 new[] { T("Name", "الاسم"), T("Agent link (from setup-relay.sh, optional)", "رابط أداة القياس (من setup-relay.sh، مو ضروري)"), T("Agent token", "رمز أداة القياس (Token)") },
                 new[] { Path.GetFileNameWithoutExtension(path), "http://" + host + ":8787", "" });
             if (vals == null || vals[0] == "") return;
-            if (relays.Any(r => r.Name.Equals(vals[0], StringComparison.OrdinalIgnoreCase)))
+            if (relayStore.Has(vals[0]))
             {
                 Msg(T("There's already a relay with that name.", "في وسيط بنفس الاسم."), ToastKind.Warn);
                 return;
             }
 
-            string safe = new string(vals[0].Select(c => char.IsLetterOrDigit(c) && c < 128 ? c : '_').ToArray());
-            string dir = Path.Combine(Storage.Dir, "relays");
-            Directory.CreateDirectory(dir);
-            string dest = Path.Combine(dir, safe + ".conf");
-            File.Copy(path, dest, true);
-
-            relays.Add(new Relay { Name = vals[0], ConfPath = dest, AgentUrl = vals[1], Token = vals[2] });
-            Storage.SaveRelays(relays);
+            relayStore.Add(vals[0], path, vals[1], vals[2]);
             RefreshRelays();
             Log(T("Relay added: ", "ضفنا الوسيط: ") + vals[0] + " (" + host + ")");
         }
@@ -2806,8 +2800,7 @@ namespace PingBoost
         {
             if (relayList.SelectedItems.Count == 0) return;
             var r = (Relay)relayList.SelectedItems[0].Tag;
-            relays.Remove(r);
-            Storage.SaveRelays(relays);
+            relayStore.Remove(r);
             RefreshRelays();
             Log(T("Relay removed: ", "حذفنا الوسيط: ") + r.Name);
         }

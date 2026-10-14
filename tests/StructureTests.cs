@@ -712,6 +712,29 @@ namespace PingBoost
             Check(reads == before + 1, "an hour later: read again");
         }
 
+        static void RelayStoreAddRemoveRoundTrip()
+        {
+            string tmp = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "2xping-relays-" + Guid.NewGuid().ToString("N"));
+            System.IO.Directory.CreateDirectory(tmp);
+            try
+            {
+                string conf = System.IO.Path.Combine(tmp, "client.conf");
+                System.IO.File.WriteAllText(conf, "[Peer]\nEndpoint = 203.0.113.7:51820\n");
+                int saves = 0;
+                List<Relay> saved = null;
+                var store = new RelayStore(new List<Relay>(), System.IO.Path.Combine(tmp, "relays"), l => { saves++; saved = l.ToList(); });
+                var r = store.Add("My Relay/1", conf, "http://203.0.113.7:8787", "tok");
+                Check(saves == 1 && saved.Count == 1 && store.All.Count == 1 && store.All[0] == r, "added and saved");
+                Check(r.ConfPath == System.IO.Path.Combine(tmp, "relays", "My_Relay_1.conf") && System.IO.File.Exists(r.ConfPath), "config copied: " + r.ConfPath);
+                Check(r.EndpointHost == "203.0.113.7", "the copy reads like the original");
+                Check(store.Has("my relay/1") && !store.Has("other"), "names compare without case");
+                Check(RelayStore.SafeName("Dubaï 2") == "Duba__2", "non-ASCII and spaces become _: " + RelayStore.SafeName("Dubaï 2"));
+                store.Remove(r);
+                Check(saves == 2 && saved.Count == 0 && store.All.Count == 0, "removed and saved");
+            }
+            finally { try { System.IO.Directory.Delete(tmp, true); } catch { } }
+        }
+
         static void RunStructureTests()
         {
             Run("RoutingRelayMarginIsThreeMs", RoutingRelayMarginIsThreeMs);
@@ -743,6 +766,7 @@ namespace PingBoost
             Run("GameSessionRetryForgetsAndTestsAfterLoad", GameSessionRetryForgetsAndTestsAfterLoad);
             Run("MatchStateSaysWhenTheMatchChanged", MatchStateSaysWhenTheMatchChanged);
             Run("ZoneMemoryCachesAndLearns", ZoneMemoryCachesAndLearns);
+            Run("RelayStoreAddRemoveRoundTrip", RelayStoreAddRemoveRoundTrip);
         }
     }
 }
