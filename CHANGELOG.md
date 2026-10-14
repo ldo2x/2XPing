@@ -1,6 +1,6 @@
 # Changelog
 
-## Next (in testing)
+## v0.12.0-beta (2026-10-14)
 
 - Developer panel: a «لوحة الأرقام» / Dashboard tab with counters (online now, active, new, matches, locks, problems, each against the period before) and charts (users and matches per day, versions, countries, games, picked regions, whether the lock held, expected vs actual ping, datacenters per region, top problems), from one call to the new `dev_stats()` database function (`tools/supabase-dev-stats.sql`). It refreshes by itself at most every 5 minutes, only while it is on screen
 - **Automatic match reports.** About a minute into each match, 2X Ping sends one short report to our statistics: the lock that was on (or none), the ping the card expected, the datacenter the match was really on and how that was found (Deadlock's console log or a server check), the game's own ping and whether the match was inside the lock. Nothing to press and nothing to report yourself; with Deadlock's `-condebug` log it works while the game stays in front. Only datacenter short names are sent, never addresses (see SECURITY.md)
