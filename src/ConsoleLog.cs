@@ -14,8 +14,9 @@ namespace PingBoost
     }
 
     // Deadlock's own console log (game\citadel\console.log, written while the game runs with the launch option
-    // -condebug). The game's networking library prints the match server's datacenter there
-    // ("Remote host is in data center 'fra'"): the real answer, which a traffic capture can't see behind an entry relay.
+    // -condebug). The game's networking library prints the match server's datacenter there: "Remote host is in data center
+    // 'fra'" in its format strings, and in the real log the session lines of the relays next to the server (SessionLine):
+    // the real answer, which a traffic capture can't see behind an entry relay.
     // Each Read looks only at the bytes added since the last one, so a log of many MB costs nothing to follow.
     // A new log (the game cleared or replaced it) is read from its start. It is new when the file got shorter, starts
     // differently, has another creation time, or no longer has the bytes we read last just before where we stopped (a
@@ -176,6 +177,16 @@ namespace PingBoost
         static readonly Regex DcLine = new Regex(@"Remote host is in data center '([^']*)'", RegexOptions.CultureInvariant);
         static readonly Regex RelayLine = new Regex(@"Communicating via relay in '([^']*)'", RegexOptions.CultureInvariant);
         static readonly Regex Pop = new Regex(@"^\s*([A-Za-z][A-Za-z0-9]*)", RegexOptions.CultureInvariant);
+        // What Deadlock's log really holds (checked in a real match, 2026-10-14): no "data center" line, but the relays
+        // the game asks for a session, each with its own delay to the match server ("back"):
+        //   [#1671292347 SDR server …] Requesting session from dfra#51 (89.222.108.162:27019).  Ping = 78 = 78+0 (front+back).
+        // A relay that reaches the server in ColocatedMs or less sits in the server's datacenter (fra 1 ms, dfra 0 ms):
+        // that is the match's place. Behind a far entry relay (Dubai to Frankfurt, back 40) the line says nothing.
+        static readonly Regex SessionLine = new Regex(@"Requesting session from ([A-Za-z][A-Za-z0-9]*)#\d+\s*\([^)]*\)\.?\s+Ping\s*=\s*\d+\s*=\s*\d+\+(\d+)\s*\(front\+back\)",
+                                                      RegexOptions.CultureInvariant);
+        //   … Selecting fra#328 (155.133.226.87:27020) as primary.  (…): the relay the game enters by
+        static readonly Regex PrimaryLine = new Regex(@"Selecting ([A-Za-z][A-Za-z0-9]*)#\d+\s*\([^)]*\)\s+as primary", RegexOptions.CultureInvariant);
+        public const int ColocatedMs = 2;
 
         // One log line: kind "dc" (the match server's datacenter) or "relay" (the relay the game enters by), or null.
         // At = the line's own time ("10/13 21:33:12 …", local time, the year the latest one not after now), or
@@ -186,11 +197,15 @@ namespace PingBoost
             if (string.IsNullOrEmpty(line)) return null;
             var m = DcLine.Match(line);
             if (m.Success) kind = "dc";
+            else if ((m = RelayLine.Match(line)).Success || (m = PrimaryLine.Match(line)).Success) kind = "relay";
             else
             {
-                m = RelayLine.Match(line);
-                if (!m.Success) return null;
-                kind = "relay";
+                m = SessionLine.Match(line);
+                int back;
+                if (!m.Success || !int.TryParse(m.Groups[2].Value, NumberStyles.None, CultureInfo.InvariantCulture, out back) ||
+                    back > ColocatedMs)
+                    return null;
+                kind = "dc";
             }
             var p = Pop.Match(m.Groups[1].Value);
             if (!p.Success) { kind = null; return null; }

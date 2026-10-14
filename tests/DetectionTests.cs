@@ -75,6 +75,15 @@ namespace PingBoost
                   "other lines are not a datacenter");
             Check(GameConsole.Parse("Remote host is in data center ''", now, out kind) == null, "an empty name is nothing");
             Check(GameConsole.Parse("Ping location: dxb=31+3,fra=72+7/69+5", now, out kind) == null, "the ping location is nothing");
+            // the lines a real match wrote (2026-10-14, Frankfurt from Riyadh): the relays next to the server name its place
+            l = GameConsole.Parse("10/14 12:08:26 [SteamNetSockets] [#1671292347 SDR server steamid:90294866394211354 vport 0] Requesting session from fra#328 (155.133.226.87:27020).  Ping = 74 = 73+1 (front+back).  Rank=1 Score=99", now, out kind);
+            Check(l != null && kind == "dc" && l.Code == "fra", "session relay 1 ms from the server: its datacenter");
+            l = GameConsole.Parse("10/14 12:08:26 [SteamNetSockets] [#1671292347 SDR server steamid:90294866394211354 vport 0] Requesting session from dfra#51 (89.222.108.162:27019).  Ping = 78 = 78+0 (front+back).  Rank=2 Score=103", now, out kind);
+            Check(l != null && kind == "dc" && l.Code == "dfra", "session relay 0 ms from the server");
+            Check(GameConsole.Parse("[#1 SDR server steamid:1 vport 0] Requesting session from dxb#3 (185.25.183.163:27020).  Ping = 98 = 58+40 (front+back).  Rank=1 Score=99", now, out kind) == null,
+                  "a far entry relay names no place");
+            l = GameConsole.Parse("10/14 12:08:26 [SteamNetSockets] [#1671292347 SDR server steamid:90294866394211354 vport 0] Selecting fra#328 (155.133.226.87:27020) as primary.  (Ping = 74 = 73+1+0 (front+interior+remote).  Rank=1 Score=81)", now, out kind);
+            Check(l != null && kind == "relay" && l.Code == "fra", "the primary relay is the way in");
             // "12/31" read on 1 January was last year
             l = GameConsole.Parse("12/31 23:59:00 Remote host is in data center 'ams'", new DateTime(2027, 1, 1, 0, 5, 0), out kind);
             Check(l != null && l.At.Year == 2026, "last year's date: " + (l != null ? l.At.ToString("s") : "null"));
