@@ -75,6 +75,13 @@ namespace PingBoost
             ui = new ControlDispatcher(this);
             stats = new StatsService(ui, PlayerStats.Fetch, () => CurrentGame);
             stats.Updated += ShowStats;
+            updates = new UpdateService(ui, () => { var running = Detector.Processes(); return games.Any(g => Detector.IsRunning(running, g.Processes)); });
+            updates.Changed += r => ShowUpdateBar();
+            updates.Available += r => Log(T("New version available: ", "في نسخة جديدة: ") + r.Ver.ToString(3));
+            updates.MustUpdate += ForceUpdate;
+            // a chat line, not a popup: the bar at the top has the button
+            updates.FirstPrompt += r => Msg(T("A new version is out (" + r.Ver.ToString(3) + "). Press Update now at the top, it takes a few seconds.",
+                                              "في نسخة جديدة (‎" + r.Ver.ToString(3) + "‎). اضغط «حدّث دحين» فوق، ياخذ كم ثانية."), ToastKind.Warn);
             Lang.Ar = Storage.LoadArabic();
             simple = Prefs.Simple;
             devMode = DevModeSaved;
@@ -156,9 +163,9 @@ namespace PingBoost
                 if (Updater.JustUpdated) ShowUpdatedNote();
                 CheckForUpdate(true);
                 // keep checking while the app stays open (it can run minimized for days)
-                var updates = new System.Windows.Forms.Timer { Interval = 3 * 60 * 60 * 1000 };
-                updates.Tick += delegate { CheckForUpdate(false); };
-                updates.Start();
+                var updateTimer = new System.Windows.Forms.Timer { Interval = 3 * 60 * 60 * 1000 };
+                updateTimer.Tick += delegate { CheckForUpdate(false); };
+                updateTimer.Start();
             };
             FormClosing += delegate
             {
@@ -461,7 +468,7 @@ namespace PingBoost
             updateBtn.Font = Fonts.Semi(10f);
             updateBtn.Dock = DockStyle.Right;
             updateBtn.Width = 130;
-            updateBtn.Click += delegate { if (pendingUpdate != null && UpdateDialog.Show(this, pendingUpdate, false)) CloseForUpdate(); };
+            updateBtn.Click += delegate { if (updates.Pending != null && UpdateDialog.Show(this, updates.Pending, false)) CloseForUpdate(); };
             updateLabel = new Label { Dock = DockStyle.Fill, ForeColor = Theme.Warn, TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true };
             updateBar.Controls.Add(updateLabel);
             updateBar.Controls.Add(updateBtn);
@@ -1850,41 +1857,14 @@ namespace PingBoost
         Panel updateBar;
         Label updateLabel;
         Button updateBtn;
-        Release pendingUpdate;
-        bool updatePrompted, closingForUpdate;
+        readonly UpdateService updates;
 
-        void CheckForUpdate(bool atStart)
-        {
-            Task.Run(() =>
-            {
-                var r = Updater.Latest();
-                Ui(() =>
-                {
-                    pendingUpdate = r;
-                    ShowUpdateBar();
-                    if (r == null || closingForUpdate) return;
-                    Log(T("New version available: ", "في نسخة جديدة: ") + r.Ver.ToString(3));
-                    if (Updater.Forced(r))
-                    {
-                        // don't pull the rug in the middle of a match: force it on the next launch instead
-                        if (!atStart) { var running = Detector.Processes(); if (games.Any(g => Detector.IsRunning(running, g.Processes))) return; }
-                        ForceUpdate(r);
-                    }
-                    else if (!updatePrompted)
-                    {
-                        // a chat line, not a popup: the bar at the top has the button
-                        updatePrompted = true;
-                        Msg(T("A new version is out (" + r.Ver.ToString(3) + "). Press Update now at the top, it takes a few seconds.",
-                              "في نسخة جديدة (‎" + r.Ver.ToString(3) + "‎). اضغط «حدّث دحين» فوق، ياخذ كم ثانية."), ToastKind.Warn);
-                    }
-                });
-            });
-        }
+        void CheckForUpdate(bool atStart) { updates.Check(atStart); }
 
         void ShowUpdateBar()
         {
             if (updateBar == null) return;
-            var r = pendingUpdate;
+            var r = updates.Pending;
             updateBar.Visible = r != null;
             updateBtn.Visible = r != null;
             if (r == null) return;
@@ -1906,7 +1886,7 @@ namespace PingBoost
             updateLabel.ForeColor = Theme.Good;
             updateLabel.Text = T("Updated to " + Brand.Version + " ✓", "تحدّث البرنامج لـ ‎" + Brand.Version + "‎ ✓");
             var t = new System.Windows.Forms.Timer { Interval = 10000 };
-            t.Tick += delegate { t.Stop(); t.Dispose(); if (pendingUpdate == null) updateBar.Visible = false; };
+            t.Tick += delegate { t.Stop(); t.Dispose(); if (updates.Pending == null) updateBar.Visible = false; };
             t.Start();
         }
 
@@ -1920,7 +1900,7 @@ namespace PingBoost
 
         void CloseForUpdate()
         {
-            closingForUpdate = true;
+            updates.ClosingForUpdate = true;
             Close();
         }
 
@@ -3271,7 +3251,7 @@ namespace PingBoost
         void DevFakeUpdateBar()
         {
             Storage.SetSetting("update_seen", "v9.9.9-beta|" + DateTime.UtcNow.AddDays(-1).Ticks);
-            pendingUpdate = new Release { Tag = "v9.9.9-beta", Ver = new Version(9, 9, 9) };
+            updates.Pending = new Release { Tag = "v9.9.9-beta", Ver = new Version(9, 9, 9) };
             ShowUpdateBar();
             DevOut("showing a fake 9.9.9 update bar (restart the app to clear it)");
         }

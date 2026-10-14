@@ -462,6 +462,41 @@ namespace PingBoost
             Lang.Ar = true;
         }
 
+        static void UpdateServicePromptsOnceAndNeverMidMatch()
+        {
+            Release next = null;
+            bool isForced = false, running = false;
+            var u = new UpdateService(new InlineDispatcher(), () => next, r => isForced, () => running, work => work());
+            int changed = 0, available = 0, must = 0, prompt = 0;
+            u.Changed += r => changed++;
+            u.Available += r => available++;
+            u.MustUpdate += r => must++;
+            u.FirstPrompt += r => prompt++;
+            u.Check(true);
+            Check(changed == 1 && available == 0 && prompt == 0 && u.Pending == null, "up to date: the bar only");
+            next = new Release { Tag = "v1.2.3-beta", Ver = new Version(1, 2, 3) };
+            u.Check(false);
+            u.Check(false);
+            Check(changed == 3 && available == 2 && prompt == 1 && must == 0 && u.Pending == next, "the first prompt only once: " + prompt);
+            // forced, the game running, not at start: wait for the next launch
+            isForced = true; running = true;
+            u.Check(false);
+            Check(must == 0 && available == 3, "forced mid-match: no MustUpdate");
+            u.Check(true);
+            Check(must == 1, "forced at start: MustUpdate even with the game open");
+            running = false;
+            u.Check(false);
+            Check(must == 2, "forced, game closed: MustUpdate");
+            // closing to install: the bar still follows, nothing else
+            u.ClosingForUpdate = true;
+            u.Check(true);
+            Check(changed == 7 && must == 2 && available == 5, "closing for an update: no more prompts");
+            next = null;
+            u.ClosingForUpdate = false;
+            u.Check(false);
+            Check(u.Pending == null && changed == 8, "back to up to date clears Pending");
+        }
+
         static void RunStructureTests()
         {
             Run("RoutingRelayMarginIsThreeMs", RoutingRelayMarginIsThreeMs);
@@ -485,6 +520,7 @@ namespace PingBoost
             Run("ControlDispatcherWaitsForTheHandle", ControlDispatcherWaitsForTheHandle);
             Run("StatsServiceRaisesOnceForTheGameOnScreen", StatsServiceRaisesOnceForTheGameOnScreen);
             Run("PlayerStatsPlayersAndSummary", PlayerStatsPlayersAndSummary);
+            Run("UpdateServicePromptsOnceAndNeverMidMatch", UpdateServicePromptsOnceAndNeverMidMatch);
         }
     }
 }
