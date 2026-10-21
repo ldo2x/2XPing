@@ -55,6 +55,7 @@ namespace PingBoost
         public string Note { get { return Lang.T(NoteEn, NoteAr); } }
         public bool Released;      // part of the public version; the rest only show in developer mode until fully tested
         public bool InDevelopment; // public, but its server lock is still being worked on: the game list says so
+        public bool ServerCheckOnly; // public, but only "which server am I on?": the game picks the region and a lock can't change it
         public string[] LockSpace; // games locked by "everything except the picked datacenters" (see IpLists)
         public string[] LockAllow; // never blocked (the game's own services that aren't match servers)
         public string[] DetectIgnore; // never the server the player is on (voice chat, services): the server check skips them
@@ -295,10 +296,10 @@ namespace PingBoost
                 new Game { Name = "Dota 2", Icon = "dota2", Provider = Provider.Valve, AppId = "570", SteamAppId = "570", Processes = new[] {"dota2"},
                     NoteEn = "Tick the servers you want to play on, then press Lock my servers.",
                     NoteAr = "علّم (✓) على السيرفرات اللي تبغى تلعب عليها، وبعدين اضغط «ثبّت سيرفراتي»." },
-                new Game { Name = "Arena Breakout: Infinite", Icon = "abi", Released = true, Provider = Provider.Tencent, SteamAppId = "2073620", Processes = new[] {"UAGame"},
+                new Game { Name = "Arena Breakout: Infinite", Icon = "abi", Released = true, ServerCheckOnly = true, Provider = Provider.Tencent, SteamAppId = "2073620", Processes = new[] {"UAGame"},
                     NoteEn = "The game picks your region from your account. Join a raid and press Which server am I on? to see your real server.",
                     NoteAr = "اللعبة تحدد منطقتك من حسابك. ادخل رايد واضغط «على أي سيرفر أنا؟» عشان تعرف سيرفرك الحقيقي." },
-                new Game { Name = "Overwatch 2", Icon = "overwatch", Released = true, InDevelopment = true, Provider = Provider.Blizzard, SteamAppId = "2357570", Processes = new[] {"Overwatch"}, LockSpace = OwSpace, LockAllow = OwAllow, DetectIgnore = OwIgnore, RegionMap = OwRegionMap,
+                new Game { Name = "Overwatch 2", Icon = "overwatch", InDevelopment = true, Provider = Provider.Blizzard, SteamAppId = "2357570", Processes = new[] {"Overwatch"}, LockSpace = OwSpace, LockAllow = OwAllow, DetectIgnore = OwIgnore, RegionMap = OwRegionMap,
                     LockPorts = "1-3723,3725-65535", // 3724 is Blizzard's own port: never block it
                     NoteEn = "Try a normal match first: if the game still picks a blocked region, the match won't load.",
                     NoteAr = "جرّبه في مباراة عادية أول: لو اللعبة اختارت منطقة محجوبة، المباراة ما تفتح." },

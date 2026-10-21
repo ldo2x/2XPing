@@ -803,12 +803,13 @@ namespace PingBoost
             var nameFlags = TextFormatFlags.EndEllipsis | TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix |
                             (Lang.Ar ? TextFormatFlags.Right : TextFormatFlags.Left);
             var nameColor = sel ? Theme.TextC : Color.FromArgb(206, 196, 226);
-            if (!g.Released || g.InDevelopment)
+            if (!g.Released || g.InDevelopment || g.ServerCheckOnly)
             {
                 // a small tag under the name, so the name keeps the whole width: "trial" (developer mode only, not in
-                // the public version yet) or "in development" (public, but its server lock is still being worked on)
-                bool trial = !g.Released;
-                string tag = trial ? T("TRIAL", "تجريبي") : T("IN DEVELOPMENT", "قيد التطوير");
+                // the public version yet), "in development" (public, but its server lock is still being worked on) or
+                // "server check only" (public, shows which server you're on; the game picks it, so there's no lock)
+                bool trial = !g.Released, check = !trial && g.ServerCheckOnly;
+                string tag = trial ? T("TRIAL", "تجريبي") : check ? T("SERVER CHECK ONLY", "يعرض سيرفرك بس") : T("IN DEVELOPMENT", "قيد التطوير");
                 using (var f = Fonts.Semi(7f))
                 {
                     const int tagH = 16, gap = 1;
@@ -819,8 +820,8 @@ namespace PingBoost
                     var tagRc = new Rectangle(Lang.Ar ? textRc.Right - tw - 2 : textRc.X + 2, top + nameH + gap, tw, tagH);
                     e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
                     using (var path = Shapes.Round(tagRc, 6))
-                    using (var b = new SolidBrush(trial ? Color.FromArgb(28, 70, 74) : Color.FromArgb(66, 52, 28))) e.Graphics.FillPath(b, path);
-                    TextRenderer.DrawText(e.Graphics, tag, f, tagRc, trial ? Theme.DevAccent : Theme.Warn,
+                    using (var b = new SolidBrush(trial ? Color.FromArgb(28, 70, 74) : check ? Color.FromArgb(48, 40, 78) : Color.FromArgb(66, 52, 28))) e.Graphics.FillPath(b, path);
+                    TextRenderer.DrawText(e.Graphics, tag, f, tagRc, trial ? Theme.DevAccent : check ? Theme.Lavender : Theme.Warn,
                         TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding |
                         (Lang.Ar ? TextFormatFlags.RightToLeft : 0));
                 }

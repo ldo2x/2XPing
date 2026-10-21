@@ -125,8 +125,9 @@ namespace PingBoost
                 int rows = (list.Count + 1) / 2;
                 // the games whose server lock is still in development say so under the tiles (the game list's tag)
                 var dev = list.Where(g => g.InDevelopment).Select(g => g.Name).ToList();
+                var check = list.Where(g => g.ServerCheckOnly).Select(g => g.Name).ToList();
                 const int DevNoteH = 40;
-                int gamesH = 46 + rows * 54 + 8 + (dev.Count > 0 ? DevNoteH : 0);
+                int gamesH = 46 + rows * 54 + 8 + (dev.Count > 0 || check.Count > 0 ? DevNoteH : 0);
                 y = M;
                 var gamesCard = section(colB, y, gamesH, Lang.T("Games in your list", "الألعاب اللي تظهر لك"));
                 var tiles = new List<GameTile>();
@@ -143,11 +144,14 @@ namespace PingBoost
                     gamesCard.Controls.Add(t);
                     tiles.Add(t);
                 }
-                if (dev.Count > 0)
+                if (dev.Count > 0 || check.Count > 0)
                     gamesCard.Controls.Add(new Label
                     {
-                        Text = Lang.T("The server lock for " + CardLogic.JoinNames(dev) + " is still in development.",
-                                      "تثبيت السيرفرات في " + CardLogic.JoinNames(dev) + " لسا قيد التطوير."),
+                        Text = Lang.T(
+                            (check.Count > 0 ? CardLogic.JoinNames(check) + " only shows which server you're on. " : "") +
+                            (dev.Count > 0 ? "The server lock for " + CardLogic.JoinNames(dev) + " is still in development." : ""),
+                            (check.Count > 0 ? CardLogic.JoinNames(check) + " يعرض سيرفرك بس. " : "") +
+                            (dev.Count > 0 ? "تثبيت السيرفرات في " + CardLogic.JoinNames(dev) + " لسا قيد التطوير." : "")).Trim(),
                         ForeColor = Theme.Warn, Font = Fonts.Ui(8.5f), Bounds = new Rectangle(16, 46 + rows * 54, W - 32, DevNoteH)
                     });
                 y += gamesH + Gap;

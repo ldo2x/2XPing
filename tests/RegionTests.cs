@@ -29,6 +29,21 @@ namespace PingBoost
             return g;
         }
 
+        // what players see: Deadlock in full, Arena Breakout for the server check only, Dead by Daylight in development;
+        // Overwatch 2 waits in developer mode until its lock is finished
+        static void PublicGameList()
+        {
+            GameDb.ShowUnreleased = false;
+            var pub = GameDb.Available(GameDb.All());
+            Check(pub.Any(g => g.Name == "Deadlock" && !g.InDevelopment && !g.ServerCheckOnly), "Deadlock fully public");
+            Check(pub.Any(g => g.Name == "Arena Breakout: Infinite" && g.ServerCheckOnly), "Arena Breakout: server check only");
+            Check(pub.Any(g => g.Name == "Dead by Daylight" && g.InDevelopment), "Dead by Daylight in development");
+            Check(!pub.Any(g => g.Name == "Overwatch 2"), "Overwatch 2 hidden from players");
+            GameDb.ShowUnreleased = true;
+            Check(GameDb.Available(GameDb.All()).Any(g => g.Name == "Overwatch 2"), "Overwatch 2 still in developer mode");
+            GameDb.ShowUnreleased = false;
+        }
+
         static RegionDef Def(Game g, string key)
         {
             return g.RegionMap.FirstOrDefault(d => d.Key == key);
@@ -275,6 +290,7 @@ namespace PingBoost
 
         static int Main()
         {
+            Run("PublicGameList", PublicGameList);
             Run("PlaceNameIsThePlace", PlaceNameIsThePlace);
             Run("OverwatchRegionsCoverEveryDatacenterOnce", OverwatchRegionsCoverEveryDatacenterOnce);
             Run("DeadlockRegionsSkipRelayOnly", DeadlockRegionsSkipRelayOnly);

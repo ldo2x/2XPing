@@ -44,7 +44,7 @@ Requires **Windows 10 or 11**. Nothing to install, and after that updates are on
 |---|---|
 | ✦ Where do you want to play? | One card shows your regions with ping, wait time and players; **Play in ...** locks you to them |
 | 📶 Ping test | Every region in 2-3 seconds; the Advanced layout adds jitter and packet loss per server |
-| 🔒 Region lock | **Deadlock** (and **Overwatch 2** and **Dead by Daylight**, in development: they work, still being tested): pick your regions and lock out the rest |
+| 🔒 Region lock | **Deadlock** (and **Dead by Daylight**, in development): pick your regions and lock out the rest |
 | 🧭 Smart Deadlock lock | Knows your shortest way into Valve's network (for example through Dubai), and tells you before you lock if the lock would raise your ping, and by how much; once locked, the card shows the ping to expect (e.g. "about 58 ms via Dubai") |
 | ✅ Where am I playing? | While you're in a match, the card says which region you're on and whether it's one you picked |
 | 👥 Player numbers | Estimated players per region and expected time to find a match (Deadlock) |
@@ -61,7 +61,10 @@ Requires **Windows 10 or 11**. Nothing to install, and after that updates are on
 ### Supported games
 **Deadlock** is fully supported.
 
-Arena Breakout: Infinite, Overwatch 2 and Dead by Daylight are in the app for testing; their lock works but isn't fully verified yet. Other games will be added once they work reliably.
+- **Arena Breakout: Infinite:** shows which server you're playing on. The game picks the region from your account, so it can't be changed.
+- **Dead by Daylight:** in development.
+
+Overwatch 2 and other games will be added once they work reliably.
 
 ## How to use
 
@@ -133,8 +136,7 @@ What's next: [ROADMAP.md](ROADMAP.md)
 - 2X Ping only sees your server while you are **inside** a match or raid (not the menu or practice).
 - In Deadlock, when the game enters through a relay (like Dubai), the match server can't be seen without `-condebug`.
 - Per-region player numbers exist for Deadlock only; other games show the Steam total.
-- In Overwatch 2 and Dead by Daylight (in development) the lock works for casual matches; ranked may still put you on your home region.
-- In Overwatch 2 a lock only works inside your game's region (Americas, Europe or Asia, as set in the game); 2X Ping warns you before you lock outside it.
+- In Dead by Daylight (in development) the lock works for casual matches; ranked may still put you on your home region.
 
 ## 💬 Contact
 | Channel | For |
