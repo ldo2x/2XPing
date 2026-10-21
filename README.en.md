@@ -54,6 +54,7 @@ Requires **Windows 10 or 11**. Nothing to install, and after that updates are on
 | 🕒 In the taskbar | Minimize it while you play: the lock keeps working, hovering its taskbar button shows your live ping, and important notices flash it |
 | 🪶 Light | Open and idle it uses about 56 KB of internet an hour; while you're in the game it stays quiet and the automatic check waits until you come back |
 | 💬 No annoying popups | Notices show up like game-chat lines and fade out by themselves |
+| ✉️ Contact us | Write a problem, idea or question inside the app and press Send; it reaches us with the diagnostics |
 | ⚡ One-click updates | Downloads the new version, checks its SHA256 and reopens in seconds |
 | 🚀 Relay speed-up (Advanced) | Routes only the game's connection through your own VPS when that path is faster |
 | 🌐 Arabic & English | Full right-to-left Arabic interface |

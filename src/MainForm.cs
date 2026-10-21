@@ -348,7 +348,7 @@ namespace PingBoost
                 Visible = !simple && graphLive
             });
             header.Controls.Add(HeaderButton(T("Settings", "الإعدادات"), 120, Theme.TextC, OpenSettings));
-            header.Controls.Add(HeaderButton(T("Feedback", "تواصل معنا"), 120, Theme.Warn, () =>
+            header.Controls.Add(HeaderButton(T("Contact us", "تواصل معنا"), 120, Theme.Warn, () =>
             {
                 Telemetry.Send("use", null, -1, "feedback");
                 ContactDialog.Show(this, logBox.Text);
