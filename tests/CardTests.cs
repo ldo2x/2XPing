@@ -25,7 +25,7 @@ namespace PingBoost
             i.Game = "Overwatch 2";
             i.InDevelopment = true;
             var v = CardLogic.Decide(i);
-            Check(v.Kind == CardKind.Choose && v.Note == "تثبيت السيرفرات لهادي اللعبة لسا قيد التطوير. جرّب مباراة عادية أول.", "Arabic note: " + v.Note);
+            Check(v.Kind == CardKind.Choose && v.Note == "تثبيت السيرفرات لهادي اللعبة قيد التطوير. جرّب مباراة عادية أول.", "Arabic note: " + v.Note);
             Lang.Ar = false;
             Check(CardLogic.Decide(i).Note == "Server lock for this game is still in development. Try a normal match first.", "English note");
             i.InDevelopment = false;

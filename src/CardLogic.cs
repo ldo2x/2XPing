@@ -240,7 +240,7 @@ namespace PingBoost
         public static string InDevelopmentNote()
         {
             return Lang.T("Server lock for this game is still in development. Try a normal match first.",
-                          "تثبيت السيرفرات لهادي اللعبة لسا قيد التطوير. جرّب مباراة عادية أول.");
+                          "تثبيت السيرفرات لهادي اللعبة قيد التطوير. جرّب مباراة عادية أول.");
         }
 
         // The Settings switch that keeps Dubai open as a way in (Prefs.DubaiWayIn), as the card names it.

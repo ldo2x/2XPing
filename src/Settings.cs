@@ -151,7 +151,7 @@ namespace PingBoost
                             (check.Count > 0 ? CardLogic.JoinNames(check) + " only shows which server you're on. " : "") +
                             (dev.Count > 0 ? "The server lock for " + CardLogic.JoinNames(dev) + " is still in development." : ""),
                             (check.Count > 0 ? CardLogic.JoinNames(check) + " يعرض سيرفرك بس. " : "") +
-                            (dev.Count > 0 ? "تثبيت السيرفرات في " + CardLogic.JoinNames(dev) + " لسا قيد التطوير." : "")).Trim(),
+                            (dev.Count > 0 ? "تثبيت السيرفرات في " + CardLogic.JoinNames(dev) + " قيد التطوير." : "")).Trim(),
                         ForeColor = Theme.Warn, Font = Fonts.Ui(8.5f), Bounds = new Rectangle(16, 46 + rows * 54, W - 32, DevNoteH)
                     });
                 y += gamesH + Gap;
