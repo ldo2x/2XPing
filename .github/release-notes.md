@@ -1,13 +1,12 @@
 <div dir="rtl">
 
-## 2X Ping 0.12 (نسخة تجريبية)
+## 2X Ping 0.13 (نسخة تجريبية)
 
 ### الجديد
-- شاشة رئيسية أبسط: بطاقة وحدة تقولك وش يصير، وتحتها المناطق مع البنق ووقت الانتظار.
-- تثبيت ديدلوك يعرف أقصر طريق لك، ويقولك البنق المتوقع قبل ما تثبّت.
-- دبي صارت من مناطق جنوب شرق آسيا، وفيه إعداد «دبي كطريق لأوروبا» لبنق أقل من الخليج.
-- مع خيار التشغيل `-condebug` يسمّي البرنامج سيرفر المباراة الحقيقي.
-- أعداد لاعبين أدق، واستهلاك أقل للجهاز والنت.
+- زر «تواصل معنا» صار نموذج واحد: تكتب مشكلة أو فكرة أو سؤال وتضغط «أرسل»، وتوصلنا مباشرة مع إصدار البرنامج والويندوز وآخر السجل.
+- خيار جديد في الإعدادات «شارك إحصائيات البيتا». إذا طفّيته تنرسل الإحصائيات مجهولة، بدون اسمك واسم جهازك ومدينتك وشركة النت.
+- أول مرة تثبّت أو تستخدم الوسيط، البرنامج يقولك وش يغيّر في جهازك وكيف ينشال.
+- قائمة الألعاب: ديدلوك هي اللعبة المدعومة. Arena Breakout يعرض سيرفرك بس، وDead by Daylight قيد التطوير.
 
 ### التحميل
 1. نزّل ملف `2XPing-v...zip` من تحت وفك الضغط.
@@ -24,14 +23,13 @@
 
 ---
 
-## 2X Ping 0.12 (beta)
+## 2X Ping 0.13 (beta)
 
 ### What's new
-- A simpler main screen: one card says what's happening, with your regions, ping and queue time under it.
-- The Deadlock lock follows your shortest route and shows the ping to expect before you lock.
-- Dubai now counts as SE Asia, and the "Dubai as a way to Europe" setting gives lower ping from the Gulf.
-- With the `-condebug` launch option, 2X Ping names the real match server.
-- More accurate player numbers, and lighter on your PC and connection.
+- "Contact us" is now one form: write a problem, idea or question and press Send. It reaches us directly, with the app and Windows version and the recent log.
+- New "Share beta statistics" option in Settings. Turn it off and the statistics are sent anonymously, without your name, PC name, city or internet provider.
+- The first time you lock or use a relay, 2X Ping tells you what it changes on your PC and how it's undone.
+- Game list: Deadlock is the supported game. Arena Breakout only shows your server, and Dead by Daylight is in development.
 
 ### Download
 1. Download `2XPing-v...zip` below and extract it.
