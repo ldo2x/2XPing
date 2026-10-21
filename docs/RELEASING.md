@@ -12,7 +12,8 @@ The public version only shows the games marked `Released = true` in `src/GameDb.
 - [ ] `powershell -ExecutionPolicy Bypass -File build.ps1 -Release` builds without errors
 
 ## 2. صفحة قيتهب | GitHub page
-- [ ] `README.md` and `README.en.md`: features table, supported games, how to use, known issues
+- [ ] `README.md` and `README.en.md`: features table, supported games, how to use, known issues (keep the search phrases: "server selector", "Deadlock server selector", «اختيار سيرفر ديدلوك», and the FAQ)
+- [ ] Website (GitHub Pages from `docs/`): `docs/index.html` and `docs/ar/index.html` (text, FAQ and its JSON-LD, supported games), and `<lastmod>` in `docs/sitemap.xml`
 - [ ] `docs/screenshot-ar.png` and `docs/screenshot-en.png`: fresh captures of the new version
 - [ ] `docs/social/social-preview.html` -> `social-preview.png` (Edge headless, 1280x640), then upload it in the repo's Settings > Social preview (can't be done from the command line)
 - [ ] Description and topics: `gh repo edit ldo2x/2XPing --description "..." --add-topic ... --remove-topic ...`

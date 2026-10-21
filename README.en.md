@@ -4,7 +4,8 @@
 
 <p align="center">
 <b>Lower ping, faster queues.</b><br>
-Tests your game's servers in seconds, tells you where to play, and locks you to the server you want.<br>
+Free <b>server selector</b> and <b>region lock</b> for Windows: tests your game's servers in seconds, tells you where to play, and locks you to the server you want.<br>
+<b>Deadlock server selector</b> · Arena Breakout: Infinite · Overwatch 2 · Dead by Daylight<br>
 Made by <b>lDo2x</b>
 </p>
 
@@ -16,7 +17,7 @@ Made by <b>lDo2x</b>
 <a href="README.md"><img src="https://img.shields.io/badge/lang-العربية-lightgrey" alt="Arabic"></a>
 </p>
 
-<p align="center"><a href="../../releases"><b>⬇️ Download the latest version</b></a> · <a href="docs/2XPing-Guide-AR.pdf"><b>📖 Guide (PDF, Arabic)</b></a></p>
+<p align="center"><a href="../../releases"><b>⬇️ Download the latest version</b></a> · <a href="https://ldo2x.github.io/2XPing/"><b>🌐 Website</b></a> · <a href="docs/2XPing-Guide-AR.pdf"><b>📖 Guide (PDF, Arabic)</b></a></p>
 
 > [!WARNING]
 > **Beta version.** 2X Ping is still in development: expect bugs, and features may change.
@@ -78,6 +79,23 @@ Other games (CS2, Dota 2, Valorant, Fortnite, PUBG, Apex, Rocket League) are bei
 - **Beta statistics:** while open, the app sends the name you enter on first launch, your computer's name, your city, country and internet provider, your PC's hardware and setup, the game, server and ping you use, ping-test results, a short report of each match (which datacenter it was on, the game's own ping, and whether it was inside your lock), which features you use, and error logs, to improve the beta. You are told on first launch and accepting is required to use the beta. Details in [SECURITY.md](SECURITY.md).
 - 2X Ping **never changes game files or touches game memory** (the only game file it reads is Deadlock's console log, if you turned on `-condebug`). Everything it changes (firewall rules, tunnel) is undone when you stop it or close the app. See [SECURITY.md](SECURITY.md).
 - Some games have their own anti-cheat policies; use the app at your own risk.
+
+## FAQ
+
+**How do I change my server region in Deadlock?**
+Open 2X Ping, pick Deadlock, tick the regions you want and press **Play in ...**, then restart the game and queue. The other regions are blocked in Windows Firewall, so matchmaking can only place you where you chose. **Unlock** (or closing the app) removes the lock.
+
+**Is it a Deadlock server selector / region selector?**
+Yes: 2X Ping is a server selector (server picker, region lock) for Deadlock, Arena Breakout: Infinite, Overwatch 2 and Dead by Daylight, with a ping tester built in.
+
+**Does it change game files?**
+No. It never changes game files or touches game memory; it only adds Windows Firewall rules and removes them when you unlock or close it.
+
+**Will it lower my ping?**
+It can't make your internet faster, but it keeps you on the regions with the lowest ping and the shortest route into the game's network, and tells you the ping to expect before you lock.
+
+**Is it free?**
+Yes, free and open source (MIT).
 
 ## Build from source
 ```powershell
