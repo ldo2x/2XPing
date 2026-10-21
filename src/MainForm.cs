@@ -168,6 +168,8 @@ namespace PingBoost
                 long startupMs = 0;
                 try { startupMs = (long)(DateTime.Now - Process.GetCurrentProcess().StartTime).TotalMilliseconds; } catch { }
                 Telemetry.Start(allGames, startupMs);
+                // messages from «تواصل معنا» that couldn't be sent last time
+                if (Telemetry.Configured) Feedback.ResendQueuedLater();
                 if (startupMs > 8000) Issues.Report("slow_startup", startupMs + " ms from launch to the window",
                     new Dictionary<string, object> { { "ms", startupMs } });
                 SelectStartGame();

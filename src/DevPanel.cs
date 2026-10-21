@@ -15,11 +15,12 @@ namespace PingBoost
     // of the main window in developer mode. Reads with the secret key kept in dev.key on the developer's PC.
     class DevPanel : Panel
     {
-        ListView online, stats, log, versions, devices, issues;
+        ListView online, stats, log, versions, devices, issues, messages;
+        TextBox messageText;
         Label summary;
         CheckBox errorsOnly;
         System.Windows.Forms.Timer refresh;
-        object[] installs = new object[0], events = new object[0], issueEvents = new object[0];
+        object[] installs = new object[0], events = new object[0], issueEvents = new object[0], feedbackEvents = new object[0];
         bool loadedOnce;
         TabControl tabs;
         TabPage dashPage;
@@ -63,6 +64,27 @@ namespace PingBoost
             var logPage = new TabPage("Log") { BackColor = Theme.Bg };
             logPage.Controls.Add(log);
             logPage.Controls.Add(errorsOnly);
+            // «الرسائل»: what players wrote in «تواصل معنا», newest first; the selected one in full below, with a copy button
+            messages = List("Time", 110, "Type", 75, "Message", 420, "Contact", 140, "Name", 130, "Version", 90, "Game", 110);
+            messageText = new TextBox
+            {
+                Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, BorderStyle = BorderStyle.None,
+                BackColor = Theme.Panel1, ForeColor = Theme.TextC
+            };
+            var copyMessage = new RoundButton { Text = Lang.T("Copy", "انسخ"), Dock = DockStyle.Right, Width = 90, BackColor = Theme.Panel2 };
+            copyMessage.Click += delegate { if (messageText.TextLength > 0) try { Clipboard.SetText(messageText.Text); } catch { } };
+            var messageBottom = new Panel { Dock = DockStyle.Bottom, Height = 230, Padding = new Padding(0, 6, 0, 0) };
+            messageBottom.Controls.Add(messageText);
+            messageBottom.Controls.Add(new Panel { Dock = DockStyle.Right, Width = 8 });
+            messageBottom.Controls.Add(copyMessage);
+            messages.SelectedIndexChanged += delegate
+            {
+                messageText.Text = messages.SelectedItems.Count > 0 ? (string)messages.SelectedItems[0].Tag : "";
+            };
+            var messagesPage = new TabPage(Lang.T("Messages", "الرسائل")) { BackColor = Theme.Bg };
+            messagesPage.Controls.Add(messages);
+            messagesPage.Controls.Add(messageBottom);
+            tabs.TabPages.Add(messagesPage);
             tabs.TabPages.Add(Page("Problems", issues));
             tabs.TabPages.Add(Page("Online now", online));
             tabs.TabPages.Add(Page("Statistics", stats));
@@ -176,7 +198,8 @@ namespace PingBoost
                     var i = Telemetry.Query("installs?select=*&order=last_seen.desc&limit=5000");
                     var e = Telemetry.Query("events?select=*&order=at.desc&limit=500");
                     var p = Telemetry.Query("events?select=*&kind=eq.issue&order=at.desc&limit=3000");
-                    BeginInvoke((Action)(() => { installs = i; events = e; issueEvents = p; Fill(); }));
+                    var m = Telemetry.Query("events?select=*&kind=eq.feedback&order=at.desc&limit=500");
+                    BeginInvoke((Action)(() => { installs = i; events = e; issueEvents = p; feedbackEvents = m; Fill(); }));
                 }
                 catch (Exception ex)
                 {
@@ -275,7 +298,48 @@ namespace PingBoost
 
             FillLog();
             FillIssues();
+            FillMessages();
         }
+
+        // Messages from «تواصل معنا» (kind 'feedback'): the list, and each one's full text with its diagnostics as the item's tag.
+        void FillMessages()
+        {
+            var names = installs.ToDictionary(r => S(r, "install_id"), r => ShownName(r));
+            messages.BeginUpdate();
+            messages.Items.Clear();
+            foreach (var r in feedbackEvents)
+            {
+                string name;
+                if (!names.TryGetValue(S(r, "install_id"), out name)) name = "?";
+                string type = Field(r, "data", "type"), contact = Field(r, "data", "contact"), text = S(r, "detail");
+                var item = new ListViewItem(new[] { T(r, "at").ToString("MM-dd HH:mm"), MessageType(type),
+                    text.Replace("\r", " ").Replace("\n", " "), contact, name, S(r, "app_version"), S(r, "game") });
+                item.ForeColor = type == "problem" ? Theme.Warn : type == "idea" ? Theme.Good : Theme.Lavender;
+                item.Tag = MessageDetails(T(r, "at"), MessageType(type), name, contact, S(r, "app_version"), S(r, "game"), text,
+                                          Field(r, "data", "diagnostics"));
+                messages.Items.Add(item);
+            }
+            if (messages.Items.Count == 0) NoData(messages, "No messages yet");
+            messages.EndUpdate();
+            messageText.Text = "";
+        }
+
+        static string MessageType(string type)
+        {
+            return type == "idea" ? "Idea · فكرة" : type == "question" ? "Question · سؤال" : "Problem · مشكلة";
+        }
+
+        // One message in full, ready to read or copy.
+        internal static string MessageDetails(DateTime at, string type, string name, string contact, string version, string game,
+                                              string text, string diagnostics)
+        {
+            string nl = Environment.NewLine;
+            return type + "  ·  " + at.ToString("yyyy-MM-dd HH:mm") + "  ·  " + name + nl +
+                   "Contact: " + (contact != "" ? contact : "-") + "  ·  " + version + (game != "" ? "  ·  " + game : "") + nl + nl +
+                   Lines(text) + nl + nl + Lines(diagnostics);
+        }
+
+        static string Lines(string t) { return (t ?? "").Replace("\r\n", "\n").Replace("\n", Environment.NewLine); }
 
         // Problems the apps found by themselves (Issues), grouped by kind: how often, how many players, latest example.
         void FillIssues()

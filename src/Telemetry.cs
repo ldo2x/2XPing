@@ -232,9 +232,32 @@ namespace PingBoost
             if (share) EnsureLocation(lookup); // off: no location lookup at all
             if (info == null && launchInfo != null && infoSentAs != (share ? 1 : 0)) info = launchInfo;
             var p = Payload(share, kind, game ?? Game, server ?? Server, ping, detail, data, info);
+            Checkin(p, timeout);
+            if (info != null) infoSentAs = share ? 1 : 0;
+        }
+
+        // One checkin() call. checkin() returns nothing, and drops kinds it doesn't know without an error, so any 2xx
+        // answer counts as delivered; anything else throws.
+        internal static void Checkin(Dictionary<string, object> p, int timeout)
+        {
             string body = "{\"p\":" + new JavaScriptSerializer().Serialize(p) + "}";
             Http.Send("POST", SupabaseUrl.TrimEnd('/') + "/rest/v1/rpc/checkin", body, Headers(SupabaseKey), timeout);
-            if (info != null) infoSentAs = share ? 1 : 0;
+        }
+
+        // A message from the «تواصل معنا» form (Feedback). The player pressed Send, so it goes out even while
+        // «شارك إحصائيات البيتا» is off; then the identity fields are the anonymous ones, plus the contact they typed.
+        // The message and the contact are the player's own words and are sent as written; the diagnostics are scrubbed.
+        internal static Dictionary<string, object> FeedbackPayload(Feedback.Message m, bool share)
+        {
+            var data = new Dictionary<string, object>
+            {
+                { "type", m.Type }, { "diagnostics", m.Diagnostics ?? "" }, { "lang", m.Lang }, { "id", m.Id },
+                { "written", m.Written.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ", System.Globalization.CultureInfo.InvariantCulture) }
+            };
+            var p = Payload(share, "feedback", Game, Server, -1, null, data, null);
+            p["detail"] = Feedback.Cap(m.Text);
+            ((Dictionary<string, object>)p["data"])["contact"] = Feedback.CapContact(m.Contact);
+            return p;
         }
 
         // The body of one checkin() call. share = false: the name, the PC name, the location and the internet provider get

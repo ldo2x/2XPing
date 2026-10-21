@@ -177,99 +177,12 @@ namespace PingBoost
         }
     }
 
-    // "Feedback & contact": the beta tester's way to reach the developer.
+    // «تواصل معنا» / Feedback: the message form (ContactForm) and the diagnostics attached to every message.
     static class ContactDialog
     {
         public static void Show(IWin32Window owner, string log)
         {
-            using (var f = new Form())
-            {
-                f.Text = Lang.T("Feedback & contact", "تواصل معنا");
-                f.FormBorderStyle = FormBorderStyle.FixedDialog;
-                f.StartPosition = FormStartPosition.CenterParent;
-                f.MinimizeBox = f.MaximizeBox = false;
-                f.ShowInTaskbar = false;
-                f.BackColor = Theme.Bg;
-                f.ForeColor = Theme.TextC;
-                f.Font = Fonts.Ui(10f);
-                // RTL text without mirrored layout: the layout here is symmetric anyway
-                f.RightToLeft = Lang.Ar ? RightToLeft.Yes : RightToLeft.No;
-
-                int y = 16;
-                f.Controls.Add(new Label
-                {
-                    Text = Lang.T("You're using a beta. Your feedback decides what we fix and add next.",
-                                  "إنت تجرّب نسخة بيتا، ورأيك هو اللي يحدد وش نصلّح ونضيف بعدين."),
-                    ForeColor = Theme.Warn, Bounds = new Rectangle(16, y, 448, 44)
-                });
-                y += 52;
-
-                Action<string, string, Action<Button>> row = (title, sub, act) =>
-                {
-                    var b = new RoundButton
-                    {
-                        Text = title, Bounds = new Rectangle(16, y, 448, 40), FlatStyle = FlatStyle.Flat,
-                        BackColor = Theme.Panel2, ForeColor = Theme.TextC, Cursor = Cursors.Hand,
-                        TextAlign = ContentAlignment.MiddleLeft, // flipped to the right automatically in RTL
-                        Padding = new Padding(10, 0, 10, 0)
-                    };
-                    b.FlatAppearance.BorderSize = 0;
-                    b.Click += delegate { act(b); };
-                    f.Controls.Add(b);
-                    f.Controls.Add(new Label
-                    {
-                        Text = sub, ForeColor = Theme.Dim, Font = Fonts.Ui(8.5f),
-                        Bounds = new Rectangle(18, y + 42, 446, 20)
-                    });
-                    y += 70;
-                };
-
-                row(Lang.T("Report a bug", "بلّغ عن مشكلة"),
-                    Lang.T("GitHub Issues - tip: press 'Copy diagnostic info' first and paste it in",
-                           "على GitHub. نصيحة: اضغط «انسخ معلومات التشخيص» أول، والصقها في البلاغ"),
-                    b => Brand.Open(Brand.IssuesUrl + "/new/choose"));
-                row(Lang.T("Suggest an idea / ask a question", "اقترح فكرة أو اسأل"),
-                    Lang.T("GitHub Discussions", "ساحة النقاش على GitHub"),
-                    b => Brand.Open(Brand.DiscussionsUrl));
-                // copying shows "Copied ✓" on the button itself for a moment, no popup
-                Action<Button, string> copied = (b, text) =>
-                {
-                    string before = b.Text;
-                    b.Text = text;
-                    b.ForeColor = Theme.Good;
-                    var t = new Timer { Interval = 2000 };
-                    t.Tick += delegate { t.Stop(); t.Dispose(); if (!b.IsDisposed) { b.Text = before; b.ForeColor = Theme.TextC; } };
-                    t.Start();
-                };
-                row("Discord: " + Brand.DiscordUser,
-                    string.IsNullOrEmpty(Brand.DiscordInvite)
-                        ? Lang.T("Click to copy the username, then add it as a friend on Discord", "اضغط عشان تنسخ اليوزر، وبعدين ضيفه في ديسكورد")
-                        : Lang.T("Join the community server", "ادخل سيرفر المجتمع"),
-                    b =>
-                    {
-                        if (!string.IsNullOrEmpty(Brand.DiscordInvite)) { Brand.Open(Brand.DiscordInvite); return; }
-                        try { Clipboard.SetText(Brand.DiscordUser); } catch { }
-                        copied(b, Lang.T("Copied ✓  ", "انتسخ ✓  ") + Brand.DiscordUser);
-                    });
-                row(Lang.T("Copy diagnostic info", "انسخ معلومات التشخيص"),
-                    Lang.T("Version, Windows and the recent log - no personal data", "الإصدار والويندوز وآخر السجل، بدون أي بيانات شخصية"),
-                    b =>
-                    {
-                        try { Clipboard.SetText(Diagnostics(log)); } catch { }
-                        copied(b, Lang.T("Copied ✓  paste it into your report", "انتسخ ✓  الصقه في البلاغ"));
-                    });
-
-                var ok = new RoundButton
-                {
-                    Text = Lang.T("Close", "إغلاق"), DialogResult = DialogResult.OK, Bounds = new Rectangle(184, y + 4, 112, 34),
-                    FlatStyle = FlatStyle.Flat, BackColor = Theme.Accent, ForeColor = Color.Black
-                };
-                ok.FlatAppearance.BorderSize = 0;
-                f.Controls.Add(ok);
-                f.AcceptButton = ok;
-                f.ClientSize = new Size(480, y + 52);
-                f.ShowDialog(owner);
-            }
+            using (var f = new ContactForm(log)) f.ShowDialog(owner);
         }
 
         public static string Diagnostics(string log)

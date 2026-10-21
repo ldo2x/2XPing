@@ -13,7 +13,7 @@
 --   "days": 30, "generated_at": "2026-10-14T09:00:00Z",
 --   "counters": { "installs_total", "installs_anonymous" (statistics sharing switched off in Settings: the app sends
 --                 nickname '(anonymous)' and info {"anonymous": true}), "online_now", "active_today", "active_7d", "active_30d", "active_period",
---                 "new_today", "new_7d", "matches_today", "locks_today", "issues_24h", "errors_24h",
+--                 "new_today", "new_7d", "matches_today", "locks_today", "issues_24h", "feedback_7d" (messages from «تواصل معنا»), "errors_24h",
 --                 "matches_period", "locks_period" },
 --   "deltas":   { same keys where a fair comparison exists: today vs yesterday up to the same hour, 7 d vs the 7 d
 --                 before, 24 h vs the 24 h before (active_* deltas are counted from events on both sides) },
@@ -80,6 +80,7 @@ begin
     'matches_today',  (select count(*) from events where kind = 'match' and coalesce(data->>'same_server_as_prev', 'false') <> 'true' and at >= t0),
     'locks_today',    (select count(*) from events where kind = 'lock' and at >= t0),
     'issues_24h',     (select count(*) from events where kind = 'issue' and at > now() - interval '24 hours'),
+    'feedback_7d',    (select count(*) from events where kind = 'feedback' and at > now() - interval '7 days'),
     'errors_24h',     (select count(*) from events where kind = 'error' and at > now() - interval '24 hours'),
     'matches_period', (select count(*) from events where kind = 'match' and coalesce(data->>'same_server_as_prev', 'false') <> 'true' and at >= p0),
     'locks_period',   (select count(*) from events where kind = 'lock' and at >= p0)

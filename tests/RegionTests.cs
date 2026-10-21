@@ -301,6 +301,7 @@ namespace PingBoost
             RunDashboardTests();
             RunMatchReportTests();
             RunTelemetryTests();
+            RunFeedbackTests();
             Console.WriteLine(failures == 0 ? "ALL PASS" : failures + " FAILED");
             return failures == 0 ? 0 : 1;
         }

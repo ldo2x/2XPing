@@ -290,6 +290,8 @@ namespace PingBoost
             Tile(s, "matches_today", T("Matches today", "مباريات اليوم"), T("vs yesterday", "عن أمس"), empty);
             Tile(s, "locks_today", T("Locks today", "تثبيتات اليوم"), T("vs yesterday", "عن أمس"), empty);
             Tile(s, "issues_24h", T("Problems 24 h", "مشاكل آخر 24 ساعة"), T("vs the 24 h before", "عن اليوم اللي قبله"), empty, true);
+            // messages from «تواصل معنا» (DevPanel's Messages tab lists them); "-" until dev_stats() counts them
+            Tile(s, "feedback_7d", T("New messages (7 days)", "رسائل جديدة (7 أيام)"), null, empty);
 
             var days = s.Series;
             Func<Func<DashDay, long>, double[]> col = f => days.Select(d => (double)f(d)).ToArray();

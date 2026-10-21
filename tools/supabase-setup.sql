@@ -86,9 +86,9 @@ begin
   end;
   if iid is null then return; end if;
 
-  -- only the event kinds the app sends
+  -- only the event kinds the app sends ('feedback' = a message from «تواصل معنا», 0.13)
   if k not in ('heartbeat', 'start', 'exit', 'test', 'lock', 'unlock', 'detect', 'boost', 'reset', 'error', 'issue',
-               'use', 'settings', 'traffic', 'update', 'locktest', 'match') then
+               'use', 'settings', 'traffic', 'update', 'locktest', 'match', 'feedback') then
     return;
   end if;
 
