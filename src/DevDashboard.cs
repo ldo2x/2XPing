@@ -220,7 +220,8 @@ namespace PingBoost
                 catch (WebException ex)
                 {
                     var r = ex.Response as HttpWebResponse;
-                    error = r != null && r.StatusCode == HttpStatusCode.NotFound
+                    var f = ex as HttpFailure;
+                    error = (f != null ? f.Code == HttpStatusCode.NotFound : r != null && r.StatusCode == HttpStatusCode.NotFound)
                         ? T("dev_stats() isn't in the database yet: run tools/supabase-dev-stats.sql in Supabase.",
                             "dev_stats() مو موجودة في القاعدة لسا: شغّل tools/supabase-dev-stats.sql في Supabase.")
                         : T("Couldn't load: ", "ما قدرنا نحمّل: ") + ex.Message;

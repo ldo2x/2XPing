@@ -162,6 +162,13 @@ namespace PingBoost
         }
     }
 
+    // A failed request that keeps its status code after the response (and the server's reason) was read
+    class HttpFailure : WebException
+    {
+        public readonly HttpStatusCode Code;
+        public HttpFailure(string message, WebException inner, HttpStatusCode code) : base(message, inner, inner.Status, null) { Code = code; }
+    }
+
     static class Http
     {
         // Request with custom headers (used for the statistics backend). Returns the response body.
@@ -180,9 +187,37 @@ namespace PingBoost
                 req.ContentLength = bytes.Length;
                 using (var s = req.GetRequestStream()) s.Write(bytes, 0, bytes.Length);
             }
-            using (var resp = req.GetResponse())
-            using (var sr = new StreamReader(resp.GetResponseStream()))
-                return sr.ReadToEnd();
+            try
+            {
+                using (var resp = req.GetResponse())
+                using (var sr = new StreamReader(resp.GetResponseStream()))
+                    return sr.ReadToEnd();
+            }
+            catch (WebException ex)
+            {
+                // Keep the server's own reason ("Invalid API key", "permission denied for function ..."): a bare 401 can't tell them apart
+                var resp = ex.Response as HttpWebResponse;
+                if (resp == null) throw;
+                var code = resp.StatusCode;
+                string why = ServerMessage(resp);
+                if (why == null) throw;
+                throw new HttpFailure(ex.Message + " " + why, ex, code);
+            }
+        }
+
+        static string ServerMessage(HttpWebResponse resp)
+        {
+            try
+            {
+                using (resp)
+                using (var sr = new StreamReader(resp.GetResponseStream()))
+                {
+                    string body = sr.ReadToEnd();
+                    var m = System.Text.RegularExpressions.Regex.Match(body, "\"message\"\\s*:\\s*\"([^\"]{1,200})\"");
+                    return m.Success ? "(" + m.Groups[1].Value + ")" : null;
+                }
+            }
+            catch (Exception) { return null; }
         }
 
         public static string Get(string url, int timeout)
