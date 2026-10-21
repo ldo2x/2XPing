@@ -851,14 +851,15 @@ namespace PingBoost
         {
             Telemetry.Send("use", null, -1, "settings");
             bool resetAsked;
-            bool dubaiBefore = Prefs.DubaiWayIn;
+            bool dubaiBefore = Prefs.DubaiWayIn, shareBefore = Prefs.ShareStats;
             bool rebuild = SettingsDialog.Show(this, out resetAsked);
             bool dubaiChanged = Prefs.DubaiWayIn != dubaiBefore;
-            if (rebuild || dubaiChanged)
+            // sent the new way already: switched off, this event is anonymous itself
+            if (rebuild || dubaiChanged || Prefs.ShareStats != shareBefore)
                 Telemetry.Send("settings", null, -1, (Prefs.Simple ? "simple" : "advanced") + ", " + (Lang.Ar ? "ar" : "en"),
                     new Dictionary<string, object> { { "mode", Prefs.Simple ? "simple" : "advanced" }, { "lang", Lang.Ar ? "ar" : "en" },
                                                      { "hidden_games", string.Join(",", Prefs.HiddenGames) }, { "autotest", Prefs.AutoTest },
-                                                     { "dubai_way_in", Prefs.DubaiWayIn } });
+                                                     { "dubai_way_in", Prefs.DubaiWayIn }, { "share_stats", Prefs.ShareStats } });
             if (rebuild)
             {
                 if (busy) pendingRebuild = true;

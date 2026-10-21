@@ -73,8 +73,9 @@ namespace PingBoost
                 }
                 int y = 244 + gamesH + 12;
 
-                // what is sent, in the words of SECURITY.md's table; the details link sits inside the same card
-                const int NoticeH = 150;
+                // what is sent, in the words of SECURITY.md's table; the details link sits inside the same card. The
+                // statistics switch has no box here: the text says it is on and where to turn it off (Settings).
+                const int NoticeH = 172;
                 var noticeCard = new Card { Bounds = new Rectangle(20, y, W, NoticeH), Fill = Theme.Panel1, Radius = 14 };
                 f.Controls.Add(noticeCard);
                 var notice = new Label
@@ -83,19 +84,21 @@ namespace PingBoost
                     Text = Lang.T(
                         "This is a beta. While it's open, 2X Ping sends your name and PC name, PC info, location (city and internet provider), " +
                         "the game, each match's server and ping, and error logs, so we can improve it.\n" +
+                        "\"Share beta statistics\" is on. Turn it off any time in Settings and only anonymous usage is sent.\n" +
                         "Updates are required: you get " + Updater.Days(Updater.GraceDays) + ".\nYou need to agree to use the beta.",
                         "هادي نسخة تجريبية، والبرنامج وهو مفتوح يرسل لنا اسمك واسم جهازك ومعلومات جهازك ومدينتك وشركة النت " +
                         "واللعبة وسيرفر كل مباراة والبنق وسجل الأخطاء عشان نطوّره.\n" +
+                        "«شارك إحصائيات البيتا» شغّال، وتقدر تطفّيه أي وقت من الإعدادات، وساعتها يوصلنا استخدام مجهول بس.\n" +
                         "التحديثات إجبارية، وعندك " + Updater.Days(Updater.GraceDays) + ".\nلازم توافق عشان تستخدمه.")
                 };
                 noticeCard.Controls.Add(notice);
                 var details = new LinkLabel
                 {
-                    Text = Lang.T("Statistics details", "تفاصيل الإحصائيات"), Bounds = new Rectangle(14, NoticeH - 32, W - 28, 24),
+                    Text = Lang.T("Privacy and statistics details", "الخصوصية وتفاصيل الإحصائيات"), Bounds = new Rectangle(14, NoticeH - 32, W - 28, 24),
                     BackColor = Theme.Panel1, TextAlign = Lang.Ar ? ContentAlignment.MiddleRight : ContentAlignment.MiddleLeft,
                     LinkColor = Theme.Lavender, ActiveLinkColor = Color.White, LinkBehavior = LinkBehavior.HoverUnderline
                 };
-                details.LinkClicked += delegate { Brand.Open(Brand.RepoUrl + "/blob/main/SECURITY.md#usage-statistics-beta"); };
+                details.LinkClicked += delegate { Brand.Open(Brand.PrivacyUrl); };
                 noticeCard.Controls.Add(details);
                 y += NoticeH + 8;
 

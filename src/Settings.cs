@@ -13,6 +13,8 @@ namespace PingBoost
         public static bool AutoTest { get { return Storage.GetSetting("autotest") != "0"; } }
         // Deadlock: keep Dubai open as the way in when the lock doesn't pick SE Asia (DeadlockData.Gateways); on by default
         public static bool DubaiWayIn { get { return Storage.GetSetting("dubai_way_in") != "0"; } }
+        // «شارك إحصائيات البيتا»: on by default; off, the beta statistics are sent without anything personal (Telemetry.Payload)
+        public static bool ShareStats { get { return Storage.GetSetting("share_stats") != "0"; } }
 
         // games the player unticked in Settings (by icon key)
         public static HashSet<string> HiddenGames
@@ -92,12 +94,30 @@ namespace PingBoost
                 layoutCard.Controls.Add(layoutHint);
                 y += 132 + Gap;
 
-                // ---- options
-                var optCard = section(colA, y, 92, Lang.T("Options", "خيارات"));
+                // ---- options, with the beta statistics switch and what turning it off means
+                const int OptH = 190;
+                var optCard = section(colA, y, OptH, Lang.T("Options", "خيارات"));
                 var auto = new Toggle { Bounds = new Rectangle(16, 46, W - 32, 32), Text = Lang.T("Test the ping when I pick a game", "افحص البنق لما أختار لعبة") };
                 auto.SetInstant(Prefs.AutoTest);
                 optCard.Controls.Add(auto);
-                int bottomA = y + 92;
+                var share = new Toggle { Bounds = new Rectangle(16, 84, W - 32, 32), Text = Lang.T("Share beta statistics", "شارك إحصائيات البيتا") };
+                share.SetInstant(Prefs.ShareStats);
+                optCard.Controls.Add(share);
+                optCard.Controls.Add(new Label
+                {
+                    Text = Lang.T("Off: we only get anonymous usage, without your name, PC name, city, internet provider or PC details.",
+                                  "إذا طفّيته: يوصلنا استخدام مجهول بس، بدون اسمك واسم جهازك ومدينتك وشركة النت ومواصفات جهازك."),
+                    ForeColor = Theme.Dim, Font = Fonts.Ui(8.5f), Bounds = new Rectangle(16, 120, W - 32, 36)
+                });
+                var shareDetails = new LinkLabel
+                {
+                    Text = Lang.T("What's sent", "وش اللي ينرسل"), Bounds = new Rectangle(16, 158, W - 32, 22), Font = Fonts.Ui(8.5f),
+                    BackColor = Theme.Panel1, TextAlign = Lang.Ar ? ContentAlignment.MiddleRight : ContentAlignment.MiddleLeft,
+                    LinkColor = Theme.Lavender, ActiveLinkColor = Color.White, LinkBehavior = LinkBehavior.HoverUnderline
+                };
+                shareDetails.LinkClicked += delegate { Brand.Open(Brand.PrivacyUrl); };
+                optCard.Controls.Add(shareDetails);
+                int bottomA = y + OptH;
 
                 // ---- games: tiles, two per row, the first on the reading side
                 var list = GameDb.Available(GameDb.All());
@@ -204,6 +224,7 @@ namespace PingBoost
                 Storage.SaveArabic(ar);
                 Storage.SetSetting("mode", layout.SelectedIndex == 0 ? "simple" : "advanced");
                 Storage.SetSetting("autotest", auto.Checked ? "1" : "0");
+                Storage.SetSetting("share_stats", share.Checked ? "1" : "0"); // counts from the next statistics sent
                 if (dubai != null) Storage.SetSetting("dubai_way_in", dubai.Checked ? "1" : "0");
                 Lang.Ar = ar;
 

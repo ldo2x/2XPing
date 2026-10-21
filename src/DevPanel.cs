@@ -118,6 +118,19 @@ namespace PingBoost
             return d != null && d.TryGetValue(key, out v) && v != null ? Convert.ToString(v) : "";
         }
 
+        // An install whose statistics come without personal details (Settings: «شارك إحصائيات البيتا» off).
+        static bool Anonymous(object row)
+        {
+            var d = row as Dictionary<string, object>;
+            object info;
+            return Telemetry.IsAnonymous(S(row, "nickname"), d != null && d.TryGetValue("info", out info) ? info as Dictionary<string, object> : null);
+        }
+
+        // The name shown for an install: anonymous ones get the «مجهول» / Anonymous mark instead.
+        static string ShownName(object row) { return Anonymous(row) ? AnonymousMark : S(row, "nickname"); }
+
+        const string AnonymousMark = "[Anonymous · مجهول]";
+
         // A field of the "info" JSON column (hardware/system details sent at launch).
         static string I(object row, string key) { return Field(row, "info", key); }
 
@@ -186,15 +199,20 @@ namespace PingBoost
             var on = installs.Where(r => now - T(r, "last_seen") < Telemetry.OnlineWindow).ToList();
             int today = installs.Count(r => T(r, "last_seen").Date == now.Date);
             int week = installs.Count(r => now - T(r, "last_seen") < TimeSpan.FromDays(7));
+            int anonymous = installs.Count(Anonymous);
             summary.Text = "Online now: " + on.Count + "     Today: " + today + "     7 days: " + week + "     All users: " + installs.Length +
-                           "     (updated " + now.ToString("HH:mm:ss") + ")";
+                           " (" + anonymous + " anonymous)     (updated " + now.ToString("HH:mm:ss") + ")";
 
             online.BeginUpdate();
             online.Items.Clear();
             foreach (var r in on)
-                online.Items.Add(new ListViewItem(new[] { S(r, "nickname"), S(r, "device_name"), S(r, "city"), S(r, "country"),
+            {
+                var item = new ListViewItem(new[] { ShownName(r), S(r, "device_name"), S(r, "city"), S(r, "country"),
                     S(r, "current_game"), S(r, "current_server"), S(r, "current_ping"), S(r, "app_version"), I(r, "net"), S(r, "isp"),
-                    T(r, "last_seen").ToString("HH:mm:ss") }));
+                    T(r, "last_seen").ToString("HH:mm:ss") });
+                if (Anonymous(r)) item.ForeColor = Theme.Lavender;
+                online.Items.Add(item);
+            }
             online.EndUpdate();
 
             // who has updated: users active in the last 7 days, by version (newest first)
@@ -227,6 +245,8 @@ namespace PingBoost
                 foreach (var g in values.Where(v => v != "").GroupBy(v => v).OrderByDescending(g => g.Count()).Take(10))
                     stats.Items.Add(new ListViewItem(new[] { what, g.Key, g.Count().ToString() }));
             };
+            stats.Items.Add(new ListViewItem(new[] { "Statistics sharing", "Anonymous (switched off in Settings)", anonymous.ToString() })
+                            { ForeColor = Theme.Lavender });
             top("Country", installs.Select(r => S(r, "country")));
             top("City", installs.Select(r => S(r, "city")));
             top("Game (users)", installs.Select(r => S(r, "current_game")));
@@ -294,7 +314,7 @@ namespace PingBoost
 
         void FillLog()
         {
-            var names = installs.ToDictionary(r => S(r, "install_id"), r => S(r, "nickname"));
+            var names = installs.ToDictionary(r => S(r, "install_id"), r => ShownName(r));
             log.BeginUpdate();
             log.Items.Clear();
             foreach (var r in events.Where(r => !errorsOnly.Checked || S(r, "kind") == "error" || S(r, "kind") == "issue"))

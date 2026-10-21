@@ -11,7 +11,8 @@
 -- The JSON shape (every count is a whole number; ms and seconds may have decimals; null when nothing to measure):
 -- {
 --   "days": 30, "generated_at": "2026-10-14T09:00:00Z",
---   "counters": { "installs_total", "online_now", "active_today", "active_7d", "active_30d", "active_period",
+--   "counters": { "installs_total", "installs_anonymous" (statistics sharing switched off in Settings: the app sends
+--                 nickname '(anonymous)' and info {"anonymous": true}), "online_now", "active_today", "active_7d", "active_30d", "active_period",
 --                 "new_today", "new_7d", "matches_today", "locks_today", "issues_24h", "errors_24h",
 --                 "matches_period", "locks_period" },
 --   "deltas":   { same keys where a fair comparison exists: today vs yesterday up to the same hour, 7 d vs the 7 d
@@ -68,6 +69,7 @@ begin
   -- counters: "active" = seen by the heartbeat (every 2 minutes while the app is open)
   select jsonb_build_object(
     'installs_total', (select count(*) from installs),
+    'installs_anonymous', (select count(*) from installs where nickname = '(anonymous)' or info->>'anonymous' = 'true'),
     'online_now',     (select count(*) from installs where last_seen > now() - interval '5 minutes'),
     'active_today',   (select count(*) from installs where last_seen >= t0),
     'active_7d',      (select count(*) from installs where last_seen > now() - interval '7 days'),

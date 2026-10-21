@@ -19,9 +19,14 @@ namespace PingBoost
             "{\"ip_prefix\":\"15.1.0.0/16\",\"region\":\"me-south-1\",\"service\":\"EC2\"}]}";
 
         // Storage.Dir is read-only for the app; tests move it the way the measurement harnesses do.
+        // The settings.txt copy in memory belongs to the folder it was first read from, so it is dropped with every move:
+        // otherwise the test would read and write the real %APPDATA%\2XPing\settings.txt.
         static void SetDataDir(string dir)
         {
-            typeof(Storage).GetField("Dir", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static).SetValue(null, dir);
+            const System.Reflection.BindingFlags all = System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic |
+                                                       System.Reflection.BindingFlags.Static;
+            typeof(Storage).GetField("Dir", all).SetValue(null, dir);
+            typeof(Storage).GetField("settings", all).SetValue(null, null);
         }
 
         // Runs the test with Storage.Dir in a new empty folder, and puts everything back after.

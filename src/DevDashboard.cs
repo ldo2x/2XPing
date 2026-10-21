@@ -279,6 +279,8 @@ namespace PingBoost
             Add(Section(T("Users", "المستخدمين")), "section", 34);
             Tile(s, "online_now", T("Online now", "متصلين دحين"), null, empty);
             Tile(s, "installs_total", T("All installs", "كل الأجهزة"), null, empty);
+            // installs that switched off «شارك إحصائيات البيتا» (no name, PC or location); "-" until dev_stats() counts them
+            Tile(s, "installs_anonymous", T("Anonymous", "مجهول"), null, empty);
             Tile(s, "active_today", T("Active today", "نشطين اليوم"), T("vs yesterday", "عن أمس"), empty);
             Tile(s, "active_7d", T("Active 7 days", "نشطين 7 أيام"), T("vs the 7 days before", "عن الأسبوع اللي قبله"), empty);
             Tile(s, "active_30d", T("Active 30 days", "نشطين 30 يوم"), null, empty);
@@ -408,6 +410,8 @@ namespace PingBoost
 
         void Tile(DashStats s, string key, string caption, string deltaWhat, bool empty, bool lowerIsBetter = false)
         {
+            // a counter the database doesn't send yet (an older dev_stats()) shows "-", not a made-up 0
+            empty = empty || !s.Counters.ContainsKey(key);
             var t = new DashTile { Caption = caption, Value = empty ? "-" : DashFmt.Count(s.Counter(key)) };
             if (!empty && deltaWhat != null && s.HasDelta(key))
             {

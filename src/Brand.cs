@@ -31,6 +31,8 @@ namespace PingBoost
         public const string IssuesUrl = RepoUrl + "/issues";
         public const string ReleasesUrl = RepoUrl + "/releases";
         public const string DiscussionsUrl = RepoUrl + "/discussions";
+        // the privacy policy: what the beta statistics send with the switch on and off (SECURITY.md)
+        public const string PrivacyUrl = RepoUrl + "/blob/main/SECURITY.md#usage-statistics-beta";
 
         // Community contact. Leave DiscordInvite empty until a server exists; it is hidden then.
         public const string DiscordUser = "2x.x";

@@ -11,8 +11,13 @@ namespace PingBoost
 {
     // Usage statistics sent to the developer's Supabase project (see tools/supabase-setup.sql).
     // Users are told about it on first launch (WelcomeDialog); using the beta requires accepting it.
+    // Settings' «شارك إحصائيات البيتا» (Prefs.ShareStats, on by default) decides how much: off, every personal field gets
+    // a fixed value and no location lookup is made (Payload), so only anonymous usage is sent (SECURITY.md).
     static class Telemetry
     {
+        // the name an install sends while sharing is off; the developer panel marks these «مجهول» / Anonymous
+        public const string AnonymousName = "(anonymous)";
+
         // Project URL and the PUBLIC (anon / publishable) key. The public key can only call checkin(), never read.
         public const string SupabaseUrl = "https://exzriktevuapbbgqwgle.supabase.co";
         public const string SupabaseKey = "sb_publishable_RN9M6tcRWFXbqfJdbSOo1A_h0upD6RQ";
@@ -91,6 +96,7 @@ namespace PingBoost
                     var info = SystemInfo.Collect(games);
                     info["startup_ms"] = startupMs;
                     info["updated"] = Updater.JustUpdated;
+                    launchInfo = info;
                     Post("start", null, -1, Environment.OSVersion.ToString(), null, info);
                 }
                 catch { }
@@ -213,26 +219,65 @@ namespace PingBoost
             });
         }
 
+        // The launch details (SystemInfo), kept for this session: sent again with the next event after sharing is switched,
+        // so the database's copy follows the switch right away instead of at the next launch.
+        static volatile Dictionary<string, object> launchInfo;
+        static int infoSentAs = -1; // what the database holds: 1 = the full launch details, 0 = the anonymous ones, -1 = none yet
+
         static void Post(string kind, string server, int ping, string detail, Dictionary<string, object> data, Dictionary<string, object> info,
                          int timeout = 8000, string game = null, bool lookup = true)
         {
-            EnsureLocation(lookup);
+            // read on every send, so switching it in Settings counts from the next one (no restart)
+            bool share = Prefs.ShareStats;
+            if (share) EnsureLocation(lookup); // off: no location lookup at all
+            if (info == null && launchInfo != null && infoSentAs != (share ? 1 : 0)) info = launchInfo;
+            var p = Payload(share, kind, game ?? Game, server ?? Server, ping, detail, data, info);
+            string body = "{\"p\":" + new JavaScriptSerializer().Serialize(p) + "}";
+            Http.Send("POST", SupabaseUrl.TrimEnd('/') + "/rest/v1/rpc/checkin", body, Headers(SupabaseKey), timeout);
+            if (info != null) infoSentAs = share ? 1 : 0;
+        }
+
+        // The body of one checkin() call. share = false: the name, the PC name, the location and the internet provider get
+        // fixed values (an empty text, which replaces what the database kept from before; a null would keep it) and the
+        // launch details shrink to AnonymousInfo. The rest (install id, versions, the game, tests, locks, servers, match
+        // reports, problems and buttons used) is the same either way.
+        internal static Dictionary<string, object> Payload(bool share, string kind, string game, string server, int ping, string detail,
+                                                           Dictionary<string, object> data, Dictionary<string, object> info)
+        {
             // never the Windows user name or local folders (exception texts and tool output carry paths)
             detail = Privacy.Scrub(detail);
             if (data != null) data = (Dictionary<string, object>)Privacy.ScrubData(data);
             var p = new Dictionary<string, object>
             {
-                { "install_id", InstallId }, { "kind", kind }, { "nickname", Nickname },
-                { "device_name", Environment.MachineName }, { "app_version", Brand.DisplayVersion },
+                { "install_id", InstallId }, { "kind", kind }, { "nickname", share ? Nickname : AnonymousName },
+                { "device_name", share ? Environment.MachineName : "" }, { "app_version", Brand.DisplayVersion },
                 { "os", Environment.OSVersion.Version.ToString() }, { "lang", Lang.Ar ? "ar" : "en" },
-                { "mode", Prefs.Simple ? "simple" : "advanced" }, { "country", country }, { "city", city },
-                { "isp", isp }, { "asn", asn }, { "session", session },
-                { "game", game ?? Game }, { "server", server ?? Server }, { "ping", ping >= 0 ? (object)ping : null }, { "detail", detail }
+                { "mode", Prefs.Simple ? "simple" : "advanced" }, { "country", share ? country : "" }, { "city", share ? city : "" },
+                { "isp", share ? isp : "" }, { "asn", share ? asn : "" }, { "session", session },
+                { "game", game }, { "server", server }, { "ping", ping >= 0 ? (object)ping : null }, { "detail", detail }
             };
             if (data != null) p["data"] = data;
-            if (info != null) p["info"] = info;
-            string body = "{\"p\":" + new JavaScriptSerializer().Serialize(p) + "}";
-            Http.Send("POST", SupabaseUrl.TrimEnd('/') + "/rest/v1/rpc/checkin", body, Headers(SupabaseKey), timeout);
+            if (info != null) p["info"] = share ? info : AnonymousInfo(info);
+            return p;
+        }
+
+        // What stays of the launch details while sharing is off: the Windows version, how long the app took to open and
+        // whether it was just updated, with the "anonymous" mark the developer panel counts.
+        internal static readonly string[] AnonymousInfoKeys = { "windows", "startup_ms", "updated" };
+
+        internal static Dictionary<string, object> AnonymousInfo(Dictionary<string, object> info)
+        {
+            var d = new Dictionary<string, object> { { "anonymous", true } };
+            object v;
+            if (info != null) foreach (var k in AnonymousInfoKeys) if (info.TryGetValue(k, out v)) d[k] = v;
+            return d;
+        }
+
+        // An installs row (developer side) last sent while sharing was off.
+        public static bool IsAnonymous(string nickname, Dictionary<string, object> info)
+        {
+            object v;
+            return nickname == AnonymousName || (info != null && info.TryGetValue("anonymous", out v) && true.Equals(v));
         }
 
         // ---------------------------------------------------------------- developer side (reading)
