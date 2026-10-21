@@ -950,6 +950,15 @@ namespace PingBoost
 
         void Msg(string text, ToastKind kind = ToastKind.Info) { notices.Say(text, kind, false); }
 
+        // The first time a feature changes something on the PC, one line says what and how it's undone (SECURITY.md lists
+        // every change); never again after that.
+        void NoticeOnce(string key, string text)
+        {
+            if (Storage.GetSetting(key) == "1") return;
+            Storage.SetSetting(key, "1");
+            Msg(text);
+        }
+
         // shown only in the advanced layout (the simple one's card already says it), or while minimized
         void AdvancedMsg(string text, ToastKind kind = ToastKind.Info) { notices.SayAdvanced(text, kind); }
 
@@ -2306,6 +2315,8 @@ namespace PingBoost
             lockingNames = cardNames;
             UpdateLockBar();
             SetStatus(T("Locking your servers...", "نثبّت لك السيرفرات..."));
+            NoticeOnce("notice_firewall", T("The lock adds Windows Firewall rules (2XPing-RegionLock). Unlock, \"Back to normal\" or closing 2X Ping removes them.",
+                                            "التثبيت يضيف قواعد في جدار حماية ويندوز (2XPing-RegionLock)، وتنشال لما تضغط «فك التثبيت» أو «رجّع كل شي طبيعي» أو تقفل البرنامج."));
             UpdateCard();
             // applied: the error came from ServerLock.Apply, which removes the old rules first, so a lock that was on is
             // gone too and the card must stop saying "locked" (M2)
@@ -2567,6 +2578,8 @@ namespace PingBoost
             }
 
             SetStatus(T("Building the route through ", "نجهّز الطريق عن طريق ") + relay.Name + "...");
+            NoticeOnce("notice_tunnel", T("The relay route installs a WireGuard tunnel service (2xping). Stop, \"Back to normal\" or closing 2X Ping removes it.",
+                                          "الطريق عن طريق الوسيط يركّب خدمة نفق WireGuard (2xping)، وتنشال لما تضغط «وقّف» أو «رجّع كل شي طبيعي» أو تقفل البرنامج."));
             // set before the tunnel exists: a Stop (or closing the app) from now on always removes it, even half-made
             tunnelActive = true;
             int gen = Interlocked.Increment(ref boostGen);
