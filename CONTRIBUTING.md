@@ -3,11 +3,11 @@
 شكراً لاهتمامك بـ 2X Ping! | Thanks for helping 2X Ping!
 
 ## كمختبر بيتا | As a beta tester
-- **مشكلة؟** افتح [بلاغ](../../issues/new/choose)، والصق فيه "معلومات التشخيص" من زر **تواصل** داخل البرنامج.
+- **مشكلة؟** أسهل طريقة: زر **تواصل معنا** داخل البرنامج، اكتبها واضغط «أرسل». أو افتح [بلاغ](../../issues/new/choose) والصق فيه النص اللي يطلع لك من «وش ينرسل؟» في نفس النافذة.
 - **فكرة أو لعبة جديدة؟** اكتبها في [Discussions](../../discussions).
 - شاركنا نتائجك: لعبتك، منطقتك، البنق قبل وبعد.
 
-- **Bug?** Open an [issue](../../issues/new/choose) and paste the "diagnostic info" from the in-app **Feedback** button.
+- **Bug?** Easiest: the in-app **Contact us** button, write it and press Send. Or open an [issue](../../issues/new/choose) and paste the text from **What's sent?** in that window.
 - **Idea or new game?** Post it in [Discussions](../../discussions).
 
 ## كمطوّر | As a developer

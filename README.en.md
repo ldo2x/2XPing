@@ -122,8 +122,8 @@ Full page: [Code signing policy](https://ldo2x.github.io/2XPing/code-signing.htm
 
 ## 🧪 Beta program: how to help
 1. Try 2X Ping with your favourite game.
-2. In the app press **Feedback** to report a bug or suggest an idea.
-3. **Copy diagnostic info** copies your version and recent log (no personal data). Paste it into your report.
+2. In the app press **Contact us** (top), pick Problem, Idea or Question, write your message and press **Send**: it reaches the developer directly. Add your Discord or e-mail if you'd like a reply.
+3. Your app and Windows version and the recent log go with it automatically (no personal data); **What's sent?** shows the exact text first. Offline? It's saved and sent by itself next time.
 
 What's next: [ROADMAP.md](ROADMAP.md)
 
@@ -139,6 +139,7 @@ What's next: [ROADMAP.md](ROADMAP.md)
 ## 💬 Contact
 | Channel | For |
 |---|---|
+| **Contact us** button in the app | Easiest: a problem, idea or question, sent straight to the developer with the diagnostics |
 | [Issues](../../issues/new/choose) | Bug reports |
 | [Discussions](../../discussions) | Questions, ideas, new game requests |
 | Discord: **`2x.x`** | Talk to the developer |
