@@ -23,7 +23,7 @@ Still, keep `2XPing.exe` in a folder only you (or administrators) can write to, 
 ## Usage statistics (beta)
 
 To improve the beta, 2X Ping sends usage statistics to the developer's own database (a Supabase project that belongs to the developer, lDo2x) while it is open.
-This is shown on first launch, and accepting it is required to use the beta.
+The first-launch screen says this in short, general words and links here with **Privacy and statistics details** («الخصوصية وتفاصيل الإحصائيات»): this page is the full list. Accepting it is required to use the beta.
 
 **Share beta statistics** («شارك إحصائيات البيتا») in **Settings > Options** decides how much is sent. It is **on** by default, and you can turn it off at any time; the change counts from the next thing the app sends, no restart needed.
 

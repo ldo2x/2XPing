@@ -73,29 +73,28 @@ namespace PingBoost
                 }
                 int y = 244 + gamesH + 12;
 
-                // what is sent, in the words of SECURITY.md's table; the details link sits inside the same card. The
-                // statistics switch has no box here: the text says it is on and where to turn it off (Settings).
-                const int NoticeH = 172;
+                // what is sent, in general words (the full list is behind the details link, SECURITY.md). The statistics switch
+                // has no box here: the text says where to turn it off (Settings).
+                const int NoticeH = 120;
                 var noticeCard = new Card { Bounds = new Rectangle(20, y, W, NoticeH), Fill = Theme.Panel1, Radius = 14 };
                 f.Controls.Add(noticeCard);
                 var notice = new Label
                 {
                     Bounds = new Rectangle(14, 10, W - 28, NoticeH - 44), ForeColor = Theme.Dim, Font = Fonts.Ui(9.5f),
                     Text = Lang.T(
-                        "This is a beta. While it's open, 2X Ping sends your name and PC name, PC info, location (city and internet provider), " +
-                        "the game, each match's server and ping, and error logs, so we can improve it.\n" +
-                        "\"Share beta statistics\" is on. Turn it off any time in Settings and only anonymous usage is sent.\n" +
-                        "Updates are required: you get " + Updater.Days(Updater.GraceDays) + ".\nYou need to agree to use the beta.",
-                        "هادي نسخة تجريبية، والبرنامج وهو مفتوح يرسل لنا اسمك واسم جهازك ومعلومات جهازك ومدينتك وشركة النت " +
-                        "واللعبة وسيرفر كل مباراة والبنق وسجل الأخطاء عشان نطوّره.\n" +
-                        "«شارك إحصائيات البيتا» شغّال، وتقدر تطفّيه أي وقت من الإعدادات، وساعتها يوصلنا استخدام مجهول بس.\n" +
-                        "التحديثات إجبارية، وعندك " + Updater.Days(Updater.GraceDays) + ".\nلازم توافق عشان تستخدمه.")
+                        "This is a beta. To keep improving 2X Ping, it shares usage and performance info with us (like ping and errors). " +
+                        "You can turn this off any time in Settings.\n" +
+                        "Updates are required: you get " + Updater.Days(Updater.GraceDays) + " to install each one.",
+                        "هادي نسخة تجريبية، وعشان نطوّر البرنامج يشارك معانا معلومات عن الاستخدام والأداء (زي البنق والأخطاء). " +
+                        "وتقدر توقفها أي وقت من الإعدادات.\n" +
+                        "التحديثات إجبارية، وعندك " + Updater.Days(Updater.GraceDays) + " لكل تحديث.")
                 };
                 noticeCard.Controls.Add(notice);
                 var details = new LinkLabel
                 {
                     Text = Lang.T("Privacy and statistics details", "الخصوصية وتفاصيل الإحصائيات"), Bounds = new Rectangle(14, NoticeH - 32, W - 28, 24),
-                    BackColor = Theme.Panel1, TextAlign = Lang.Ar ? ContentAlignment.MiddleRight : ContentAlignment.MiddleLeft,
+                    // the link inherits the right-to-left reading: MiddleLeft is the reading start (the right in Arabic)
+                    BackColor = Theme.Panel1, TextAlign = ContentAlignment.MiddleLeft,
                     LinkColor = Theme.Lavender, ActiveLinkColor = Color.White, LinkBehavior = LinkBehavior.HoverUnderline
                 };
                 details.LinkClicked += delegate { Brand.Open(Brand.PrivacyUrl); };
