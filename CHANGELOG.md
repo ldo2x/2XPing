@@ -1,5 +1,11 @@
 # Changelog
 
+## Next (in testing)
+
+- **«شارك إحصائيات البيتا» / "Share beta statistics"** in Settings > Options, on by default. Turned off, the beta statistics are sent without anything personal: no name (it becomes "(anonymous)"), PC name, city, country, internet provider or PC details, and no location lookup. Usage, tests, locks, servers, match reports and problems are still sent. It counts from the next send, no restart. The first-launch notice says it's on and where to turn it off. The developer panel marks anonymous installs and counts them (re-run `tools/supabase-dev-stats.sql` for the dashboard's "Anonymous" tile)
+- The first lock and the first relay route each say once what they change on the PC (Windows Firewall rules, a WireGuard tunnel service) and how it's undone
+- Code signing through SignPath Foundation is being set up: a [Code signing policy](https://ldo2x.github.io/2XPing/code-signing.html) page, uninstall steps in the READMEs and on the website, and CI that signs tagged releases after a manual approval (docs/SIGNING.md)
+
 ## v0.12.0-beta (2026-10-14)
 
 - Developer panel: a «لوحة الأرقام» / Dashboard tab with counters (online now, active, new, matches, locks, problems, each against the period before) and charts (users and matches per day, versions, countries, games, picked regions, whether the lock held, expected vs actual ping, datacenters per region, top problems), from one call to the new `dev_stats()` database function (`tools/supabase-dev-stats.sql`). It refreshes by itself at most every 5 minutes, only while it is on screen
