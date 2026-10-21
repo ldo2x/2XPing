@@ -1,22 +1,41 @@
-# المساهمة | Contributing
+<div dir="rtl">
 
-شكراً لاهتمامك بـ 2X Ping! | Thanks for helping 2X Ping!
+# المساهمة
 
-## كمختبر بيتا | As a beta tester
-- **مشكلة؟** أسهل طريقة: زر **تواصل معنا** داخل البرنامج، اكتبها واضغط «أرسل». أو افتح [بلاغ](../../issues/new/choose) والصق فيه النص اللي يطلع لك من «وش ينرسل؟» في نفس النافذة.
-- **فكرة أو لعبة جديدة؟** اكتبها في [Discussions](../../discussions).
-- شاركنا نتائجك: لعبتك، منطقتك، البنق قبل وبعد.
+شكراً لاهتمامك بـ 2X Ping!
 
-- **Bug?** Easiest: the in-app **Contact us** button, write it and press Send. Or open an [issue](../../issues/new/choose) and paste the text from **What's sent?** in that window.
-- **Idea or new game?** Post it in [Discussions](../../discussions).
+## كمختبر
+- **مشكلة أو فكرة؟** اضغط **«تواصل معنا»** داخل البرنامج، اكتب رسالتك واضغط «أرسل». معلومات التشخيص تنرسل معها تلقائياً.
+- أو افتح [بلاغ على GitHub](../../issues/new/choose).
 
-## كمطوّر | As a developer
-1. سوّ Fork وفرع جديد. | Fork and create a branch.
-2. ابنِ البرنامج: `powershell -ExecutionPolicy Bypass -File build.ps1`. | Build it with the command above.
-3. الكود متوافق مع C# 5 (المترجم المدمج في ويندوز)، فلا تستخدم ميزات أحدث مثل `$""` و`?.`. | Keep C# 5 compatible: no `$""` or `?.`.
-4. أي نص يظهر للمستخدم يكون بالعربي والإنجليزي: `T("English", "عربي")`. | Every user-facing string is bilingual.
-5. افتح Pull Request واشرح التغيير. | Open a pull request describing the change.
+## كمطوّر
+1. سوّ Fork وفرع جديد.
+2. ابنِ البرنامج: `powershell -ExecutionPolicy Bypass -File build.ps1`
+3. الكود لازم يكون متوافق مع C# 5، فلا تستخدم `$""` أو `?.`.
+4. أي نص يشوفه المستخدم يكون بالعربي والإنجليزي: `T("English", "عربي")`.
+5. افتح Pull Request واشرح التغيير.
 
-⚠️ لا ترفع أبداً ملفات `.conf` حق WireGuard، لأن فيها مفاتيح سرية. | Never commit WireGuard `.conf` files.
+لا ترفع ملفات `.conf` حق WireGuard أبداً، لأن فيها مفاتيح سرية.
 
-📦 نشر نسخة جديدة: اتبع [docs/RELEASING.md](docs/RELEASING.md). | Releasing a version: follow [docs/RELEASING.md](docs/RELEASING.md).
+</div>
+
+---
+
+# Contributing
+
+Thanks for helping 2X Ping!
+
+## As a tester
+- **Problem or idea?** Press **Contact us** inside the app, write your message and press Send. Diagnostic info is attached automatically.
+- Or open an [issue on GitHub](../../issues/new/choose).
+
+## As a developer
+1. Fork and create a branch.
+2. Build: `powershell -ExecutionPolicy Bypass -File build.ps1`
+3. Keep the code C# 5 compatible: no `$""` or `?.`.
+4. Every user-facing string is bilingual: `T("English", "عربي")`.
+5. Open a pull request describing the change.
+
+Never commit WireGuard `.conf` files: they contain private keys.
+
+Releasing a version: follow [docs/RELEASING.md](docs/RELEASING.md).

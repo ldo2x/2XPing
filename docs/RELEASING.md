@@ -8,7 +8,7 @@ The public version only shows the games marked `Released = true` in `src/GameDb.
 ## 1. الكود | Code
 - [ ] `src/Brand.cs`: `AssemblyVersion`, `AssemblyFileVersion`, `AssemblyInformationalVersion`
 - [ ] `CHANGELOG.md`: rename "Next (in testing)" to `## vX.Y.Z-beta (date)`
-- [ ] `.github/release-notes.md`: what's new (Arabic | English), and who updates by hand
+- [ ] `.github/release-notes.md`: short and plain. The Arabic section first, inside `<div dir="rtl">` (blank lines around the markdown), then `---` and the English section. Never put Arabic and English on the same line: GitHub reorders the words
 - [ ] `powershell -ExecutionPolicy Bypass -File build.ps1 -Release` builds without errors
 
 ## 2. صفحة قيتهب | GitHub page
