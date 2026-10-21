@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SignPath artifact configuration "initial" for project 2XPing (docs/SIGNING.md).
+  The artifact is the GitHub Actions artifact "2XPing-unsigned" (.github/workflows/build.yml): GitHub stores it as a
+  zip with the release package's files at its root. Only 2XPing.exe is signed, with Authenticode, and only when its
+  version resource says product name "2X Ping" and the version the workflow passes (the exe's ProductVersion,
+  e.g. 0.12.0-beta, from AssemblyInformationalVersion in src/Brand.cs).
+-->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <parameters>
+    <parameter name="version" required="true" />
+  </parameters>
+  <zip-file>
+    <pe-file path="2XPing.exe" product-name="2X Ping" product-version="${version}">
+      <authenticode-sign />
+    </pe-file>
+  </zip-file>
+</artifact-configuration>

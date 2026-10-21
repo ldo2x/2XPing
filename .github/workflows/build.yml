@@ -1,6 +1,10 @@
 # Builds 2XPing.exe on every push / pull request.
 # Pushing a tag like v0.9.0-beta also publishes a GitHub Release with the zip + SHA256
 # (marked as pre-release while the tag contains "beta").
+# Code signing (docs/SIGNING.md): on a tag, the unsigned package is uploaded as an artifact; when the secret
+# SIGNPATH_API_TOKEN is set, it is sent to SignPath Foundation, waits for the developer's manual approval, and the
+# release gets the signed zip with a SHA256 made from it (the in-app updater checks that file). Without the secret
+# the release is published unsigned, as before.
 name: Build
 
 on:
@@ -12,10 +16,13 @@ on:
 
 permissions:
   contents: write
+  actions: read # SignPath reads this run's details and downloads the unsigned artifact with the job's token
 
 jobs:
   build:
     runs-on: windows-latest
+    # manual approval in SignPath can take a while; the job waits for it (GitHub's own limit is 6 hours)
+    timeout-minutes: 330
     steps:
       - uses: actions/checkout@v4
 
@@ -27,6 +34,79 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: 2XPing
+          path: release/*
+
+      # ---- tags only: the package's files, unzipped, as the artifact SignPath signs (.signpath/artifact-configuration.xml:
+      # GitHub stores an artifact as a zip, so 2XPing.exe sits at the root of that zip)
+      - name: Unsigned package
+        id: pkg
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $zip = @(Get-ChildItem release\*.zip)
+          if ($zip.Count -ne 1) { throw "expected one release zip, found $($zip.Count)" }
+          Expand-Archive $zip[0].FullName -DestinationPath unsigned
+          "name=$($zip[0].BaseName)" >> $env:GITHUB_OUTPUT
+          "version=$((Get-Item dist\2XPing.exe).VersionInfo.ProductVersion)" >> $env:GITHUB_OUTPUT
+
+      - name: Upload unsigned package
+        id: unsigned
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: 2XPing-unsigned
+          path: unsigned/*
+          if-no-files-found: error
+
+      # secrets can't be read in "if:", so a step says whether signing is set up
+      - name: Signing set up?
+        id: signing
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+        run: |
+          $on = -not [string]::IsNullOrEmpty($env:SIGNPATH_API_TOKEN)
+          "enabled=$($on.ToString().ToLower())" >> $env:GITHUB_OUTPUT
+          if (-not $on) { Write-Host "SIGNPATH_API_TOKEN is not set: publishing unsigned" }
+
+      - name: Sign with SignPath (waits for manual approval)
+        if: steps.signing.outputs.enabled == 'true'
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: 2XPing
+          signing-policy-slug: release-signing
+          artifact-configuration-slug: initial
+          github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
+          # one "<name>: <JSON string>" line per parameter of the artifact configuration
+          parameters: |
+            version: ${{ toJSON(steps.pkg.outputs.version) }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 18000
+          output-artifact-directory: signed
+
+      # the release's zip and SHA256 are made again from the signed files, in build.ps1's format ("<hash>  <name>.zip")
+      - name: Package the signed files
+        if: steps.signing.outputs.enabled == 'true'
+        shell: pwsh
+        run: |
+          $name = "${{ steps.pkg.outputs.name }}"
+          $sig = Get-AuthenticodeSignature signed\2XPing.exe
+          if ($sig.Status -ne 'Valid') { throw "2XPing.exe is not validly signed: $($sig.Status) $($sig.StatusMessage)" }
+          Write-Host "Signed by: $($sig.SignerCertificate.Subject)"
+          Remove-Item "release\$name.zip", "release\$name.zip.sha256" -Force
+          Compress-Archive -Path signed\* -DestinationPath "release\$name.zip"
+          $hash = (Get-FileHash "release\$name.zip" -Algorithm SHA256).Hash.ToLower()
+          "$hash  $name.zip" | Set-Content "release\$name.zip.sha256" -Encoding ascii
+          Write-Host "SHA256: $hash"
+
+      - name: Upload signed build
+        if: steps.signing.outputs.enabled == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: 2XPing-signed
           path: release/*
 
       - name: Publish release

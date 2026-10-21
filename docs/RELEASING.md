@@ -32,4 +32,6 @@ The public version only shows the games marked `Released = true` in `src/GameDb.
 
 ## 5. النشر | Publish
 - [ ] Commit, push `main`, then `git tag vX.Y.Z-beta` and push the tag: GitHub Actions builds and publishes the release with the zip and SHA256
-- [ ] Check the release page has both files and is marked Pre-release
+- [ ] **Approve the signing request** in SignPath (app.signpath.io > Signing requests) once the Build run reaches "Sign with SignPath": check it is this tag's run, then Approve. The run waits up to 5 hours; nothing is published until it's approved (setup and details: [SIGNING.md](SIGNING.md)). Without the `SIGNPATH_API_TOKEN` secret this step is skipped and the release is unsigned
+- [ ] Check the release page has both files and is marked Pre-release, and that `2XPing.exe` in the zip is signed by SignPath Foundation (Properties > Digital Signatures)
+- [ ] The Code signing policy pages (`docs/code-signing.html`, `docs/ar/code-signing.html`) and the README sections still match the team and the process
