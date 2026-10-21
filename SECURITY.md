@@ -22,8 +22,15 @@ Still, keep `2XPing.exe` in a folder only you (or administrators) can write to, 
 
 ## Usage statistics (beta)
 
-To improve the beta, 2X Ping sends usage statistics to the developer's own database (Supabase) while it is open.
+To improve the beta, 2X Ping sends usage statistics to the developer's own database (a Supabase project that belongs to the developer, lDo2x) while it is open.
 This is shown on first launch, and accepting it is required to use the beta.
+
+**Share beta statistics** («شارك إحصائيات البيتا») in **Settings > Options** decides how much is sent. It is **on** by default, and you can turn it off at any time; the change counts from the next thing the app sends, no restart needed.
+
+- **On:** everything in the table below.
+- **Off:** only anonymous usage. Your name is replaced by `(anonymous)`; your computer's name, city, country, internet provider and network (AS) are sent empty, which also clears what the database kept from before; the launch details shrink to the Windows version, how long the app took to open and whether it was just updated, plus a mark that the install is anonymous. 2X Ping makes **no** location lookup of your own internet address while it is off. Still sent: the random install ID, the app and Windows version, the app's language and layout, the game, server and ping in use, ping-test results, the regions you pick and your lock, the server detected, match reports, problems the app detects, error reports, and which features you use (the rows from "Game, server and ping" down, except the launch details).
+
+### With the switch on
 
 | Sent | Why |
 |---|---|
@@ -41,7 +48,7 @@ This is shown on first launch, and accepting it is required to use the beta.
 
 Nothing else is collected: no passwords, no files, no list of your other programs, no browsing data. 2X Ping never sends or stores your IP address; like any website, the statistics server and the location service see it when the app connects. The app can only **write** these statistics; it cannot read anyone's data. The only thing it reads from that database is the shared Deadlock player numbers, which are public and the same for everyone.
 The developer's own test tool (developer mode, which needs the developer's private key and is never on for players) also records connection addresses and program names during a lock test on the developer's PC.
-To have your data removed, contact the developer (Discord `2x.x`) with the name you used.
+To have your data removed, contact the developer (Discord `2x.x`) with the name you used. To stop sending anything at all, close 2X Ping (nothing is sent while it is closed) or remove it (see "Uninstall" in the [README](README.en.md#uninstall)).
 
 ## Data sent to other services
 
@@ -54,9 +61,9 @@ To have your data removed, contact the developer (Discord `2x.x`) with the name 
 | gamelift-ping.*.api.aws | A small ping packet | Dead by Daylight ping per region |
 | global.gcping.com and Google Cloud's per-region ping addresses | A short web request | Overwatch 2 ping per Google Cloud region |
 | The game servers themselves (Valve, Tencent Cloud) | A ping (ICMP or a TCP connect) | Ping per region |
-| ipwho.is (HTTPS) | A once-a-day lookup of your own city, country and provider (at most every 30 minutes when it fails) | Usage statistics |
-| ip-api.com (plain HTTP) | The **game server** IP you detected (each address at most once an hour); your own location only if ipwho.is doesn't answer | Show locations |
-| Supabase (developer's database) | The usage statistics listed above (a heartbeat every 2 minutes while the app is open, plus events); it also downloads the shared Deadlock player numbers when a game's list loads, when you come back to the window, and every 5 minutes while the window is in front | Beta statistics, player numbers |
+| ipwho.is (HTTPS) | A once-a-day lookup of your own city, country and provider (at most every 30 minutes when it fails); never while "Share beta statistics" is off | Usage statistics |
+| ip-api.com (plain HTTP) | The **game server** IP you detected (each address at most once an hour); your own location only if ipwho.is doesn't answer (and never while "Share beta statistics" is off) | Show locations |
+| Supabase (developer's database) | The usage statistics listed above, or only the anonymous part while "Share beta statistics" is off (a heartbeat every 2 minutes while the app is open, plus events); it also downloads the shared Deadlock player numbers when a game's list loads, when you come back to the window, and every 5 minutes while the window is in front | Beta statistics, player numbers |
 | api.github.com, github.com | Nothing (download only); checked every 3 hours | Check for a newer version and download it |
 | Your own relay agent | Game server address + your token | Measure relay -> server ping |
 
@@ -66,7 +73,7 @@ There are no accounts or passwords; apart from the usage statistics above, nothi
 
 Updates are required during the beta. When a new version is out, 2X Ping shows it and you get 3 days to update; after that the old version only offers to update or close.
 **Update now** downloads the release zip from this repository's GitHub Releases, checks it against the published SHA256 file, and refuses it if they don't match. It extracts the new `2XPing.exe` next to the old one, checks it again right before the swap, replaces `2XPing.exe` (putting the old one back if anything fails) and reopens it.
-The SHA256 file comes from the same GitHub release, so it protects against a damaged download, not against someone who takes over the GitHub account. Signed releases are planned.
+The SHA256 file comes from the same GitHub release, so it protects against a damaged download, not against someone who takes over the GitHub account. Releases are being set up for code signing through SignPath Foundation: see the [Code signing policy](https://ldo2x.github.io/2XPing/code-signing.html).
 A release whose notes contain `#optional` is never forced.
 
 ## Relay notes
