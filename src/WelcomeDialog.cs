@@ -74,7 +74,7 @@ namespace PingBoost
                 int y = 244 + gamesH + 12;
 
                 // what is sent, in general words (the full list is behind the details link, SECURITY.md). The statistics switch
-                // has no box here: the text says where to turn it off (Settings).
+                // has no box here: the text says where to make it anonymous (Settings).
                 const int NoticeH = 120;
                 var noticeCard = new Card { Bounds = new Rectangle(20, y, W, NoticeH), Fill = Theme.Panel1, Radius = 14 };
                 f.Controls.Add(noticeCard);
@@ -83,10 +83,10 @@ namespace PingBoost
                     Bounds = new Rectangle(14, 10, W - 28, NoticeH - 44), ForeColor = Theme.Dim, Font = Fonts.Ui(9.5f),
                     Text = Lang.T(
                         "This is a beta. To keep improving 2X Ping, it shares usage and performance info with us (like ping and errors). " +
-                        "You can turn this off any time in Settings.\n" +
+                        "You can make it anonymous any time in Settings.\n" +
                         "Updates are required: you get " + Updater.Days(Updater.GraceDays) + " to install each one.",
                         "هادي نسخة تجريبية، وعشان نطوّر البرنامج يشارك معانا معلومات عن الاستخدام والأداء (زي البنق والأخطاء). " +
-                        "وتقدر توقفها أي وقت من الإعدادات.\n" +
+                        "وتقدر تخليها مجهولة أي وقت من الإعدادات.\n" +
                         "التحديثات إجبارية، وعندك " + Updater.Days(Updater.GraceDays) + " لكل تحديث.")
                 };
                 noticeCard.Controls.Add(notice);
