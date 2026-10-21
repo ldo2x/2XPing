@@ -80,7 +80,7 @@
         <a class="btn primary" href="https://github.com/ldo2x/2XPing/releases">حمّل لويندوز</a>
         <a class="btn ghost" href="https://github.com/ldo2x/2XPing">صفحة GitHub</a>
       </div>
-      <p class="meta">مجاني ومفتوح المصدر · ويندوز 10 / 11 · بدون تثبيت · عربي وإنجليزي</p>
+      <p class="meta">مجاني ومفتوح المصدر · ويندوز 10 / 11 · بدون تثبيت · عربي وإنجليزي · <a href="code-signing.html" lang="en">Code signing policy</a></p>
     </div>
 
     <div class="shot"><img src="../screenshot-ar.png" width="1240" height="760" alt="برنامج 2X Ping لاختيار سيرفر ديدلوك: المناطق مع البنق ووقت الانتظار وعدد اللاعبين وزر العب على أوروبا"></div>
@@ -117,6 +117,16 @@
       </ol>
     </section>
 
+    <section id="uninstall">
+      <h2>كيف تشيل البرنامج</h2>
+      <p>البرنامج ما يتثبّت على الجهاز، فما راح تلقاه في قائمة البرامج حقت ويندوز.</p>
+      <ol class="steps">
+        <li>اضغط <b>«فك التثبيت»</b> (أو <b>الإعدادات ← «رجّع كل شي طبيعي»</b>) عشان تنشال قواعد جدار الحماية ونفق الوسيط لو كان شغّال. وقفل البرنامج يسوي نفس الشي.</li>
+        <li>قفّل البرنامج وامسح مجلده.</li>
+        <li>لو تبغى: امسح مجلد <code dir="ltr">%APPDATA%\2XPing</code> عشان تنمسح إعداداته وسجلّاته كمان.</li>
+      </ol>
+    </section>
+
     <section>
       <h2>أسئلة شائعة</h2>
       <details><summary>كيف أغيّر سيرفر ديدلوك أو أختار المنطقة؟</summary><p>افتح 2X Ping واختار ديدلوك، علّم على المناطق اللي تبغاها واضغط «العب على ...»، بعدين أعد تشغيل اللعبة وادخل البحث. البرنامج يقفل باقي المناطق في جدار حماية ويندوز، فالبحث ما يحطك إلا في اللي اخترته.</p></details>
@@ -124,12 +134,13 @@
       <details><summary>هل هو مجاني؟</summary><p>إيوه، مجاني ومفتوح المصدر برخصة MIT.</p></details>
       <details><summary>وش الألعاب اللي يدعمها؟</summary><p>ديدلوك (أفضل دعم)، وArena Breakout: Infinite، وأوفرواتش 2 وDead by Daylight (قيد التطوير: تشتغل ولسا تحت التجربة).</p></details>
       <details><summary>هل يقلل البنق؟</summary><p>ما يسرّع نتّك، لكنه يخليك على المناطق اللي بنقها أقل وعلى أقصر طريق لشبكة اللعبة، ويقولك البنق المتوقع قبل ما تثبّت.</p></details>
-      <details><summary>ليش ويندوز يقول «Windows protected your PC»؟</summary><p>لأن البرنامج مجاني وغير موقّع رقمياً. اضغط More info ثم Run anyway.</p></details>
+      <details><summary>ليش ويندوز يقول «Windows protected your PC»؟</summary><p>لأن البرنامج مجاني ولسا غير موقّع رقمياً (التوقيع ينجهّز، شوف <a href="code-signing.html" lang="en">Code signing policy</a>). اضغط More info ثم Run anyway.</p></details>
     </section>
   </main>
 
   <footer>
-    <p>2X Ping من تطوير <a href="https://github.com/ldo2x">lDo2x</a> · <a href="https://github.com/ldo2x/2XPing">GitHub</a> · <a href="https://github.com/ldo2x/2XPing/blob/main/SECURITY.md">الأمان والخصوصية</a> · رخصة MIT</p>
+    <p>2X Ping من تطوير <a href="https://github.com/ldo2x">lDo2x</a> · <a href="https://github.com/ldo2x/2XPing">GitHub</a> · <a href="https://github.com/ldo2x/2XPing/blob/main/SECURITY.md#usage-statistics-beta">الأمان والخصوصية</a> · <a href="code-signing.html" lang="en">Code signing policy</a> · رخصة MIT</p>
+    <p lang="en" dir="ltr">Free code signing provided by SignPath.io, certificate by SignPath Foundation</p>
     <p>نسخة تجريبية. البرنامج غير تابع لـ Valve أو أي ناشر ألعاب، وأسماء الألعاب علامات تجارية لأصحابها.</p>
   </footer>
 </div>

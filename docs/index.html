@@ -80,7 +80,7 @@
         <a class="btn primary" href="https://github.com/ldo2x/2XPing/releases">Download for Windows</a>
         <a class="btn ghost" href="https://github.com/ldo2x/2XPing">View on GitHub</a>
       </div>
-      <p class="meta">Free &amp; open source · Windows 10 / 11 · No install · Arabic &amp; English</p>
+      <p class="meta">Free &amp; open source · Windows 10 / 11 · No install · Arabic &amp; English · <a href="code-signing.html">Code signing policy</a></p>
     </div>
 
     <div class="shot"><img src="screenshot-en.png" width="1240" height="760" alt="2X Ping server selector: Deadlock regions with ping, wait time and players, and a Play in Europe button"></div>
@@ -117,6 +117,16 @@
       </ol>
     </section>
 
+    <section id="uninstall">
+      <h2>Uninstall</h2>
+      <p>2X Ping has no installer, so there is nothing in Windows' app list to remove.</p>
+      <ol class="steps">
+        <li>Press <b>Unlock</b> (or <b>Settings &gt; Back to normal</b>) so the lock's firewall rules and any relay tunnel are removed. Closing the app does it too.</li>
+        <li>Close 2X Ping and delete its folder.</li>
+        <li>Optional: delete <code>%APPDATA%\2XPing</code> to remove its settings and logs as well.</li>
+      </ol>
+    </section>
+
     <section>
       <h2>FAQ</h2>
       <details><summary>How do I choose my server region in Deadlock?</summary><p>Open 2X Ping and pick Deadlock, tick the regions you want and press Play in ..., then restart the game and queue. 2X Ping blocks the other regions in Windows Firewall, so matchmaking can only place you where you chose.</p></details>
@@ -124,12 +134,13 @@
       <details><summary>Is it free?</summary><p>Yes, free and open source under the MIT licence.</p></details>
       <details><summary>Which games does the server selector support?</summary><p>Deadlock (best supported), Arena Breakout: Infinite, and Overwatch 2 and Dead by Daylight (in development: they work, still being tested).</p></details>
       <details><summary>Will it lower my ping?</summary><p>It can't make your internet faster, but it keeps you on the regions with the lowest ping and the shortest route into the game's network, and tells you the ping to expect before you lock.</p></details>
-      <details><summary>Why does Windows say "Windows protected your PC"?</summary><p>The app is free and not code-signed yet. Click More info, then Run anyway.</p></details>
+      <details><summary>Why does Windows say "Windows protected your PC"?</summary><p>The app is free and not code-signed yet (signing is being set up, see the <a href="code-signing.html">Code signing policy</a>). Click More info, then Run anyway.</p></details>
     </section>
   </main>
 
   <footer>
-    <p>2X Ping by <a href="https://github.com/ldo2x">lDo2x</a> · <a href="https://github.com/ldo2x/2XPing">GitHub</a> · <a href="https://github.com/ldo2x/2XPing/blob/main/SECURITY.md">Security &amp; privacy</a> · MIT licence</p>
+    <p>2X Ping by <a href="https://github.com/ldo2x">lDo2x</a> · <a href="https://github.com/ldo2x/2XPing">GitHub</a> · <a href="https://github.com/ldo2x/2XPing/blob/main/SECURITY.md#usage-statistics-beta">Security &amp; privacy</a> · <a href="code-signing.html">Code signing policy</a> · MIT licence</p>
+    <p>Free code signing provided by SignPath.io, certificate by SignPath Foundation</p>
     <p>Beta version. Not affiliated with Valve or any game publisher. Game names are trademarks of their owners.</p>
   </footer>
 </div>

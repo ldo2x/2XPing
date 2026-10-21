@@ -33,6 +33,12 @@ Made by <b>lDo2x</b>
 
 Requires **Windows 10 or 11**. Nothing to install, and after that updates are one click inside the app.
 
+### Uninstall
+2X Ping has no installer, so there is nothing in Windows' app list.
+1. Press **Unlock** (or **Settings → Back to normal**) so the lock's firewall rules and any relay tunnel are removed. Closing the app does it too.
+2. Close 2X Ping and delete its folder.
+3. Optional: delete `%APPDATA%\2XPing` to remove its settings and logs as well.
+
 ## Features
 
 | Feature | What it does |
@@ -76,7 +82,7 @@ Other games (CS2, Dota 2, Valorant, Fortnite, PUBG, Apex, Rocket League) are bei
 ## Notes
 - Player numbers and match times are **estimates** based on public data.
 - **Updates are required during the beta:** when a new version is out a bar appears, and you have 3 days to update with one click. After that the old version stops until you update.
-- **Beta statistics:** while open, the app sends the name you enter on first launch, your computer's name, your city, country and internet provider, your PC's hardware and setup, the game, server and ping you use, ping-test results, a short report of each match (which datacenter it was on, the game's own ping, and whether it was inside your lock), which features you use, and error logs, to improve the beta. You are told on first launch and accepting is required to use the beta. Details in [SECURITY.md](SECURITY.md).
+- **Beta statistics:** while open, the app sends the name you enter on first launch, your computer's name, your city, country and internet provider, your PC's hardware and setup, the game, server and ping you use, ping-test results, a short report of each match (which datacenter it was on, the game's own ping, and whether it was inside your lock), which features you use, and error logs to the developer's own database (Supabase), to improve the beta. You are told on first launch and accepting is required to use the beta. **Share beta statistics** in Settings is on by default; turn it off any time and only anonymous usage is sent: no name, computer name, location, internet provider or PC details, and no location lookup. Details in the [privacy policy](SECURITY.md#usage-statistics-beta).
 - 2X Ping **never changes game files or touches game memory** (the only game file it reads is Deadlock's console log, if you turned on `-condebug`). Everything it changes (firewall rules, tunnel) is undone when you stop it or close the app. See [SECURITY.md](SECURITY.md).
 - Some games have their own anti-cheat policies; use the app at your own risk.
 
@@ -103,6 +109,16 @@ powershell -ExecutionPolicy Bypass -File build.ps1            # dist\2XPing.exe
 powershell -ExecutionPolicy Bypass -File build.ps1 -Release   # release\2XPing-v<version>.zip
 ```
 Uses the C# compiler that ships with Windows (.NET Framework 4.8), so there is nothing to install.
+
+## Code signing policy
+Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
+
+- Releases are built from this repository's tagged source by GitHub Actions, and each release is approved by hand before `2XPing.exe` is signed. Signing is being set up: until the first signed release, the exe is unsigned.
+- Committers and reviewers: [lDo2x](https://github.com/ldo2x)
+- Approvers: [lDo2x](https://github.com/ldo2x)
+- Privacy: what the app sends and how to turn it off is in the [privacy policy](SECURITY.md#usage-statistics-beta).
+
+Full page: [Code signing policy](https://ldo2x.github.io/2XPing/code-signing.html)
 
 ## 🧪 Beta program: how to help
 1. Try 2X Ping with your favourite game.

@@ -2,14 +2,26 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
   <url>
     <loc>https://ldo2x.github.io/2XPing/</loc>
-    <lastmod>2026-10-15</lastmod>
+    <lastmod>2026-10-21</lastmod>
     <xhtml:link rel="alternate" hreflang="en" href="https://ldo2x.github.io/2XPing/"/>
     <xhtml:link rel="alternate" hreflang="ar" href="https://ldo2x.github.io/2XPing/ar/"/>
   </url>
   <url>
     <loc>https://ldo2x.github.io/2XPing/ar/</loc>
-    <lastmod>2026-10-15</lastmod>
+    <lastmod>2026-10-21</lastmod>
     <xhtml:link rel="alternate" hreflang="en" href="https://ldo2x.github.io/2XPing/"/>
     <xhtml:link rel="alternate" hreflang="ar" href="https://ldo2x.github.io/2XPing/ar/"/>
+  </url>
+  <url>
+    <loc>https://ldo2x.github.io/2XPing/code-signing.html</loc>
+    <lastmod>2026-10-21</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://ldo2x.github.io/2XPing/code-signing.html"/>
+    <xhtml:link rel="alternate" hreflang="ar" href="https://ldo2x.github.io/2XPing/ar/code-signing.html"/>
+  </url>
+  <url>
+    <loc>https://ldo2x.github.io/2XPing/ar/code-signing.html</loc>
+    <lastmod>2026-10-21</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://ldo2x.github.io/2XPing/code-signing.html"/>
+    <xhtml:link rel="alternate" hreflang="ar" href="https://ldo2x.github.io/2XPing/ar/code-signing.html"/>
   </url>
 </urlset>

@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Code signing policy · 2X Ping</title>
+<meta name="description" content="How 2X Ping releases are built and code signed: free code signing provided by SignPath.io, certificate by SignPath Foundation. Team roles, privacy and how to check the signature.">
+<link rel="canonical" href="https://ldo2x.github.io/2XPing/code-signing.html">
+<link rel="alternate" hreflang="en" href="https://ldo2x.github.io/2XPing/code-signing.html">
+<link rel="alternate" hreflang="ar" href="https://ldo2x.github.io/2XPing/ar/code-signing.html">
+<link rel="alternate" hreflang="x-default" href="https://ldo2x.github.io/2XPing/code-signing.html">
+<meta name="theme-color" content="#140f1e">
+<link rel="icon" type="image/png" href="site/favicon-32.png">
+<link rel="apple-touch-icon" href="site/logo-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Readex+Pro:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="site/style.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <a class="brand" href="./"><img src="site/logo-192.png" alt="" width="36" height="36">2X Ping</a>
+    <a class="lang" href="ar/code-signing.html" hreflang="ar" lang="ar">العربية</a>
+  </header>
+
+  <main>
+    <div class="hero">
+      <h1>Code signing policy</h1>
+      <p class="lead">Free code signing provided by <a href="https://about.signpath.io/">SignPath.io</a>, certificate by <a href="https://signpath.org/">SignPath Foundation</a></p>
+    </div>
+
+    <section>
+      <h2>What is signed</h2>
+      <p><code>2XPing.exe</code> inside the release zips on <a href="https://github.com/ldo2x/2XPing/releases">github.com/ldo2x/2XPing/releases</a>. Nothing else is signed with this certificate.</p>
+      <ul>
+        <li>Every release is built from the tagged source code of this repository by GitHub Actions (<a href="https://github.com/ldo2x/2XPing/blob/main/.github/workflows/build.yml">build.yml</a>), never on a personal PC.</li>
+        <li>The build is sent to SignPath, and each release is approved by hand before it is signed.</li>
+        <li>The signed files carry the product name <b>2X Ping</b> and the release's version.</li>
+        <li>The <code>.sha256</code> file of each release is made from the signed zip; the in-app updater checks it before installing.</li>
+      </ul>
+      <p class="meta">Status: signing is being set up. Until the first signed release, <code>2XPing.exe</code> is unsigned and Windows may show "Windows protected your PC".</p>
+    </section>
+
+    <section>
+      <h2>Team roles</h2>
+      <div class="grid">
+        <div class="card"><h3>Committers and reviewers</h3><p><a href="https://github.com/ldo2x">lDo2x</a></p></div>
+        <div class="card"><h3>Approvers</h3><p><a href="https://github.com/ldo2x">lDo2x</a></p></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Privacy</h2>
+      <p>While it is open, 2X Ping sends beta usage statistics to the developer's own database (Supabase). You are told on first launch. <b>Share beta statistics</b> in Settings is on by default; turned off, only anonymous usage is sent: no name, PC name, location, internet provider or PC details, and no location lookup.</p>
+      <p>Everything that is sent, where it goes, and the other services the app contacts: <a href="https://github.com/ldo2x/2XPing/blob/main/SECURITY.md#usage-statistics-beta">privacy policy</a>.</p>
+    </section>
+
+    <section>
+      <h2>Check the signature</h2>
+      <ol class="steps">
+        <li>Right-click <code>2XPing.exe</code> &gt; <b>Properties</b> &gt; <b>Digital Signatures</b>.</li>
+        <li>The signer should be <b>SignPath Foundation</b>. If the tab is missing or names someone else, don't run it and <a href="https://github.com/ldo2x/2XPing/blob/main/SECURITY.md">tell us</a>.</li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>Uninstall</h2>
+      <p>2X Ping has no installer. Press <b>Unlock</b> (or <b>Back to normal</b> in Settings), close the app, then delete its folder. To remove its settings too, delete <code>%APPDATA%\2XPing</code>.</p>
+    </section>
+  </main>
+
+  <footer>
+    <p>2X Ping by <a href="https://github.com/ldo2x">lDo2x</a> · <a href="https://github.com/ldo2x/2XPing">GitHub</a> · <a href="https://github.com/ldo2x/2XPing/blob/main/SECURITY.md#usage-statistics-beta">Privacy</a> · <a href="code-signing.html">Code signing policy</a> · MIT licence</p>
+    <p>Free code signing provided by SignPath.io, certificate by SignPath Foundation</p>
+  </footer>
+</div>
+</body>
+</html>

@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Code signing policy · 2X Ping</title>
+<meta name="description" content="كيف تنبني إصدارات 2X Ping وتنوقّع رقمياً: Free code signing provided by SignPath.io, certificate by SignPath Foundation. الأدوار والخصوصية وكيف تتأكد من التوقيع.">
+<link rel="canonical" href="https://ldo2x.github.io/2XPing/ar/code-signing.html">
+<link rel="alternate" hreflang="en" href="https://ldo2x.github.io/2XPing/code-signing.html">
+<link rel="alternate" hreflang="ar" href="https://ldo2x.github.io/2XPing/ar/code-signing.html">
+<link rel="alternate" hreflang="x-default" href="https://ldo2x.github.io/2XPing/code-signing.html">
+<meta name="theme-color" content="#140f1e">
+<link rel="icon" type="image/png" href="../site/favicon-32.png">
+<link rel="apple-touch-icon" href="../site/logo-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Readex+Pro:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../site/style.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <a class="brand" href="./"><img src="../site/logo-192.png" alt="" width="36" height="36">2X Ping</a>
+    <a class="lang" href="../code-signing.html" hreflang="en" lang="en">English</a>
+  </header>
+
+  <main>
+    <div class="hero">
+      <h1 lang="en" dir="ltr">Code signing policy</h1>
+      <p class="lead">سياسة التوقيع الرقمي للبرنامج</p>
+      <p class="lead" lang="en" dir="ltr">Free code signing provided by <a href="https://about.signpath.io/">SignPath.io</a>, certificate by <a href="https://signpath.org/">SignPath Foundation</a></p>
+    </div>
+
+    <section>
+      <h2>وش اللي ينوقّع</h2>
+      <p>ملف <code>2XPing.exe</code> اللي داخل ملفات zip في <a href="https://github.com/ldo2x/2XPing/releases">صفحة الإصدارات</a>. ما فيه شي ثاني ينوقّع بهالشهادة.</p>
+      <ul>
+        <li>كل إصدار ينبني من كود المستودع نفسه (نسخة الـ tag) عن طريق GitHub Actions (<a href="https://github.com/ldo2x/2XPing/blob/main/.github/workflows/build.yml">build.yml</a>)، مو من جهاز أحد.</li>
+        <li>النسخة تروح لـ SignPath، وكل إصدار لازم ينوافق عليه يدوياً قبل ما ينوقّع.</li>
+        <li>الملفات الموقّعة فيها اسم المنتج <b>2X Ping</b> ورقم الإصدار.</li>
+        <li>ملف <code>.sha256</code> حق كل إصدار ينحسب من ملف zip الموقّع، والتحديث داخل البرنامج يتأكد منه قبل ما يركّب.</li>
+      </ul>
+      <p class="meta">الحالة: التوقيع لسا ينجهّز. لين أول إصدار موقّع، <code>2XPing.exe</code> غير موقّع، وممكن ويندوز يطلع لك «Windows protected your PC».</p>
+    </section>
+
+    <section>
+      <h2>الأدوار</h2>
+      <div class="grid">
+        <div class="card"><h3 lang="en" dir="ltr">Committers and reviewers</h3><p>اللي يكتبون الكود ويراجعونه: <a href="https://github.com/ldo2x">lDo2x</a></p></div>
+        <div class="card"><h3 lang="en" dir="ltr">Approvers</h3><p>اللي يوافقون على التوقيع: <a href="https://github.com/ldo2x">lDo2x</a></p></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>الخصوصية</h2>
+      <p>البرنامج وهو مفتوح يرسل إحصائيات البيتا لقاعدة بيانات المطوّر نفسه (Supabase)، وينقال لك هادا أول ما تفتحه. خيار <b>«شارك إحصائيات البيتا»</b> في الإعدادات شغّال من البداية، وإذا طفّيته يوصلنا استخدام مجهول بس: بدون اسمك واسم جهازك ومدينتك وشركة النت ومواصفات جهازك، وبدون ما ندوّر على موقعك.</p>
+      <p>كل شي ينرسل، ووين يروح، والخدمات الثانية اللي يكلمها البرنامج: <a href="https://github.com/ldo2x/2XPing/blob/main/SECURITY.md#usage-statistics-beta">سياسة الخصوصية</a>.</p>
+    </section>
+
+    <section>
+      <h2>كيف تتأكد من التوقيع</h2>
+      <ol class="steps">
+        <li>كليك يمين على <code>2XPing.exe</code> ← <b>Properties</b> ← <b>Digital Signatures</b>.</li>
+        <li>لازم يكون الموقّع <b>SignPath Foundation</b>. إذا ما لقيت التبويب أو كان باسم أحد ثاني، لا تشغّله و<a href="https://github.com/ldo2x/2XPing/blob/main/SECURITY.md">علّمنا</a>.</li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>كيف تشيل البرنامج</h2>
+      <p>البرنامج ما يتثبّت على الجهاز. اضغط <b>«فك التثبيت»</b> (أو <b>«رجّع كل شي طبيعي»</b> من الإعدادات)، قفّل البرنامج، وبعدين امسح مجلده. وإذا تبغى تمسح إعداداته كمان، امسح مجلد <code dir="ltr">%APPDATA%\2XPing</code>.</p>
+    </section>
+  </main>
+
+  <footer>
+    <p>2X Ping من تطوير <a href="https://github.com/ldo2x">lDo2x</a> · <a href="https://github.com/ldo2x/2XPing">GitHub</a> · <a href="https://github.com/ldo2x/2XPing/blob/main/SECURITY.md#usage-statistics-beta">الخصوصية</a> · <a href="code-signing.html" lang="en">Code signing policy</a> · رخصة MIT</p>
+    <p lang="en" dir="ltr">Free code signing provided by SignPath.io, certificate by SignPath Foundation</p>
+  </footer>
+</div>
+</body>
+</html>

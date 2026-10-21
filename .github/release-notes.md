@@ -23,4 +23,14 @@
 
 للتأكد من سلامة الملف قارن بصمة SHA256 مع ملف `.sha256`. | Verify the download with the `.sha256` file.
 
+**كيف تشيله | Uninstall:** اضغط «فك التثبيت» أو «رجّع كل شي طبيعي»، قفّل البرنامج، وامسح مجلده (ولو تبغى امسح `%APPDATA%\2XPing`). | Press **Unlock** or **Back to normal**, close the app and delete its folder (optionally also `%APPDATA%\2XPing`).
+
+**الخصوصية | Privacy:** البرنامج يرسل إحصائيات البيتا لقاعدة بيانات المطوّر، وتقدر تطفّي «شارك إحصائيات البيتا» من الإعدادات عشان يوصلنا استخدام مجهول بس. | 2X Ping sends beta statistics to the developer's database; turn off **Share beta statistics** in Settings to send only anonymous usage. [Privacy policy](../../blob/main/SECURITY.md#usage-statistics-beta)
+
+### [Code signing policy](https://ldo2x.github.io/2XPing/code-signing.html)
+Free code signing provided by SignPath.io, certificate by SignPath Foundation
+- Committers and reviewers: [lDo2x](https://github.com/ldo2x) · Approvers: [lDo2x](https://github.com/ldo2x)
+- Built from this tag's source by GitHub Actions and approved by hand before signing. | تنبني من كود هالإصدار عن طريق GitHub Actions وتنوافق يدوياً قبل التوقيع.
+- Privacy: [SECURITY.md](../../blob/main/SECURITY.md#usage-statistics-beta)
+
 التغييرات: [CHANGELOG.md](../../blob/main/CHANGELOG.md) | Changes: see CHANGELOG.md
