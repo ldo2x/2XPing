@@ -3,9 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>2X Ping: Free Deadlock Server Selector, Region Lock &amp; Ping Tester for Windows</title>
-<meta name="description" content="2X Ping is a free server selector and region selector for Windows. Test every server's ping in seconds, pick your region and lock it, for Deadlock, Arena Breakout: Infinite, Overwatch 2 and Dead by Daylight. Arabic &amp; English.">
-<meta name="keywords" content="deadlock server selector, deadlock region selector, deadlock change server, deadlock region lock, server selector, region selector, server picker, ping tester, arena breakout infinite server selector, overwatch 2 server selector, dead by daylight server selector">
+<title>2X Ping: Deadlock server region selector for Windows</title>
+<meta name="description" content="2X Ping measures your ping to every Deadlock region and locks matchmaking to the regions you choose, through Windows Firewall. Free and open source for Windows 10 and 11.">
 <link rel="canonical" href="https://ldo2x.github.io/2XPing/">
 <link rel="alternate" hreflang="en" href="https://ldo2x.github.io/2XPing/">
 <link rel="alternate" hreflang="ar" href="https://ldo2x.github.io/2XPing/ar/">
@@ -15,8 +14,8 @@
 <link rel="apple-touch-icon" href="site/logo-192.png">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="2X Ping">
-<meta property="og:title" content="2X Ping: Free Server Selector for Deadlock and more">
-<meta property="og:description" content="Test every server's ping in seconds, pick your region and lock it. Free for Windows.">
+<meta property="og:title" content="2X Ping: choose your Deadlock server region">
+<meta property="og:description" content="Measures your ping to every Deadlock region and locks matchmaking to the ones you choose. Free for Windows.">
 <meta property="og:url" content="https://ldo2x.github.io/2XPing/">
 <meta property="og:image" content="https://ldo2x.github.io/2XPing/social/social-preview.png">
 <meta property="og:locale" content="en_US">
@@ -31,10 +30,10 @@
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
   "name": "2X Ping",
-  "alternateName": ["2XPing", "2X Ping Server Selector"],
-  "description": "Free server selector and region lock for Windows: tests every server's ping, shows the ping to expect and locks you to the regions you pick in Deadlock, Arena Breakout: Infinite, Overwatch 2 and Dead by Daylight.",
+  "alternateName": "2XPing",
+  "description": "Measures your ping to every Deadlock region and locks matchmaking to the regions you choose, through Windows Firewall.",
   "applicationCategory": "GameApplication",
-  "applicationSubCategory": "Server selector",
+  "applicationSubCategory": "Server region selector",
   "operatingSystem": "Windows 10, Windows 11",
   "url": "https://ldo2x.github.io/2XPing/",
   "downloadUrl": "https://github.com/ldo2x/2XPing/releases",
@@ -52,15 +51,15 @@
   "@type": "FAQPage",
   "mainEntity": [
     { "@type": "Question", "name": "How do I choose my server region in Deadlock?",
-      "acceptedAnswer": { "@type": "Answer", "text": "Open 2X Ping and pick Deadlock. Every region is tested in 2-3 seconds. Tick the regions you want and press Play in ..., then restart the game and queue. 2X Ping blocks the other regions in Windows Firewall, so matchmaking can only place you where you chose." } },
+      "acceptedAnswer": { "@type": "Answer", "text": "Open 2X Ping, tick the regions you want and press Play in ..., then restart Deadlock and queue. The other regions are blocked in Windows Firewall, so matchmaking can only place you in the ones you chose." } },
     { "@type": "Question", "name": "Does 2X Ping change game files?",
-      "acceptedAnswer": { "@type": "Answer", "text": "No. 2X Ping never changes game files or touches game memory. It adds Windows Firewall rules, and removes them when you press Unlock or close the app. Some games have their own anti-cheat policies; use it at your own risk." } },
-    { "@type": "Question", "name": "Is 2X Ping free?",
-      "acceptedAnswer": { "@type": "Answer", "text": "Yes. 2X Ping is free and open source under the MIT licence." } },
-    { "@type": "Question", "name": "Which games does the server selector support?",
-      "acceptedAnswer": { "@type": "Answer", "text": "Deadlock (best supported), Arena Breakout: Infinite, and Overwatch 2 and Dead by Daylight (in development: they work, still being tested)." } },
+      "acceptedAnswer": { "@type": "Answer", "text": "No. It doesn't modify game files or read game memory. The lock is a set of Windows Firewall rules that are removed when you press Unlock or close the app." } },
     { "@type": "Question", "name": "Will it lower my ping?",
-      "acceptedAnswer": { "@type": "Answer", "text": "It can't make your internet faster, but it keeps you on the regions with the lowest ping and the shortest route into the game's network, and tells you the ping to expect before you lock." } }
+      "acceptedAnswer": { "@type": "Answer", "text": "It can't make your connection faster. It keeps you on the regions where your ping is lowest and shows the ping to expect before you lock." } },
+    { "@type": "Question", "name": "Which games are supported?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Deadlock. Other games are being tested and will be added once they work reliably." } },
+    { "@type": "Question", "name": "Is it free?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Yes. 2X Ping is free and open source under the MIT licence." } }
   ]
 }
 </script>
@@ -74,74 +73,62 @@
 
   <main>
     <div class="hero">
-      <h1>The free <span class="accent">server selector</span> for Deadlock</h1>
-      <p class="lead">Test every server's ping in seconds, see where you'll get the lowest ping and the fastest queue, and lock the game to the regions you pick. Also for Arena Breakout: Infinite, Overwatch 2 and Dead by Daylight.</p>
+      <h1>Choose your <span class="accent">Deadlock</span> server region</h1>
+      <p class="lead">2X Ping measures your ping to every Deadlock region and locks matchmaking to the ones you choose.</p>
       <div class="cta">
         <a class="btn primary" href="https://github.com/ldo2x/2XPing/releases">Download for Windows</a>
-        <a class="btn ghost" href="https://github.com/ldo2x/2XPing">View on GitHub</a>
+        <a class="btn ghost" href="https://github.com/ldo2x/2XPing">Source code</a>
       </div>
-      <p class="meta">Free &amp; open source · Windows 10 / 11 · No install · Arabic &amp; English · <a href="code-signing.html">Code signing policy</a></p>
+      <p class="meta">Free and open source · Windows 10 and 11 · Arabic and English · <a href="code-signing.html">Code signing policy</a></p>
     </div>
 
-    <div class="shot"><img src="screenshot-en.png" width="1240" height="760" alt="2X Ping server selector: Deadlock regions with ping, wait time and players, and a Play in Europe button"></div>
+    <div class="shot"><img src="screenshot-en.png" width="1240" height="760" alt="2X Ping showing Deadlock regions with ping, queue time and player count"></div>
 
     <section>
-      <h2>What it does</h2>
+      <h2>How it works</h2>
       <div class="grid">
-        <div class="card"><h3>📶 Ping test</h3><p>Every region tested in 2-3 seconds: <span class="good">green</span> is great, <span class="warn">yellow</span> is OK, <span class="bad">red</span> is high.</p></div>
-        <div class="card"><h3>🔒 Region lock</h3><p>Pick one or more regions and press <b>Play in ...</b>. The other regions are blocked, so matchmaking puts you where you chose.</p></div>
-        <div class="card"><h3>🧭 Smart Deadlock lock</h3><p>Knows your shortest way into Valve's network (for example via Dubai) and tells you the ping to expect before you lock.</p></div>
-        <div class="card"><h3>✅ Where am I playing?</h3><p>During a match it tells you which region you're on and whether it's one you picked.</p></div>
-        <div class="card"><h3>👥 Players &amp; queue times</h3><p>Estimated players per region and the expected time to find a match.</p></div>
-        <div class="card"><h3>🪶 Light &amp; safe</h3><p>Never touches game files or memory. Everything it changes is undone when you unlock or close it.</p></div>
+        <div class="card"><h3>Ping to every region</h3><p>Tests all Deadlock regions in two to three seconds, with the expected queue time and player count for each.</p></div>
+        <div class="card"><h3>Region lock</h3><p>Pick one or more regions. The rest are blocked in Windows Firewall, so matchmaking can only place you in yours.</p></div>
+        <div class="card"><h3>Route-aware</h3><p>Knows where you enter Valve's network (for example via Dubai) and shows the ping you'll get before you lock.</p></div>
+        <div class="card"><h3>Match check</h3><p>During a match it tells you which region you're playing in and whether it's one you chose.</p></div>
+        <div class="card"><h3>Nothing changed in the game</h3><p>No game files are modified and no game memory is read. Unlock, or close the app, and everything is back as it was.</p></div>
+        <div class="card"><h3>Lightweight</h3><p>No installer. While idle it uses about 56 KB of data an hour.</p></div>
       </div>
     </section>
 
     <section>
-      <h2>Supported games</h2>
-      <div class="games">
-        <span class="chip main">Deadlock server selector</span>
-        <span class="chip">Arena Breakout: Infinite</span>
-        <span class="chip">Overwatch 2 <small>in development</small></span>
-        <span class="chip">Dead by Daylight <small>in development</small></span>
-      </div>
-    </section>
-
-    <section>
-      <h2>How to change your server region in Deadlock</h2>
+      <h2>Lock your Deadlock region</h2>
       <ol class="steps">
-        <li>Download 2X Ping from <a href="https://github.com/ldo2x/2XPing/releases">Releases</a>, extract it and run <code>2XPing.exe</code> (it asks for administrator rights).</li>
-        <li>Pick <b>Deadlock</b>. Every region is tested in 2-3 seconds.</li>
-        <li>Tick the regions you want (Europe, SE Asia, North America...) and press <b>Play in ...</b>.</li>
-        <li>Restart the game and queue. Press <b>Unlock</b> or close 2X Ping to remove the lock.</li>
+        <li>Download the latest version from <a href="https://github.com/ldo2x/2XPing/releases">Releases</a>, extract it and run <code>2XPing.exe</code>. It asks for administrator rights because the lock uses Windows Firewall.</li>
+        <li>The app tests every region. Green is under 60 ms.</li>
+        <li>Tick the regions you want and press <b>Play in ...</b>.</li>
+        <li>Restart Deadlock and queue. Press <b>Unlock</b> when you're done.</li>
       </ol>
-    </section>
-
-    <section id="uninstall">
-      <h2>Uninstall</h2>
-      <p>2X Ping has no installer, so there is nothing in Windows' app list to remove.</p>
-      <ol class="steps">
-        <li>Press <b>Unlock</b> (or <b>Settings &gt; Back to normal</b>) so the lock's firewall rules and any relay tunnel are removed. Closing the app does it too.</li>
-        <li>Close 2X Ping and delete its folder.</li>
-        <li>Optional: delete <code>%APPDATA%\2XPing</code> to remove its settings and logs as well.</li>
-      </ol>
+      <p class="meta">Deadlock is fully supported. Other games are being tested and will be added once they work reliably.</p>
     </section>
 
     <section>
       <h2>FAQ</h2>
-      <details><summary>How do I choose my server region in Deadlock?</summary><p>Open 2X Ping and pick Deadlock, tick the regions you want and press Play in ..., then restart the game and queue. 2X Ping blocks the other regions in Windows Firewall, so matchmaking can only place you where you chose.</p></details>
-      <details><summary>Does 2X Ping change game files?</summary><p>No. It never changes game files or touches game memory. It adds Windows Firewall rules and removes them when you press Unlock or close the app. Some games have their own anti-cheat policies; use it at your own risk.</p></details>
+      <details><summary>Does 2X Ping change game files?</summary><p>No. It doesn't modify game files or read game memory. The lock is a set of Windows Firewall rules that are removed when you press Unlock or close the app. Games have their own anti-cheat policies, so use it at your own discretion.</p></details>
+      <details><summary>Will it lower my ping?</summary><p>It can't make your connection faster. It keeps you on the regions where your ping is lowest and shows the ping to expect before you lock.</p></details>
+      <details><summary>Why does Windows warn me when I open it?</summary><p>The app isn't code-signed yet; signing is being set up (see the <a href="code-signing.html">Code signing policy</a>). On the blue SmartScreen warning, click More info, then Run anyway.</p></details>
+      <details><summary>What does it send?</summary><p>During the beta it shares usage and performance information, such as ping results and errors, and you can make it anonymous in Settings. The full list is in the <a href="https://github.com/ldo2x/2XPing/blob/main/SECURITY.md#usage-statistics-beta">privacy details</a>.</p></details>
       <details><summary>Is it free?</summary><p>Yes, free and open source under the MIT licence.</p></details>
-      <details><summary>Which games does the server selector support?</summary><p>Deadlock (best supported), Arena Breakout: Infinite, and Overwatch 2 and Dead by Daylight (in development: they work, still being tested).</p></details>
-      <details><summary>Will it lower my ping?</summary><p>It can't make your internet faster, but it keeps you on the regions with the lowest ping and the shortest route into the game's network, and tells you the ping to expect before you lock.</p></details>
-      <details><summary>Why does Windows say "Windows protected your PC"?</summary><p>The app is free and not code-signed yet (signing is being set up, see the <a href="code-signing.html">Code signing policy</a>). Click More info, then Run anyway.</p></details>
+    </section>
+
+    <section id="uninstall">
+      <h2>Uninstall</h2>
+      <ol class="steps">
+        <li>Press <b>Unlock</b> (or <b>Settings &gt; Back to normal</b>) to remove the firewall rules and any relay tunnel. Closing the app does this too.</li>
+        <li>Close 2X Ping and delete its folder. There is no installer, so nothing else needs removing.</li>
+        <li>Optional: delete <code>%APPDATA%\2XPing</code> to remove its settings and logs.</li>
+      </ol>
     </section>
   </main>
 
   <footer>
-    <p>2X Ping by <a href="https://github.com/ldo2x">lDo2x</a> · <a href="https://github.com/ldo2x/2XPing">GitHub</a> · <a href="https://github.com/ldo2x/2XPing/blob/main/SECURITY.md#usage-statistics-beta">Security &amp; privacy</a> · <a href="code-signing.html">Code signing policy</a> · MIT licence</p>
-    <p>Free code signing provided by SignPath.io, certificate by SignPath Foundation</p>
-    <p>Beta version. Not affiliated with Valve or any game publisher. Game names are trademarks of their owners.</p>
+    <p>2X Ping by <a href="https://github.com/ldo2x">lDo2x</a> · <a href="https://github.com/ldo2x/2XPing">GitHub</a> · <a href="https://github.com/ldo2x/2XPing/blob/main/SECURITY.md#usage-statistics-beta">Privacy</a> · <a href="code-signing.html">Code signing policy</a> · MIT licence</p>
+    <p>Beta. Not affiliated with Valve. Deadlock is a trademark of Valve Corporation.</p>
   </footer>
 </div>
 </body>

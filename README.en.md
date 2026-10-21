@@ -4,8 +4,7 @@
 
 <p align="center">
 <b>Lower ping, faster queues.</b><br>
-Free <b>server selector</b> and <b>region lock</b> for Windows: tests your game's servers in seconds, tells you where to play, and locks you to the server you want.<br>
-<b>Deadlock server selector</b> · Arena Breakout: Infinite · Overwatch 2 · Dead by Daylight<br>
+A <b>Deadlock server region selector</b> for Windows: measures your ping to every region and locks matchmaking to the ones you choose.<br>
 Made by <b>lDo2x</b>
 </p>
 
@@ -60,11 +59,9 @@ Requires **Windows 10 or 11**. Nothing to install, and after that updates are on
 | 🌐 Arabic & English | Full right-to-left Arabic interface |
 
 ### Supported games
-Deadlock · Arena Breakout: Infinite · Overwatch 2 (in development) · Dead by Daylight (in development)
+**Deadlock** is fully supported.
 
-Deadlock is the main and best-supported game. Overwatch 2 and Dead by Daylight carry an "in development" tag: their lock works but is still being tested.
-
-Other games (CS2, Dota 2, Valorant, Fortnite, PUBG, Apex, Rocket League) are being tested and will be added once they are verified.
+Arena Breakout: Infinite, Overwatch 2 and Dead by Daylight are in the app for testing; their lock works but isn't fully verified yet. Other games will be added once they work reliably.
 
 ## How to use
 
@@ -91,8 +88,8 @@ Other games (CS2, Dota 2, Valorant, Fortnite, PUBG, Apex, Rocket League) are bei
 **How do I change my server region in Deadlock?**
 Open 2X Ping, pick Deadlock, tick the regions you want and press **Play in ...**, then restart the game and queue. The other regions are blocked in Windows Firewall, so matchmaking can only place you where you chose. **Unlock** (or closing the app) removes the lock.
 
-**Is it a Deadlock server selector / region selector?**
-Yes: 2X Ping is a server selector (server picker, region lock) for Deadlock, Arena Breakout: Infinite, Overwatch 2 and Dead by Daylight, with a ping tester built in.
+**Is it a Deadlock server selector?**
+Yes. 2X Ping measures your ping to every Deadlock region and locks matchmaking to the regions you choose. Other games are being tested.
 
 **Does it change game files?**
 No. It never changes game files or touches game memory; it only adds Windows Firewall rules and removes them when you unlock or close it.
