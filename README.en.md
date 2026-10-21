@@ -91,6 +91,9 @@ Open 2X Ping, pick Deadlock, tick the regions you want and press **Play in ...**
 **Is it a Deadlock server selector?**
 Yes. 2X Ping measures your ping to every Deadlock region and locks matchmaking to the regions you choose. Other games are being tested.
 
+**Can I get banned for using 2X Ping?**
+2X Ping doesn't touch the game: it doesn't modify game files, read game memory or inject anything. It only adds Windows Firewall rules that block the regions you didn't choose, the same thing you could do by hand in Windows settings. We can't guarantee how a game's anti-cheat will treat it, so use it at your own discretion.
+
 **Does it change game files?**
 No. It never changes game files or touches game memory; it only adds Windows Firewall rules and removes them when you unlock or close it.
 

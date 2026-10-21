@@ -52,6 +52,8 @@
   "mainEntity": [
     { "@type": "Question", "name": "How do I choose my server region in Deadlock?",
       "acceptedAnswer": { "@type": "Answer", "text": "Open 2X Ping, tick the regions you want and press Play in ..., then restart Deadlock and queue. The other regions are blocked in Windows Firewall, so matchmaking can only place you in the ones you chose." } },
+    { "@type": "Question", "name": "Can I get banned for using 2X Ping?",
+      "acceptedAnswer": { "@type": "Answer", "text": "2X Ping doesn't touch the game: it doesn't modify game files, read game memory or inject anything. It only adds Windows Firewall rules that block the regions you didn't choose, the same thing you could do by hand in Windows settings. We can't guarantee how a game's anti-cheat will treat it, so use it at your own discretion." } },
     { "@type": "Question", "name": "Does 2X Ping change game files?",
       "acceptedAnswer": { "@type": "Answer", "text": "No. It doesn't modify game files or read game memory. The lock is a set of Windows Firewall rules that are removed when you press Unlock or close the app." } },
     { "@type": "Question", "name": "Will it lower my ping?",
@@ -109,7 +111,8 @@
 
     <section>
       <h2>FAQ</h2>
-      <details><summary>Does 2X Ping change game files?</summary><p>No. It doesn't modify game files or read game memory. The lock is a set of Windows Firewall rules that are removed when you press Unlock or close the app. Games have their own anti-cheat policies, so use it at your own discretion.</p></details>
+      <details><summary>Can I get banned for using 2X Ping?</summary><p>2X Ping doesn't touch the game: it doesn't modify game files, read game memory or inject anything. It only adds Windows Firewall rules that block the regions you didn't choose, the same thing you could do by hand in Windows settings. We can't guarantee how a game's anti-cheat will treat it, so use it at your own discretion.</p></details>
+      <details><summary>Does 2X Ping change game files?</summary><p>No. It doesn't modify game files or read game memory. The lock is a set of Windows Firewall rules that are removed when you press Unlock or close the app.</p></details>
       <details><summary>Will it lower my ping?</summary><p>It can't make your connection faster. It keeps you on the regions where your ping is lowest and shows the ping to expect before you lock.</p></details>
       <details><summary>Why does Windows warn me when I open it?</summary><p>The app isn't code-signed yet; signing is being set up (see the <a href="code-signing.html">Code signing policy</a>). On the blue SmartScreen warning, click More info, then Run anyway.</p></details>
       <details><summary>What does it send?</summary><p>During the beta it shares usage and performance information, such as ping results and errors, and you can make it anonymous in Settings. The full list is in the <a href="https://github.com/ldo2x/2XPing/blob/main/SECURITY.md#usage-statistics-beta">privacy details</a>.</p></details>
