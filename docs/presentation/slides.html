@@ -71,7 +71,7 @@
   <div style="font-size:56px;font-weight:700;margin-top:24px;">بنق أقل، بحث أسرع</div>
   <div style="font-size:32px;color:var(--muted);margin-top:22px;">دليل سريع: وش يسوي البرنامج، وكيف يشتغل، ووش يستخدم</div>
   <div style="margin-top:60px;display:flex;gap:16px;">
-    <span class="chip a">بيتا ‎0.12.0‎</span>
+    <span class="chip a">بيتا ‎0.13.0‎</span>
     <span class="chip g">من تطوير lDo2x</span>
     <span class="chip" style="background:#2c2240;color:#d8cdea;">مجاني ومفتوح المصدر</span>
   </div>
@@ -97,7 +97,7 @@
   <p class="lead">أربع أدوات بسيطة تخليك تلعب على السيرفر اللي يناسبك.</p>
   <div class="grid g4">
     <div class="card"><div class="ico">1</div><h3>افحص البنق</h3><p>يقيس البنق لكل مناطق اللعبة، ويرتّبها من الأقرب للأبعد.</p></div>
-    <div class="card"><div class="ico">2</div><h3>ثبّت سيرفراتي</h3><p>ضغطة وحدة على «العب على ...»، واللعبة ما تحطك إلا في اختيارك. في Deadlock وOverwatch 2 وDead by Daylight.</p></div>
+    <div class="card"><div class="ico">2</div><h3>ثبّت سيرفراتي</h3><p>ضغطة وحدة على «العب على ...»، واللعبة ما تحطك إلا في اختيارك. في Deadlock، وDead by Daylight قيد التطوير.</p></div>
     <div class="card"><div class="ico">3</div><h3>وين ألعب دحين؟</h3><p>وإنت داخل المباراة، البطاقة تقولك وين تلعب، وهل هي من اختيارك ✓</p></div>
     <div class="card"><div class="ico">4</div><h3>التسريع بالوسيط</h3><p>في الوضع المتقدم: اتصال اللعبة بس يمشي من سيرفر وسيط لو طريقه أسرع.</p></div>
   </div>
@@ -128,8 +128,8 @@
   <p class="lead">يجيب قائمة السيرفرات الرسمية لكل لعبة، ويفحصها كلها مع بعض: الفحص كله ثانيتين ثلاث.</p>
   <div class="grid g3">
     <div class="card"><div class="ico">V</div><h3>Deadlock</h3><p>قائمة Valve الحية من Steam، ويحسب أقصر طريق لكل منطقة داخل شبكة Valve.</p></div>
-    <div class="card"><div class="ico">B</div><h3>Overwatch 2</h3><p>15 مركز بيانات (الدمام والدوحة والبحرين وغيرها) من قوائم Google وAmazon وشبكة Blizzard.</p></div>
-    <div class="card"><div class="ico">A</div><h3>Dead by Daylight</h3><p>مناطق Amazon GameLift، بنفس الإشارة اللي تستخدمها اللعبة. و<span class="ltr">Arena&nbsp;Breakout</span> على Tencent.</p></div>
+    <div class="card"><div class="ico">A</div><h3>Dead by Daylight</h3><p>مناطق Amazon GameLift، بنفس الإشارة اللي تستخدمها اللعبة. قيد التطوير.</p></div>
+    <div class="card"><div class="ico">T</div><h3 class="ltr">Arena Breakout</h3><p>مراكز Tencent Cloud. يعرض سيرفرك بس: اللعبة تختار المنطقة من حسابك.</p></div>
   </div>
   <div style="display:flex;gap:20px;margin-top:46px;align-items:center;font-size:28px;">
     <span class="chip ok">أقل من 60 ms ممتاز</span>
@@ -234,7 +234,7 @@
     <tr><td>تثبيت السيرفرات</td><td>جدار حماية ويندوز (<span class="mono">netsh advfirewall</span>)</td></tr>
     <tr><td>معرفة السيرفر</td><td><span class="mono">pktmon</span> من ويندوز، وسجل Deadlock مع <span class="mono">-condebug</span></td></tr>
     <tr><td>الوسيط</td><td>WireGuard بنفق جزئي + سكربت Bash على Ubuntu</td></tr>
-    <tr><td>البيانات</td><td><span class="ltr">Steam API</span> · قوائم <span class="ltr">Amazon</span> و <span class="ltr">Google</span> و <span class="ltr">Blizzard (RIPE)</span> و <span class="ltr">Tencent</span> · <span class="ltr">deadlock-api.com</span></td></tr>
+    <tr><td>البيانات</td><td><span class="ltr">Steam API</span> · قوائم <span class="ltr">Amazon</span> و <span class="ltr">Tencent</span> · <span class="ltr">deadlock-api.com</span></td></tr>
     <tr><td>المشاكل والإحصائيات</td><td>بلاغات وتقارير مباريات تلقائية بدون مقاطعة، في قاعدة بيانات المطوّر (Supabase)</td></tr>
     <tr><td>النشر</td><td>GitHub + GitHub Actions، بناء ونشر تلقائي</td></tr>
   </table>
@@ -248,7 +248,7 @@
   <div class="grid g3" style="margin-top:30px;">
     <div class="card"><div class="ico">✕</div><h3>ما يلمس اللعبة</h3><p>لا يعدّل ملفات ولا يلمس ذاكرة. كل الشغل على مستوى الشبكة في ويندوز.</p></div>
     <div class="card"><div class="ico">↺</div><h3>ينشال لحاله</h3><p>التثبيت والوسيط ينشالون لما تقفل البرنامج، أو أول ما يفتح بعد قفلة مفاجئة.</p></div>
-    <div class="card"><div class="ico">◎</div><h3>واضح من البداية</h3><p>إحصائيات البيتا (اسمك ومدينتك ومواصفات جهازك واللعبة والسيرفر وتقرير كل مباراة) تنقال لك أول ما تفتحه. لا كلمات سر ولا ملفات.</p></div>
+    <div class="card"><div class="ico">◎</div><h3>واضح من البداية</h3><p>إحصائيات البيتا (البنق والأخطاء وتقرير كل مباراة) تنقال لك أول ما تفتحه، وتقدر تخليها مجهولة من الإعدادات. لا كلمات سر ولا ملفات.</p></div>
   </div>
   <div class="note" style="margin-top:44px;background:#3d1f3d;color:#ffd6ef;">زر <b>«رجّع كل شي طبيعي»</b> في الإعدادات: يشيل كل التغييرات، ويمسح اختياراتك، ويتأكد بنفسه إن ما بقى شي.</div>
   <div class="brand"><img src="../../assets/logo.png">2X Ping</div><div class="pageno">11</div>
@@ -258,7 +258,7 @@
 <div class="slide" style="display:flex;flex-direction:column;justify-content:center;">
   <div class="kicker">البيتا</div>
   <div style="font-size:84px;font-weight:800;line-height:1.2;">جرّبه، وقول لنا رأيك</div>
-  <p class="lead" style="margin-top:20px;">من زر <b style="color:#fff">«تواصل معنا»</b> داخل البرنامج: بلّغ عن مشكلة، اقترح فكرة، أو اطلب لعبة جديدة.</p>
+  <p class="lead" style="margin-top:20px;">من زر <b style="color:#fff">«تواصل معنا»</b> داخل البرنامج: اكتب مشكلة أو فكرة أو سؤال واضغط «أرسل»، وتوصلنا مباشرة.</p>
   <div class="grid g2" style="max-width:1400px;margin-top:20px;">
     <div class="card"><p>التحميل والصفحة الرسمية</p><h3 class="mono" style="font-size:40px;margin-top:12px;">github.com/lDo2x/2XPing</h3></div>
     <div class="card"><p>ديسكورد المطوّر</p><h3 class="mono" style="font-size:40px;margin-top:12px;">2x.x</h3></div>
